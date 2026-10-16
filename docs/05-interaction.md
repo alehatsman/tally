@@ -6,26 +6,73 @@ The constraint that decides everything: **this must be readable from across
 the room, without focusing on it.** That rules out subtle hue differences
 and it rules out more than a handful of states.
 
+**The grid shows what is alive or what is wrong.** Everything else is dark.
+
 | state | colour | mode | reads as |
 |---|---|---|---|
-| unbound | off | — | nothing here |
-| bound, not running | 1 dark grey | static | something could go here |
-| starting | 13 yellow | static | hold on |
-| working | 21 green | **pulsing** | it is thinking |
-| quiet | 21 green | static | it is alive and not busy |
+| nothing here | off | — | — |
+| working | 21 green | **pulsing** | alive, producing output |
+| quiet | 21 green | static | alive, idle |
 | **needs an answer** | 9 amber | **flashing** vs 0 | **look at me** |
-| exited, code 0 | 23 dark green | static | done, nothing to do |
-| exited, non-zero | 5 red | static | done badly |
-| lost | 5 red | **flashing** vs 7 | anchord restarted under it |
+| ended badly | 5 red | static | go and look |
+| lost | 7 dark red | static | the daemon cannot account for it |
 
-Three things move, and only three: working pulses slowly, attention flashes,
-lost flashes red. Everything else is still. **Movement is the alphabet** —
-if five states animate, none of them are urgent.
+Four colours and off. The rule is one sentence: **green means alive**, and
+motion inside green means producing output. Anything not green is gone.
+
+### Why it is one sentence
+
+An earlier table had eight states and **three greens** — working, quiet, and
+exited-clean. It failed in a way worth recording, because the failure is not
+the one that gets designed against: the three were perfectly *legible* side
+by side on real hardware, and nobody could *remember* which was which. A
+colour language is a thing you recall, not a thing you resolve.
+
+The fix was to stop green meaning two unrelated things. Hue now answers the
+only question worth asking first — **can I talk to it, or must I restart
+it?** Motion is a free refinement inside that answer, not a fourth thing to
+learn.
+
+Three states were deleted outright rather than recoloured:
+
+- **"bound, not running"** — a slot with a spec and nothing in it looks the
+  same as an empty one. Which pads spawn what is *your layout*, held in
+  muscle memory, which is the entire reason a slot is a durable place
+  ([03](03-model.md#a-slot-is-not-a-session)). Lighting it tells you
+  something you already know.
+- **"starting"** — it lasts about a second, and off-to-green is already the
+  feedback that the press landed.
+- **"exited, code 0"** — it needs nothing and its slot is free again, so it
+  stops being tally's business. The row stays in anchor for `anchor logs`;
+  the pad goes dark. **Failures stay visible precisely because they are the
+  ones you have to go and look at** — that asymmetry is the design, not an
+  oversight.
+
+The cost, stated plainly: a finished agent looks like one that never ran.
+That is tolerable because a *failed* one does not, and because an
+interactive agent rarely exits at all — Claude Code sits at a prompt when
+it is done, so "alive and idle" is the common resting state, not "exited".
+
+### Only one thing flashes
+
+Working pulses — a slow two-beat ramp. Attention flashes — a hard 50%
+blink. They are different gestures rather than two intensities, so several
+breathing pads do not compete with the one that wants you. Everything else
+is still.
+
+**`lost` is deliberately not animated**, and this is the case that proves
+the rule. It arrives in **bulk**: anchord restarts and every running session
+becomes a question mark at once. Sixty-four flashing pads is noise, and a
+grid of *red* would say "twenty things failed" — false, and it sends you
+debugging instead of purging. Dark red, static, is the truth: the daemon
+lost track of these. It is the same colour the logo uses for an unreachable
+anchord, so **dark red means the daemon had a problem, wherever you see
+it**.
 
 A muted slot ([04](04-signals.md#the-state-a-pad-renders)) renders the state
 *underneath* its attention — green, pulsing or not. It does not get a colour
-of its own: a fourth thing on the grid competing for the eye is exactly what
-the paragraph above refuses, and you muted it to stop looking at it.
+of its own: another thing competing for the eye is exactly what this section
+refuses, and you muted it to stop looking at it.
 
 **There is no "focused" colour.** An earlier draft had the slot you are
 looking at render white, and it is wrong twice: tallyd would have to poll

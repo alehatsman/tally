@@ -30,17 +30,32 @@ pub enum Source {
 }
 
 /// What a pad renders.
+///
+/// **The grid shows what is alive or what is wrong.** Everything else is
+/// dark — including a session that finished cleanly, which needs nothing
+/// from anyone and whose slot is free again.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SlotState {
-    Unbound,
-    Bound,
-    Starting,
+    /// Nothing here, or nothing left to do.
+    Empty,
+    /// Alive and producing output.
     Working,
+    /// Alive and silent. The most common state an interactive agent is in:
+    /// it finished its turn and is sitting at a prompt, which is why this
+    /// is green rather than something that looks finished.
     Quiet,
     NeedsAnswer { source: Source },
-    Exited { code: i32 },
-    /// anchord restarted. The process may well still be running, orphaned —
-    /// rendering that as a clean exit lies at exactly the wrong moment.
+    /// Exited non-zero. Stays visible because you need to go and look.
+    Failed { code: i32 },
+    /// anchor cannot say how this ended. `EXITED` means the daemon can
+    /// account for it, `LOST` means it cannot (`anchor/docs/02-model.md`):
+    /// either the PTY died with the daemon, or a kill was never observed
+    /// completing — in which case the process may still be out there.
+    ///
+    /// Its own variant because `lost` arrives in **bulk**. anchord restarts
+    /// and every running session becomes a question mark at once; a grid of
+    /// red would say "twenty things failed", which is false and sends you
+    /// debugging instead of purging.
     Lost,
 }
 
@@ -118,9 +133,6 @@ impl Derived {
 pub struct Session<'a> {
     pub state: SessionState,
     pub exit_code: Option<i32>,
-    /// From `list`; a session with no bytes yet needs no watcher to be
-    /// known as `Starting`.
-    pub output_bytes: u64,
     /// `tl.mute` — suppresses attention, nothing else.
     pub muted: bool,
     /// `tl.attention` — a hook declared this session is waiting.
@@ -131,18 +143,31 @@ pub struct Session<'a> {
 
 /// The ordered match that is the whole opinion (`docs/04-signals.md`).
 ///
-/// `session` is `None` when no session holds the slot; `has_spec` says
-/// whether `slots.toml` could put one there.
-pub fn slot_state(session: Option<Session<'_>>, has_spec: bool, now: i64) -> SlotState {
+/// `session` is `None` when nothing holds the slot. Whether a spec *could*
+/// go there is deliberately not an input: an empty pad looks the same
+/// either way, because which pads spawn what is your layout, held in
+/// muscle memory rather than read off the grid.
+pub fn slot_state(session: Option<Session<'_>>, now: i64) -> SlotState {
     let Some(s) = session else {
-        return if has_spec { SlotState::Bound } else { SlotState::Unbound };
+        return SlotState::Empty;
     };
 
     match s.state {
         // Terminal states outrank attention: an agent that rang and then
-        // died is Exited, not amber. There is nothing left to answer.
+        // died has nothing left to answer.
         SessionState::Lost => return SlotState::Lost,
-        SessionState::Exited => return SlotState::Exited { code: s.exit_code.unwrap_or(-1) },
+        // A clean exit is not shown at all. It needs nothing and its slot
+        // is free again, so it stops being tally's business -- the row
+        // stays in anchor for `anchor logs`, and the pad goes dark.
+        SessionState::Exited => {
+            return match s.exit_code {
+                Some(0) => SlotState::Empty,
+                Some(code) => SlotState::Failed { code },
+                // A terminal row with no code is precisely anchor saying it
+                // cannot account for the ending, which is what Lost means.
+                None => SlotState::Lost,
+            };
+        }
         // Closing is still alive and has no exit code yet, so it falls
         // through to the live states below.
         SessionState::Running | SessionState::Closing => {}
@@ -157,15 +182,11 @@ pub fn slot_state(session: Option<Session<'_>>, has_spec: bool, now: i64) -> Slo
         }
     }
 
-    // Below attention, so a session that rings before emitting anything
-    // else is still amber.
-    if s.output_bytes == 0 {
-        return SlotState::Starting;
-    }
+    // A session with no watcher yet, or one that has gone quiet, is alive
+    // and idle -- green and still, not a state of its own.
     match s.derived {
-        Some(d) if d.idle(now) => SlotState::Quiet,
-        Some(_) => SlotState::Working,
-        None => SlotState::Quiet,
+        Some(d) if !d.idle(now) => SlotState::Working,
+        _ => SlotState::Quiet,
     }
 }
 
@@ -187,7 +208,6 @@ mod tests {
         Session {
             state: SessionState::Running,
             exit_code: None,
-            output_bytes: 42,
             muted: false,
             declared_attention: false,
             derived: Some(derived),
@@ -268,23 +288,40 @@ mod tests {
     // --- precedence ---------------------------------------------------
 
     #[test]
-    fn an_empty_slot_is_unbound_or_bound() {
-        assert_eq!(slot_state(None, false, T0), SlotState::Unbound);
-        assert_eq!(slot_state(None, true, T0), SlotState::Bound);
+    fn an_empty_slot_is_empty_whatever_the_config_says() {
+        assert_eq!(slot_state(None, T0), SlotState::Empty);
+    }
+
+    /// Terminal states outrank attention, and a clean exit leaves no mark:
+    /// an agent that rang and then finished wants nothing.
+    #[test]
+    fn a_bell_then_a_clean_exit_goes_dark_not_amber() {
+        let d = fed(&[(b"?\x07", T0)]);
+        let s = Session { state: SessionState::Exited, exit_code: Some(0), ..live(&d) };
+        assert_eq!(slot_state(Some(s), T0 + 5_000), SlotState::Empty);
     }
 
     #[test]
-    fn a_bell_then_exit_is_exited_not_amber() {
+    fn a_bell_then_a_failure_is_red_not_amber() {
         let d = fed(&[(b"?\x07", T0)]);
-        let s = Session { state: SessionState::Exited, exit_code: Some(0), ..live(&d) };
-        assert_eq!(slot_state(Some(s), true, T0 + 5_000), SlotState::Exited { code: 0 });
+        let s = Session { state: SessionState::Exited, exit_code: Some(2), ..live(&d) };
+        assert_eq!(slot_state(Some(s), T0 + 5_000), SlotState::Failed { code: 2 });
+    }
+
+    /// A terminal row with no exit code is anchor saying it cannot account
+    /// for the ending -- which is exactly Lost, not a zero.
+    #[test]
+    fn a_terminal_row_without_a_code_is_lost_not_clean() {
+        let d = fed(&[(b"x", T0)]);
+        let s = Session { state: SessionState::Exited, exit_code: None, ..live(&d) };
+        assert_eq!(slot_state(Some(s), T0), SlotState::Lost);
     }
 
     #[test]
     fn lost_is_not_a_clean_exit() {
         let d = fed(&[(b"x", T0)]);
         let s = Session { state: SessionState::Lost, ..live(&d) };
-        assert_eq!(slot_state(Some(s), true, T0), SlotState::Lost);
+        assert_eq!(slot_state(Some(s), T0), SlotState::Lost);
     }
 
     /// Closing is still alive and has no exit code; rendering it as Exited
@@ -293,7 +330,7 @@ mod tests {
     fn closing_still_renders_as_live() {
         let d = fed(&[(b"x", T0)]);
         let s = Session { state: SessionState::Closing, exit_code: None, ..live(&d) };
-        assert_eq!(slot_state(Some(s), true, T0 + 1_000), SlotState::Working);
+        assert_eq!(slot_state(Some(s), T0 + 1_000), SlotState::Working);
     }
 
     #[test]
@@ -303,7 +340,7 @@ mod tests {
         // No bell anywhere in the stream, and it spoke a moment ago.
         assert!(!d.needs_answer(T0 + 1_000));
         assert_eq!(
-            slot_state(Some(s), true, T0 + 1_000),
+            slot_state(Some(s), T0 + 1_000),
             SlotState::NeedsAnswer { source: Source::Declared }
         );
     }
@@ -313,7 +350,7 @@ mod tests {
         let d = fed(&[(b"busy", T0)]);
         let s = Session { declared_attention: true, ..live(&d) };
         assert_eq!(
-            slot_state(Some(s), true, T0 + 600_000),
+            slot_state(Some(s), T0 + 600_000),
             SlotState::NeedsAnswer { source: Source::Declared }
         );
     }
@@ -324,27 +361,31 @@ mod tests {
     fn mute_suppresses_attention_and_nothing_else() {
         let d = fed(&[(b"?\x07", T0)]);
         let derived_amber = Session { muted: true, ..live(&d) };
-        assert_eq!(slot_state(Some(derived_amber), true, T0 + 3_000), SlotState::Working);
+        assert_eq!(slot_state(Some(derived_amber), T0 + 3_000), SlotState::Working);
 
         let declared = Session { muted: true, declared_attention: true, ..live(&d) };
-        assert_eq!(slot_state(Some(declared), true, T0 + 3_000), SlotState::Working);
+        assert_eq!(slot_state(Some(declared), T0 + 3_000), SlotState::Working);
 
         let long_quiet = Session { muted: true, ..live(&d) };
-        assert_eq!(slot_state(Some(long_quiet), true, T0 + 60_000), SlotState::Quiet);
+        assert_eq!(slot_state(Some(long_quiet), T0 + 60_000), SlotState::Quiet);
     }
 
-    /// Below attention, so a session that rings before saying anything else
-    /// is still amber.
+    /// A freshly created session with no watcher yet is alive and idle --
+    /// green and still. There is no separate "starting" state: off-to-green
+    /// is already the feedback that the press landed.
     #[test]
-    fn starting_needs_no_watcher_but_yields_to_attention() {
+    fn a_session_with_no_watcher_yet_is_alive_and_idle() {
         let empty = Derived { last_output_ms: T0, ..Derived::default() };
-        let s = Session { output_bytes: 0, derived: None, ..live(&empty) };
-        assert_eq!(slot_state(Some(s), true, T0), SlotState::Starting);
+        let s = Session { derived: None, ..live(&empty) };
+        assert_eq!(slot_state(Some(s), T0), SlotState::Quiet);
+    }
 
+    /// A session that rings before emitting anything else is still amber.
+    #[test]
+    fn a_bell_before_any_other_output_still_asks() {
         let d = fed(&[(b"\x07", T0)]);
-        let rang = Session { output_bytes: 0, ..live(&d) };
         assert_eq!(
-            slot_state(Some(rang), true, T0 + 3_000),
+            slot_state(Some(live(&d)), T0 + 3_000),
             SlotState::NeedsAnswer { source: Source::Derived }
         );
     }
@@ -353,7 +394,7 @@ mod tests {
     fn working_becomes_quiet_at_the_idle_threshold() {
         let d = fed(&[(b"tokens", T0)]);
         let s = live(&d);
-        assert_eq!(slot_state(Some(s), true, T0 + IDLE_THRESHOLD_MS - 1), SlotState::Working);
-        assert_eq!(slot_state(Some(s), true, T0 + IDLE_THRESHOLD_MS), SlotState::Quiet);
+        assert_eq!(slot_state(Some(s), T0 + IDLE_THRESHOLD_MS - 1), SlotState::Working);
+        assert_eq!(slot_state(Some(s), T0 + IDLE_THRESHOLD_MS), SlotState::Quiet);
     }
 }

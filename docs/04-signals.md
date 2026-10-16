@@ -247,22 +247,34 @@ match arm.
 
 ```rust
 enum Slot {
-    Unbound,
-    Bound,                       // a spec, nothing running
-    Starting,                    // created, no output yet
-    Working,                     // output recently
-    Quiet,                       // no output for a while, no bell
+    Empty,                       // nothing here, or nothing left to do
+    Working,                     // alive, producing output
+    Quiet,                       // alive, idle
     NeedsAnswer { since: i64, source: Source },
-    Exited { code: i32 },
+    Failed { code: i32 },        // exited non-zero
     Lost,
 }
 
 enum Source { Derived, Declared }
 ```
 
-`Lost` is its own variant and not `Exited { code: -1 }`. anchord restarted;
-the process may well still be running, orphaned. Rendering that as a clean
-exit tells a lie at exactly the moment the user needs the truth.
+Six variants, because **the grid shows what is alive or what is wrong**
+([05](05-interaction.md#the-colour-language)). A session that exited cleanly
+is `Empty`: it needs nothing, its slot is free, and the row stays in anchor
+for `anchor logs` without occupying a light.
+
+`Lost` is its own variant and not `Failed { code: -1 }`, and anchor is
+precise about why: **`EXITED` means the daemon can say how the session
+ended; `LOST` means it cannot** (`anchor/docs/02-model.md`). Two reasons
+reach it — `daemon_restart`, where the PTY died with the daemon and whatever
+the child did last was never seen, and `kill_timeout`, where it was killed
+and never observed exiting, so the process may still be out there. Rendering
+either as an ordinary failure tells a lie at exactly the moment the user
+needs the truth, and it is a lie told *sixty-four times at once*, because
+a daemon restart loses every running session together.
+
+A terminal row carrying **no exit code** is therefore `Lost` rather than a
+clean exit. "anchor has no account of how this ended" is the definition.
 
 Mute is **not** a variant. It is an orthogonal bit read from `tl.mute`, and
 it suppresses exactly one thing — the `NeedsAnswer` rendering — leaving the
@@ -276,15 +288,20 @@ produced nothing for a minute, and have a pending bell. So the derivation is
 an **ordered** match, and the order is the whole opinion:
 
 ```text
-1. no session bound           -> Unbound  if no spec, else Bound
+1. no session                 -> Empty
 2. state == lost              -> Lost
-3. state == exited            -> Exited { code }
+3. state == exited, code 0    -> Empty
+   state == exited, code != 0 -> Failed { code }
+   state == exited, no code   -> Lost
 4. tl.attention present       -> NeedsAnswer { Declared }     unless muted
 5. bell_pending && quiet 2s   -> NeedsAnswer { Derived }      unless muted
-6. output_bytes == 0          -> Starting
-7. now - last_output < 30s    -> Working
-8. otherwise                  -> Quiet
+6. now - last_output < 30s    -> Working
+7. otherwise                  -> Quiet
 ```
+
+Whether a *spec* exists for the slot is not an input. An empty pad looks the
+same either way ([05](05-interaction.md#why-it-is-one-sentence)); the spec
+matters when you press, not when you look.
 
 `closing` is deliberately **not** on that list: it falls through to the live
 states at 7 and 8. A session anchor is terminating is still alive, and it
@@ -297,10 +314,10 @@ Three of those placements are decisions, not orderings:
 
 - **Terminal states outrank attention.** An agent that rang the bell and
   then died is `Exited`, not amber. There is nothing to answer.
-- **`Starting` is below attention** so that a session which rings before
-  emitting anything else is still amber. `output_bytes` comes from `list`,
-  so `Starting` costs no watcher — a session with no bytes yet has nothing
-  for a watcher to read.
+- **There is no `Starting`.** A freshly created session with no watcher yet
+  falls to `Quiet` — alive and idle, which is true. The state existed to
+  render "hold on" in yellow for about a second, and off-to-green already
+  says the press landed.
 - **Muting falls through rather than short-circuiting.** Dropping to
   `Working`/`Quiet` is what makes a muted slot still legible.
 
