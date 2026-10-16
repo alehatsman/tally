@@ -75,10 +75,7 @@ impl std::error::Error for Error {}
 /// [`Error`] for anything that is not a complete, valid request. Nothing
 /// here touches the filesystem or anchord: this decides only whether the
 /// words make sense.
-pub fn parse(
-    args: impl IntoIterator<Item = String>,
-    pages: &Pages,
-) -> Result<Request, Error> {
+pub fn parse(args: impl IntoIterator<Item = String>, pages: &Pages) -> Result<Request, Error> {
     let mut args = args.into_iter();
     let Some(first) = args.next() else {
         return Err(Error::Usage("no subcommand".to_owned()));
@@ -95,7 +92,9 @@ fn claim(mut args: impl Iterator<Item = String>, pages: &Pages) -> Result<Claim,
         return Err(Error::Usage("spawn needs an address".to_owned()));
     };
     if text == "--" {
-        return Err(Error::Usage("spawn needs an address before `--`".to_owned()));
+        return Err(Error::Usage(
+            "spawn needs an address before `--`".to_owned(),
+        ));
     }
     let at = address(&text, pages)?;
 
@@ -146,7 +145,10 @@ pub fn address(text: &str, pages: &Pages) -> Result<Slot, Error> {
     };
     let page = match name {
         Some(name) => pages.index_of(name).ok_or_else(|| {
-            Error::Address(format!("no page named {name:?}; declared: {}", declared(pages)))
+            Error::Address(format!(
+                "no page named {name:?}; declared: {}",
+                declared(pages)
+            ))
         })?,
         // A config declaring no pages at all would make every address
         // unwritable, because the label needs a name. Say so here rather
@@ -259,8 +261,11 @@ mod tests {
 
     #[test]
     fn a_command_after_the_separator_wins() {
-        let claim = spawn(&["spawn", "1:1", "--", "cargo", "watch", "-x", "test"], &named())
-            .expect("valid");
+        let claim = spawn(
+            &["spawn", "1:1", "--", "cargo", "watch", "-x", "test"],
+            &named(),
+        )
+        .expect("valid");
         assert_eq!(claim.command, "cargo");
         assert_eq!(claim.args, ["watch", "-x", "test"]);
     }
