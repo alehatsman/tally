@@ -287,6 +287,56 @@ Exit:
 
 ---
 
+## M7 — Where views live
+
+Not three fixes. **One sentence in `docs/06` was wrong**, and the three
+open issues are what you get downstream of it: a view is a tmux *window*.
+That was true when `tallyd` under launchd was the only thing creating
+views, and it has been the definition ever since.
+
+A view is a **pane** ([docs/15](docs/15-views.md)). Then
+[#1](https://github.com/alehatsman/tally/issues/1) has a unit to adopt,
+[#2](https://github.com/alehatsman/tally/issues/2) has a pane that does
+not close, and [#3](https://github.com/alehatsman/tally/issues/3) has a
+coordinate that is the whole address rather than most of it.
+
+Scope, in dependency order — each step closes one issue and ships alone:
+
+1. **Identity to the pane**, `remain-on-exit`, revive-in-place. Closes #2.
+2. **Adoption** — `tally spawn` takes over the pane you ran it in. Closes #1.
+3. **The return trip** — a second press on the pad you are on. Closes #3.
+
+Exit:
+- ⬜ kill a session while focused on its view: still attached, corpse
+  readable, layout intact — and the same when an agent exits on its own
+- ⬜ kill the only live session and the `tally` session survives, with no
+  stray shell window reintroduced
+- ⬜ `tally spawn` in a split lands the view in that split, and the pad
+  finds it there
+- ⬜ press the pad you are on and land back in nvim, cursor where it was
+- ⬜ a week without reaching for `--detach` out of habit
+
+> **Two tmux facts that argue against the obvious implementation**, both
+> measured on a live 3.6b server rather than assumed. A window option is
+> inherited by **every pane in the window** — so splitting a view window
+> gives two panes claiming the same anchor session, today, with the
+> current code. It does not bite only because nothing splits a view
+> window, which is precisely what #1 makes normal. Same class as the
+> missing `-w` that `docs/06` already records, one level down.
+>
+> And the obvious way to ask where a client is looking is wrong:
+> `display-message -p -c <client>` resolves its target against an
+> unrelated session, because `-c` chooses where a message would be
+> *displayed*. `list-clients -F '#{client_name} #{pane_id}'` is the
+> correct call, and the incorrect one looks more correct.
+
+> **#2 goes first, and not as a compromise.** The issue asked whether to
+> fix it before #1 or alongside it. It is the step the other two are built
+> on: adoption needs a pane that survives its agent, and a return needs a
+> pane-level coordinate to return to.
+
+---
+
 ## Later, unscheduled
 
 - ~~the `settings.json` line for the `Notification` hook~~ — **M6**. It was
@@ -307,6 +357,7 @@ M3  spawn + chords    ← the launcher half
 M4  pages             ← ergonomics
 M5  tally spawn       ← the folder comes from a shell, not a file
 M6  the amber exists  ← M1's risk, answered: the signal was absent
+M7  where views live  ← a view is a pane; three issues, one sentence
 ```
 
 M6 is out of order on purpose. It is M1's work, and it is here rather than
