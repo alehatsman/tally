@@ -263,6 +263,28 @@ impl Device {
         Ok(())
     }
 
+    /// Scroll `text` across the grid in `colour`, once.
+    ///
+    /// The scroll **overlays** the lighting rather than replacing it, and
+    /// it does not cover the top row or the logo — so pages and health
+    /// stay readable while a title runs past (`docs/02-surface.md`).
+    /// Nothing here touches `last`, because the frame underneath has not
+    /// changed and the next diff must still be computed against it.
+    ///
+    /// # Errors
+    /// [`Error::Midi`] if the write fails.
+    pub fn scroll(&mut self, text: &str, colour: u8) -> Result<(), Error> {
+        self.send(&sysex::scroll(text, colour))
+    }
+
+    /// Stop a running scroll and give the grid back.
+    ///
+    /// # Errors
+    /// [`Error::Midi`] if the write fails.
+    pub fn stop_scroll(&mut self) -> Result<(), Error> {
+        self.send(&sysex::STOP_SCROLL)
+    }
+
     /// Presses and replies since the last call. Never blocks.
     pub fn poll(&self) -> impl Iterator<Item = Event> + '_ {
         self.events.try_iter()

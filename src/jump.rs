@@ -285,7 +285,10 @@ impl Tmux {
         let (what, args) = if Self::view_session_exists() {
             ("new-window", new_window_args(session, at, &self.anchor_bin))
         } else {
-            ("new-session", new_session_args(session, at, &self.anchor_bin))
+            (
+                "new-session",
+                new_session_args(session, at, &self.anchor_bin),
+            )
         };
         let window = Self::stdout(what, &args)?.trim().to_owned();
         Self::run("set-option", &set_option_args(&window, session))?;

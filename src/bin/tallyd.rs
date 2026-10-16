@@ -74,6 +74,26 @@ fn reraise(signum: i32) -> ! {
     std::process::abort();
 }
 
+/// Start a title scroll on the pad at `at`, if it has a title.
+///
+/// A slot with no title scrolls nothing and the hold is a no-op — not an
+/// error, not a placeholder. A title is a signal that is allowed to be
+/// absent (`docs/04-signals.md`).
+fn scroll_title(
+    device: &mut Device,
+    grid: &std::collections::BTreeMap<Slot, model::Resolved>,
+    at: Slot,
+) {
+    let Some(r) = grid.get(&at) else { return };
+    let Some(title) = r.title.as_deref() else {
+        return;
+    };
+    eprintln!("tallyd: scroll {}:{}:{} {title:?}", at.page, at.row, at.col);
+    if let Err(e) = device.scroll(title, tally::render::scroll_colour(r.state)) {
+        eprintln!("tallyd: {e}");
+    }
+}
+
 /// Carry out one gesture and say what happened.
 ///
 /// A jump is tmux's and everything else is anchord's, which is the same
@@ -113,7 +133,9 @@ fn perform(ctx: &Context<'_>, gesture: Gesture, at: Slot, pages: &Pages, tmux: &
             Ok(done) => eprintln!("tallyd: {action:?} {}:{row}:{col} {done}", at.page),
             Err(e) => eprintln!("tallyd: {action:?} {}:{row}:{col}: {e}", at.page),
         },
-        Gesture::Page(_) => {}
+        // Neither reaches here: a scroll is a device message, handled
+        // in the loop where the device is.
+        Gesture::Page(_) | Gesture::Hold { .. } | Gesture::Released => {}
     }
 }
 
@@ -243,13 +265,39 @@ fn main() -> ExitCode {
             for event in d.poll().collect::<Vec<_>>() {
                 match event {
                     Event::Press { button, down } => {
-                        let Some(gesture) = chords.feed(button, down) else {
+                        let Some(gesture) = chords.feed(button, down, tally::now_ms()) else {
                             continue;
                         };
                         match gesture {
                             Gesture::Page(n) => {
                                 current = n;
                                 eprintln!("tallyd: page {n}");
+                            }
+                            // A title scroll overlays the grid and comes
+                            // off again on release. Both are device
+                            // messages and neither touches the model, so
+                            // they are handled here rather than in `act`.
+                            // `feed` never returns this -- only `tick`
+                            // does, below -- but one helper serves both
+                            // so they cannot drift apart.
+                            Gesture::Hold { row, col } => scroll_title(
+                                d,
+                                &grid,
+                                Slot {
+                                    page: current,
+                                    row,
+                                    col,
+                                },
+                            ),
+                            Gesture::Released => {
+                                if let Err(e) = d.stop_scroll() {
+                                    eprintln!("tallyd: {e}");
+                                }
+                                // The scroll overlaid the frame without
+                                // destroying it, but the diff is against
+                                // what we believe is lit -- so repaint
+                                // rather than trust that belief.
+                                repaint = true;
                             }
                             Gesture::Tap { row, col } | Gesture::Chord { row, col, .. } => {
                                 let at = Slot {
@@ -284,6 +332,21 @@ fn main() -> ExitCode {
                         }
                     }
                 }
+            }
+
+            // The 400ms hold is the one thing in the loop that happens
+            // without an event: nothing arrives between a press and the
+            // moment it becomes a scroll.
+            if let Some(Gesture::Hold { row, col }) = chords.tick(tally::now_ms()) {
+                scroll_title(
+                    d,
+                    &grid,
+                    Slot {
+                        page: current,
+                        row,
+                        col,
+                    },
+                );
             }
 
             // Liveness probe on the reconcile clock. A failed write is not
