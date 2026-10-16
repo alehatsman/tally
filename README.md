@@ -108,6 +108,7 @@ is a product.
 | [docs/15-views.md](docs/15-views.md) | a view is a pane, not a window |
 | [docs/16-the-queue.md](docs/16-the-queue.md) | the top row is a queue, not a map — and why rows are not projects |
 | [docs/17-the-tempo.md](docs/17-the-tempo.md) | the breathing rate says how long the oldest thing has waited |
+| [docs/18-the-launch-column.md](docs/18-the-launch-column.md) | `>` spawns into its row, and the row already knows the folder |
 
 ## License
 

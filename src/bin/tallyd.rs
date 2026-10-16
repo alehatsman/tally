@@ -107,35 +107,22 @@ fn perform(ctx: &Context<'_>, gesture: Gesture, at: Slot, pages: &Pages, tmux: &
             Ok(Some(done)) => eprintln!("tallyd: {}:{row}:{col} {done}", at.page),
             Err(e) => eprintln!("tallyd: spawn {}:{row}:{col}: {e}", at.page),
         },
-        Gesture::Chord { action, .. } => {
-            // Taken before the act, because afterwards anchord has
-            // forgotten them and there is nothing left to look up. Purge
-            // clears the pad, so it clears the view (`docs/15-views.md`).
-            let purging: Vec<String> = if action == Action::Purge {
-                ctx.pads.rows(at).to_vec()
-            } else {
-                Vec::new()
-            };
-            match ctx.chord(action, at, pages) {
-                // The preview already said nothing would happen here, so
-                // the log stays quiet too: a line per dimmed pad you
-                // brushed is noise in the only file that is read after
-                // something broke.
-                Ok(Done::Nothing) => {}
-                Ok(done) => {
-                    eprintln!("tallyd: {action:?} {}:{row}:{col} {done}", at.page);
-                    for id in &purging {
-                        if let Err(e) = tmux.close(id) {
-                            eprintln!("tallyd: could not close the view for {id}: {e}");
-                        }
-                    }
-                }
-                Err(e) => eprintln!("tallyd: {action:?} {}:{row}:{col}: {e}", at.page),
-            }
-        }
-        // Handled in the loop: they change where you are, not what the
-        // grid holds, and two of them need the queue the loop computes.
-        Gesture::PageUp | Gesture::PageDown | Gesture::Back | Gesture::Next | Gesture::Home => {}
+        Gesture::Chord { action, .. } => match ctx.chord(action, at) {
+            // The preview already said nothing would happen here, so the
+            // log stays quiet too: a line per dimmed pad you brushed is
+            // noise in the only file that is read after something broke.
+            Ok(Done::Nothing) => {}
+            Ok(done) => eprintln!("tallyd: {action:?} {}:{row}:{col} {done}", at.page),
+            Err(e) => eprintln!("tallyd: {action:?} {}:{row}:{col}: {e}", at.page),
+        },
+        // Handled in the loop: they change where you are or what is
+        // running, and all of them need state the loop computes.
+        Gesture::PageUp
+        | Gesture::PageDown
+        | Gesture::Back
+        | Gesture::Next
+        | Gesture::Home
+        | Gesture::Launch { .. } => {}
     }
 }
 
@@ -155,6 +142,20 @@ fn log_nav(
         eprintln!("tallyd: attention journal: {e}");
         *out = None;
     }
+}
+
+/// The labels a `>` launch carries.
+///
+/// `tl.slot` and nothing else. **No `tl.spec`**, for the same reason
+/// `tally spawn` writes none: a spec label is a name looked up in
+/// `slots.toml`, and one nothing declares would be a label that lies
+/// (`docs/11-cli.md`).
+fn launch_labels(at: Slot, pages: &Pages) -> std::collections::BTreeMap<String, String> {
+    let mut labels = std::collections::BTreeMap::new();
+    if let Some(address) = at.label(pages) {
+        let _slot = labels.insert(tally::anchor::LABEL_SLOT.to_owned(), address);
+    }
+    labels
 }
 
 /// Send the beat the surface breathes to.
@@ -251,7 +252,7 @@ fn navigate(
             }
             Err(e) => eprintln!("tallyd: {e}"),
         },
-        Gesture::Tap { .. } | Gesture::Chord { .. } => {}
+        Gesture::Tap { .. } | Gesture::Chord { .. } | Gesture::Launch { .. } => {}
     }
 }
 
@@ -394,6 +395,39 @@ fn main() -> ExitCode {
                             continue;
                         };
                         match gesture {
+                            Gesture::Launch { row } => {
+                                // The same resolution that lit the button,
+                                // from the session list the frame was
+                                // drawn from.
+                                // The preview said so first: `None` is a
+                                // dark button, and a dark button does
+                                // nothing.
+                                if let Some(l) = model::row_launch(
+                                    &sessions,
+                                    &pages,
+                                    &grid,
+                                    offset.saturating_add(row),
+                                ) {
+                                    {
+                                        match anchor.create(&tally::anchor::Spawn {
+                                            command: &l.command,
+                                            args: &[],
+                                            cwd: Some(std::path::Path::new(&l.cwd)),
+                                            env: &std::collections::BTreeMap::new(),
+                                            login_shell: l.login_shell,
+                                            labels: &launch_labels(l.at, &pages),
+                                        }) {
+                                            Ok(id) => eprintln!(
+                                                "tallyd: launch {} -> {id} in {}",
+                                                l.at.label(&pages).unwrap_or_default(),
+                                                l.cwd
+                                            ),
+                                            Err(e) => eprintln!("tallyd: launch: {e}"),
+                                        }
+                                        repaint = true;
+                                    }
+                                }
+                            }
                             Gesture::PageUp
                             | Gesture::PageDown
                             | Gesture::Home
@@ -532,9 +566,18 @@ fn main() -> ExitCode {
             eprintln!("tallyd: tempo {bpm} bpm");
         }
 
+        // Which `>` would act, from the same resolution the press uses.
+        let launchable: std::collections::BTreeSet<u8> = (1..=7u8)
+            .filter(|row| {
+                model::row_launch(&sessions, &pages, &resolved, offset.saturating_add(*row))
+                    .is_some()
+            })
+            .collect();
+
         let view = View {
             pages: &pages,
             offset,
+            launchable: &launchable,
             anchord_reachable: reachable,
             now,
             can_go_back: tmux.can_go_back(),

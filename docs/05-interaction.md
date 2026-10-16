@@ -110,7 +110,9 @@ colours so the grid never has to be read for them:
 | `⌂` home, already at row 1 | off | — |
 | `⌂` home, scrolled down | 1 dark grey, static | — |
 | the other three top-row buttons | off | — |
-| action button (right column) | 45 blue, static | 3 white while held |
+| `>` launcher, row has nothing to inherit or nowhere to put it | off | — |
+| `>` launcher, ready | 1 dark grey, static | — |
+| `CC19` kill | 45 blue, static | 3 white while held |
 
 ⚠️ **This table was rewritten by [16](16-the-queue.md).** The top row used
 to be eight page buttons, and the rule below — *exactly one page button is
@@ -195,10 +197,8 @@ kills a running agent, that matters more than the keystroke saving.
 | tap `◄` (top row) | **back** — return to where you were standing |
 | tap `►` (top row) | **next** — jump to the longest-waiting amber |
 | tap `⌂` (top row) | **home** — scroll back to row 1 |
-| hold `CC19` + tap slot | **kill** |
-| hold `CC29` + tap slot | respawn / resume |
-| hold `CC39` + tap slot | purge (exited only) |
-| hold `CC89` + tap slot | mute — stop this slot raising attention |
+| tap `>` (right column, rows 1-7) | **launch** into that row ([18](18-the-launch-column.md)) |
+| hold `CC19` + tap slot | **kill** — the only modifier left |
 
 Mute toggles, and it is written to `tl.mute` on the session
 ([03](03-model.md#where-the-binding-lives)) so it survives tallyd restarting
@@ -230,9 +230,14 @@ guessing.
 | held | acts on | colour | does not touch |
 |---|---|---|---|
 | `CC19` kill | alive — working, quiet, wants-you | 5 red | anything already ended |
-| `CC29` respawn | a slot with a spec and nothing alive in it | 21 green | running, and a **lost** it cannot vouch for |
-| `CC39` purge | ended — failed, or lost | 7 dark red | anything alive; anchord refuses it with `already_exited` |
-| `CC89` mute | any live session | 45 blue to mute, 3 white to un-mute | an empty pad |
+
+⚠️ **This table had four rows.** Respawn, purge and mute left when the
+right column became launchers ([18](18-the-launch-column.md)) — respawn
+because it was unreachable without a `slots.toml`, purge and mute because
+they moved to the shell, where `tally purge` and `tally mute` do the same
+work. The reasoning below is kept: it is about previews, not about those
+three gestures, and the one remaining modifier is the one it was written
+for.
 
 Each colour is the colour of the **consequence**, not of the button: kill
 reds the pads that will be red, respawn greens the ones that will be green.

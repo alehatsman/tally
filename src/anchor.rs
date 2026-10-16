@@ -133,6 +133,17 @@ pub struct Session {
     /// (`src/attention.rs`, `docs/14-attention.md`).
     #[serde(default)]
     pub pid: Option<i32>,
+    /// The directory it was started in. **Kept on dead rows too**, which
+    /// is what lets `>` spawn into a row without a config file
+    /// (`docs/18-the-launch-column.md`).
+    #[serde(default)]
+    pub cwd: Option<String>,
+    /// `argv[0]`. Inherited by `>`; the arguments deliberately are not.
+    #[serde(default)]
+    pub command: Option<String>,
+    /// Whether anchord wrapped it in a login shell.
+    #[serde(default)]
+    pub login_shell: bool,
 }
 
 impl Session {
@@ -595,6 +606,7 @@ mod tests {
         // The key `tally attention` resolves a hook by, so it has to
         // survive the wire and not just `anchor get` (`src/attention.rs`).
         assert_eq!(s.pid, Some(8428));
+        assert!(!s.login_shell);
         // teleport's session: not ours, and it claims no pad.
         assert_eq!(s.slot_label(), None);
     }
@@ -609,6 +621,9 @@ mod tests {
             labels: BTreeMap::new(),
             output_bytes: 0,
             pid: None,
+            cwd: None,
+            command: None,
+            login_shell: false,
         };
         assert_eq!(s.lifecycle(), SessionState::Lost);
     }
@@ -626,6 +641,9 @@ mod tests {
             labels,
             output_bytes: 1,
             pid: None,
+            cwd: None,
+            command: None,
+            login_shell: false,
         };
         assert_eq!(s.slot_label(), Some("work:3:5"));
         assert!(s.muted());

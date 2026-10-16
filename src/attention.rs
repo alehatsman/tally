@@ -132,6 +132,9 @@ mod tests {
             labels: BTreeMap::new(),
             output_bytes: 0,
             pid: Some(pid),
+            cwd: None,
+            command: None,
+            login_shell: false,
         }
     }
 

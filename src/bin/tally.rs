@@ -18,9 +18,10 @@ use tally::anchor::{Client, Spawn};
 use tally::attention::Ancestry;
 use tally::cli::{self, Claim, Request, USAGE};
 use tally::config::Config;
+use tally::jump::{Jump, Tmux};
 use tally::model;
 use tally::signal::SlotState;
-use tally::slot::Pages;
+use tally::slot::{Pages, Slot};
 
 /// Bad typing. Conventional, and distinguishable by a script from a spawn
 /// that was asked for correctly and failed anyway.
@@ -47,10 +48,99 @@ fn main() -> ExitCode {
         }
         Ok(Request::Spawn(claim)) => spawn(&claim, pages),
         Ok(Request::Attention(on)) => attention(on),
+        Ok(Request::Purge(at)) => purge(at, pages),
+        Ok(Request::Mute(at, on)) => mute(at, on, pages),
         Err(e) => {
             eprint!("{USAGE}");
             eprintln!("\ntally: {e}");
             ExitCode::from(USAGE_ERROR)
+        }
+    }
+}
+
+/// Forget every ended row behind a pad, and close its view.
+///
+/// Lives here rather than on the grid because the usage says so — 341
+/// jumps against zero purges — and because `anchor` has no `purge`
+/// subcommand to defer to (anchor#14). Deleting the gesture without
+/// replacing it would leave rows accumulating with no remedy anywhere
+/// (`docs/18-the-launch-column.md`).
+fn purge(at: Slot, pages: &Pages) -> ExitCode {
+    let Some(address) = at.label(pages) else {
+        eprintln!("tally: that address has no page name");
+        return ExitCode::FAILURE;
+    };
+    let client = Client::new(Client::default_path());
+    let sessions = match client.list() {
+        Ok(sessions) => sessions,
+        Err(e) => {
+            eprintln!("tally: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let rows = model::purgeable(&sessions, pages);
+    let Some(ids) = rows.get(&at).filter(|ids| !ids.is_empty()) else {
+        println!("nothing to purge on {address}");
+        return ExitCode::SUCCESS;
+    };
+    let mut gone = 0;
+    for id in ids {
+        match client.purge(id) {
+            Ok(()) => gone += 1,
+            // Someone else forgot it first. That is the outcome we wanted.
+            Err(tally::anchor::Error::Refused { ref code, .. }) if code == "not_found" => {}
+            Err(e) => {
+                eprintln!("tally: {e}");
+                return ExitCode::FAILURE;
+            }
+        }
+        // Purge clears the pad, so it clears the view
+        // (`docs/15-views.md`). Best-effort: a missing tmux is not a
+        // reason to leave anchord holding the rows.
+        let _closed = Tmux::default().close(id);
+    }
+    println!("purged {gone} on {address}");
+    ExitCode::SUCCESS
+}
+
+/// Stop a slot raising attention, or let it again.
+///
+/// The starvation hatch for `►` and the tempo: a prompt you are never
+/// going to answer otherwise sits at the head of the queue forever and
+/// drives the breathing up with it (`docs/16-the-queue.md`).
+fn mute(at: Slot, on: bool, pages: &Pages) -> ExitCode {
+    let Some(address) = at.label(pages) else {
+        eprintln!("tally: that address has no page name");
+        return ExitCode::FAILURE;
+    };
+    let client = Client::new(Client::default_path());
+    let sessions = match client.list() {
+        Ok(sessions) => sessions,
+        Err(e) => {
+            eprintln!("tally: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let drawn = model::resolve(&sessions, &BTreeMap::new(), pages, tally::now_ms());
+    let Some(held) = drawn.get(&at) else {
+        eprintln!("tally: nothing is on {address}");
+        return ExitCode::FAILURE;
+    };
+    let mut set = BTreeMap::new();
+    let remove: &[&str] = if on {
+        let _m = set.insert(tally::anchor::LABEL_MUTE.to_owned(), "1".to_owned());
+        &[]
+    } else {
+        &[tally::anchor::LABEL_MUTE]
+    };
+    match client.label(&held.session, &set, remove) {
+        Ok(()) => {
+            println!("{} {address}", if on { "muted" } else { "unmuted" });
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("tally: {e}");
+            ExitCode::FAILURE
         }
     }
 }

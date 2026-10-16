@@ -59,6 +59,21 @@ pub fn arrow(movable: bool) -> Cell {
     }
 }
 
+/// How a `>` launcher is lit.
+///
+/// Dim when it would spawn something, dark when it would not — the rule
+/// the whole surface now runs on. A row with no session has no directory
+/// to inherit and a full row has nowhere to put one, and in both cases a
+/// lit button would be a promise it cannot keep
+/// (`docs/18-the-launch-column.md`).
+pub fn launch(ready: bool) -> Cell {
+    if ready {
+        Cell::Static(DARK_GREY)
+    } else {
+        Cell::Off
+    }
+}
+
 /// How `⌂` is lit: dim when you are scrolled away from the top.
 ///
 /// The `Session` button doing what its silkscreen says — *return to the
@@ -138,15 +153,14 @@ pub fn preview(action: Action, effect: Effect) -> Cell {
     match effect {
         Effect::None => Cell::Off,
         Effect::Skips => Cell::Static(DARK_GREY),
-        // Mute is the only two-colour preview, because it is the only
-        // toggle. Blue and white are the *control* colours: you are about
-        // to change how tally treats the pad, not what is running on it.
+        // Kept for the shape rather than the case: there is one action
+        // now, and `Unmutes` was the toggle half of a gesture that moved
+        // to the shell (`docs/18-the-launch-column.md`).
         Effect::Unmutes => Cell::Static(WHITE),
+        // The colour of the **consequence**, not of the button: kill reds
+        // the pads that are about to be red.
         Effect::Acts => Cell::Static(match action {
             Action::Kill => RED,
-            Action::Respawn => GREEN,
-            Action::Purge => DARK_RED,
-            Action::Mute => BLUE,
         }),
     }
 }
@@ -419,23 +433,6 @@ mod tests {
         }
     }
 
-    /// Each colour is the colour of the consequence: kill reds the pads
-    /// that are about to be red, respawn greens the ones about to be green.
-    #[test]
-    fn a_preview_wears_the_colour_of_what_it_would_do() {
-        assert_eq!(preview(Action::Kill, Effect::Acts), Cell::Static(RED));
-        assert_eq!(preview(Action::Respawn, Effect::Acts), Cell::Static(GREEN));
-        assert_eq!(preview(Action::Purge, Effect::Acts), Cell::Static(DARK_RED));
-        assert_eq!(
-            slot(SlotState::Failed { code: 1 }),
-            preview(Action::Kill, Effect::Acts)
-        );
-        assert_eq!(
-            slot(SlotState::Lost { reclaimable: false }),
-            preview(Action::Purge, Effect::Acts)
-        );
-    }
-
     /// Three levels, and the middle one is the one that earns its keep.
     #[test]
     fn the_three_preview_levels_are_distinguishable() {
@@ -445,20 +442,6 @@ mod tests {
             assert_eq!(skips, Cell::Static(DARK_GREY), "{action:?}");
             assert_eq!(preview(action, Effect::None), Cell::Off, "{action:?}");
             assert_ne!(acts, skips, "{action:?}");
-        }
-    }
-
-    /// Mute is the only two-colour preview, because it is the only
-    /// toggle — and both of its colours are control colours, not slot
-    /// colours: you are changing how tally treats the pad, not what is
-    /// running on it.
-    #[test]
-    fn mute_is_the_only_preview_that_says_which_way_it_goes() {
-        assert_eq!(preview(Action::Mute, Effect::Acts), Cell::Static(BLUE));
-        assert_eq!(preview(Action::Mute, Effect::Unmutes), Cell::Static(WHITE));
-        let slots: Vec<Cell> = ALL.into_iter().map(slot).collect();
-        for c in [Cell::Static(BLUE), Cell::Static(WHITE)] {
-            assert!(!slots.contains(&c), "{c:?} is also a slot colour");
         }
     }
 

@@ -43,6 +43,10 @@ pub struct View<'a> {
     /// what makes `►` dark, and it is the same count the journal records
     /// as `queued`.
     pub queued: usize,
+    /// Which grid rows `>` would spawn into, 1-7. One predicate, two
+    /// readers: this lights the button and the press uses the same
+    /// [`row_launch`] that filled it.
+    pub launchable: &'a BTreeSet<u8>,
     /// The modifier being held, if exactly one is
     /// (`crate::chord::Chords::modifier`). The grid recolours to show
     /// what it would do.
@@ -236,43 +240,74 @@ impl Pad {
     }
 }
 
+/// What `>` beside a grid row would spawn.
+///
+/// The row already knows: anchord keeps `cwd` and `command` on every row
+/// it has, dead ones included, so a row that has ever held a session can
+/// hold another one without anything being declared in advance. That is
+/// what `slots.toml` was trying to be and could not
+/// (`docs/18-the-launch-column.md`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RowLaunch {
+    /// The leftmost free pad in that row.
+    pub at: Slot,
+    /// `argv[0]`, from the row's newest session.
+    pub command: String,
+    /// The directory that session was started in.
+    pub cwd: String,
+    /// Whether to wrap it in a login shell, as that session was.
+    pub login_shell: bool,
+}
+
+/// Resolve `>` for the slots on absolute row `abs`.
+///
+/// `None` — and therefore a dark button — when the row has never held a
+/// session, when nothing in it recorded a directory, or when every column
+/// is taken. A lit button that would do nothing is one you press twice.
+///
+/// **Arguments are deliberately dropped.** A row running
+/// `claude --resume <id>` describes one conversation; copying that would
+/// put a second pad on the same conversation, which is the one thing a new
+/// agent must not be.
+#[must_use]
+pub fn row_launch(
+    sessions: &[Session],
+    pages: &Pages,
+    drawn: &BTreeMap<Slot, Resolved>,
+    abs: u8,
+) -> Option<RowLaunch> {
+    // Newest first, which is the order anchord lists in and the order
+    // `resolve` already depends on.
+    let newest = sessions.iter().find(|s| {
+        s.slot_label()
+            .and_then(|l| slot::parse(l, pages))
+            .is_some_and(|at| at.absolute_row() == abs)
+    })?;
+    let cwd = newest.cwd.clone()?;
+    let command = newest.command.clone()?;
+    let at = (1..=8).find_map(|col| {
+        let at = Slot::at_absolute(abs, col)?;
+        (!drawn.contains_key(&at)).then_some(at)
+    })?;
+    Some(RowLaunch {
+        at,
+        command,
+        cwd,
+        login_shell: newest.login_shell,
+    })
+}
+
 /// What `action` would do to `pad`.
+///
+/// One action now (`docs/18-the-launch-column.md`), and the function stays
+/// because the *preview* is the point: a destructive button with no label
+/// has to answer "what happens if I press this" before you press it, and
+/// it has to answer with the same predicate the press uses.
 pub fn effect(action: Action, pad: Pad) -> Effect {
-    let occupied = pad.state.is_some();
-    let skip = if occupied {
-        Effect::Skips
-    } else {
-        Effect::None
-    };
     match action {
         Action::Kill if pad.alive() => Effect::Acts,
-        // Respawn needs somewhere to put the new session and something to
-        // put there. It deliberately does **not** touch a `lost` it cannot
-        // vouch for: that session may still be running and orphaned, and a
-        // second agent on the same address gives you two processes and one
-        // pad to watch them with. Purge first -- the purge is the act of
-        // deciding it is really gone.
-        //
-        // `lost_reason=daemon_restart` is the exception, and the daemon is
-        // the one making the claim: anchord owns the PTYs, so anchord
-        // going away took them with it and there is no orphan to collide
-        // with. It is also the common case -- every anchord restart
-        // produces a full grid of them at once, and making you purge
-        // fifty-six megabytes of readable scrollback to reclaim a pad is
-        // the wrong trade (#9).
-        Action::Respawn if pad.spec && pad.reclaimable() => Effect::Acts,
-        // A dark pad can still be purgeable, and that is the point: clean
-        // exits pile up behind one invisibly. Holding purge is how you see
-        // them.
-        Action::Purge if pad.purgeable && !pad.alive() => Effect::Acts,
-        Action::Mute if pad.alive() => {
-            if pad.muted {
-                Effect::Unmutes
-            } else {
-                Effect::Acts
-            }
-        }
-        Action::Kill | Action::Respawn | Action::Purge | Action::Mute => skip,
+        Action::Kill if pad.state.is_some() => Effect::Skips,
+        Action::Kill => Effect::None,
     }
 }
 
@@ -462,14 +497,18 @@ pub fn frame_from(pads: &Pads<'_>, view: &View<'_>) -> Frame {
         frame.set(Button::Top(index), crate::surface::Cell::Off);
     }
 
-    for row in 1..=8 {
-        let button = Button::Action(row);
-        let carries = Action::of(button);
+    // The right column: seven `>` launchers and the kill modifier at the
+    // bottom (`docs/18-the-launch-column.md`).
+    for row in 1..=7u8 {
         frame.set(
-            button,
-            render::action(carries, carries.is_some_and(|a| view.pressed.contains(&a))),
+            Button::Action(row),
+            render::launch(view.launchable.contains(&row)),
         );
     }
+    frame.set(
+        Button::Action(8),
+        render::action(Some(Action::Kill), view.pressed.contains(&Action::Kill)),
+    );
 
     // Attention you cannot see, because it is scrolled off the window.
     frame.set(
@@ -520,13 +559,19 @@ mod tests {
             labels,
             output_bytes: 10,
             pid: None,
+            cwd: None,
+            command: None,
+            login_shell: false,
         }
     }
 
     /// The resting view: nothing held, nothing pressed. Tests that care
     /// about those build on top of it.
+    static LAUNCHABLE: std::sync::LazyLock<BTreeSet<u8>> = std::sync::LazyLock::new(BTreeSet::new);
+
     fn view(pages: &Pages) -> View<'_> {
         View {
+            launchable: &LAUNCHABLE,
             pages,
             offset: 0,
             anchord_reachable: true,
@@ -603,54 +648,6 @@ mod tests {
         assert_eq!(effect(Action::Kill, pad(None)), Effect::None);
     }
 
-    /// A lost session may still be running and orphaned, so respawning it
-    /// would give you two agents in one repo and one pad to watch them
-    /// with. Purge is the act of deciding it is really gone.
-    /// The exception, and the daemon is the one making the claim:
-    /// anchord owns the PTYs, so anchord going away took them with it.
-    /// There is no orphan to collide with, which is the only thing the
-    /// refusal was protecting against (#9).
-    #[test]
-    fn respawn_reclaims_a_pad_anchord_lost_to_its_own_restart() {
-        let with_spec = |state| Pad {
-            state,
-            spec: true,
-            ..Pad::default()
-        };
-        assert_eq!(
-            effect(
-                Action::Respawn,
-                with_spec(Some(SlotState::Lost { reclaimable: true }))
-            ),
-            Effect::Acts,
-            "a restart took the process with it"
-        );
-        assert_eq!(
-            effect(
-                Action::Respawn,
-                with_spec(Some(SlotState::Lost { reclaimable: false }))
-            ),
-            Effect::Skips,
-            "this one may still be out there"
-        );
-    }
-
-    /// One predicate, three readers: the preview, the press, and
-    /// `tally spawn` from a shell.
-    #[test]
-    fn a_pad_is_free_to_claim_when_nothing_live_holds_it() {
-        let pad = |state| Pad {
-            state,
-            ..Pad::default()
-        };
-        assert!(pad(None).reclaimable(), "dark");
-        assert!(pad(Some(SlotState::Failed { code: 1 })).reclaimable());
-        assert!(pad(Some(SlotState::Lost { reclaimable: true })).reclaimable());
-        assert!(!pad(Some(SlotState::Lost { reclaimable: false })).reclaimable());
-        assert!(!pad(Some(SlotState::Working)).reclaimable());
-        assert!(!pad(Some(SlotState::Quiet)).reclaimable());
-    }
-
     /// Reclaimable changes what a press does, never what the eye sees.
     /// The daemon still cannot account for what that session did.
     #[test]
@@ -658,91 +655,6 @@ mod tests {
         assert_eq!(
             render::slot(SlotState::Lost { reclaimable: true }),
             render::slot(SlotState::Lost { reclaimable: false })
-        );
-    }
-
-    #[test]
-    fn respawn_refuses_a_lost_pad_even_with_a_spec() {
-        let with_spec = |state| Pad {
-            state,
-            spec: true,
-            ..Pad::default()
-        };
-        assert_eq!(effect(Action::Respawn, with_spec(None)), Effect::Acts);
-        assert_eq!(
-            effect(
-                Action::Respawn,
-                with_spec(Some(SlotState::Failed { code: 1 }))
-            ),
-            Effect::Acts
-        );
-        assert_eq!(
-            effect(
-                Action::Respawn,
-                with_spec(Some(SlotState::Lost { reclaimable: false }))
-            ),
-            Effect::Skips
-        );
-        for state in ALIVE {
-            assert_eq!(
-                effect(Action::Respawn, with_spec(Some(state))),
-                Effect::Skips
-            );
-        }
-    }
-
-    /// Without a spec there is nothing to run, so a dark pad stays dark
-    /// under respawn rather than lighting and then doing nothing.
-    #[test]
-    fn respawn_needs_something_to_run() {
-        assert_eq!(effect(Action::Respawn, pad(None)), Effect::None);
-    }
-
-    /// The case the colour language cannot show any other way: rows pile
-    /// up behind a dark pad, and holding purge is how you see them.
-    #[test]
-    fn purge_lights_a_dark_pad_that_has_rows_behind_it() {
-        let hidden = Pad {
-            state: None,
-            purgeable: true,
-            ..Pad::default()
-        };
-        assert_eq!(effect(Action::Purge, hidden), Effect::Acts);
-        assert_eq!(effect(Action::Purge, pad(None)), Effect::None);
-    }
-
-    /// anchord refuses a running session with `already_exited`, so the
-    /// preview must not offer it — the press would fail, visibly, for a
-    /// reason the surface never hinted at.
-    #[test]
-    fn purge_never_offers_a_live_session() {
-        for state in ALIVE {
-            let live = Pad {
-                state: Some(state),
-                purgeable: true,
-                ..Pad::default()
-            };
-            assert_eq!(effect(Action::Purge, live), Effect::Skips, "{state:?}");
-        }
-    }
-
-    #[test]
-    fn mute_toggles_and_says_which_way() {
-        for state in ALIVE {
-            let on = Pad {
-                state: Some(state),
-                ..Pad::default()
-            };
-            assert_eq!(effect(Action::Mute, on), Effect::Acts);
-            assert_eq!(
-                effect(Action::Mute, Pad { muted: true, ..on }),
-                Effect::Unmutes
-            );
-        }
-        // A dead session cannot ring, so there is nothing to silence.
-        assert_eq!(
-            effect(Action::Mute, pad(Some(SlotState::Failed { code: 1 }))),
-            Effect::Skips
         );
     }
 
@@ -825,36 +737,6 @@ mod tests {
         );
     }
 
-    /// `Unmutes` is mute's alone. Nothing else on the surface toggles,
-    /// so nothing else may claim the variant that says which way.
-    #[test]
-    fn only_mute_ever_reports_a_toggle() {
-        let every_pad = [
-            None,
-            Some(SlotState::Working),
-            Some(SlotState::Quiet),
-            Some(SlotState::Failed { code: 1 }),
-            Some(SlotState::Lost { reclaimable: false }),
-        ];
-        for action in [Action::Kill, Action::Respawn, Action::Purge] {
-            for state in every_pad {
-                for muted in [false, true] {
-                    for spec in [false, true] {
-                        for rows in [false, true] {
-                            let p = Pad {
-                                state,
-                                muted,
-                                spec,
-                                purgeable: rows,
-                            };
-                            assert_ne!(effect(action, p), Effect::Unmutes, "{action:?} {p:?}");
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     /// Holding a modifier replaces the grid. The pad that was green is
     /// now the colour of what would happen to it.
     #[test]
@@ -882,67 +764,6 @@ mod tests {
             Cell::Off,
             "an empty pad stays dark"
         );
-    }
-
-    /// The health light and the top row are not part of the question the
-    /// preview asks, so they must not answer it.
-    #[test]
-    fn the_preview_leaves_the_top_row_and_the_logo_alone() {
-        let pages = Pages::default();
-        let sessions = [session("a", "running", Some("1:3:5"))];
-        let resting = frame(&sessions, &BTreeMap::new(), &NO_SPECS, &view(&pages));
-        let held = frame(
-            &sessions,
-            &BTreeMap::new(),
-            &NO_SPECS,
-            &View {
-                held: Some(Action::Purge),
-                ..view(&pages)
-            },
-        );
-        assert_eq!(resting.get(Button::Logo), held.get(Button::Logo));
-        for page in 1..=slot::PAGES {
-            assert_eq!(
-                resting.get(Button::Top(page)),
-                held.get(Button::Top(page)),
-                "page {page}"
-            );
-        }
-    }
-
-    /// Two buttons down lights both white and previews neither. The grid
-    /// reverts to its resting colours, which is what makes the fumble
-    /// visible rather than merely inert: you are suddenly looking at the
-    /// surface you see when nothing is held.
-    #[test]
-    fn two_pressed_buttons_light_without_a_preview() {
-        let pages = Pages::default();
-        let sessions = [session("a", "running", Some("1:3:5"))];
-        let pressed: BTreeSet<Action> = [Action::Kill, Action::Purge].into_iter().collect();
-        let f = frame(
-            &sessions,
-            &BTreeMap::new(),
-            &NO_SPECS,
-            &View {
-                can_go_back: false,
-                queued: 0,
-                held: None, // what `Chords::modifier` reports for two
-                pressed: &pressed,
-                ..view(&pages)
-            },
-        );
-        assert_eq!(
-            f.get(Button::Grid { row: 3, col: 5 }),
-            Cell::Static(GREEN),
-            "the grid is untouched"
-        );
-        for action in [Action::Kill, Action::Purge] {
-            assert_eq!(
-                f.get(action.button()),
-                Cell::Static(WHITE),
-                "{action:?} reads as held"
-            );
-        }
     }
 
     /// `purgeable` is deliberately not the set `resolve` draws.
@@ -973,6 +794,134 @@ mod tests {
         );
     }
 
+    /// A session with a directory and a command, the way anchord keeps
+    /// them — on dead rows too.
+    fn ran(id: &str, state: &str, slot: &str, command: &str, cwd: &str) -> Session {
+        let mut s = session(id, state, Some(slot));
+        s.command = Some(command.to_owned());
+        s.cwd = Some(cwd.to_owned());
+        s.login_shell = true;
+        s
+    }
+
+    /// The whole point of the column: the row already knows the folder,
+    /// so `>` needs nothing declared in advance.
+    #[test]
+    fn a_launch_inherits_the_rows_directory_and_command() {
+        let pages = Pages::default();
+        let sessions = [ran("a", "running", "1:2:1", "isayes", "/repo/bright")];
+        let drawn = resolve(&sessions, &BTreeMap::new(), &pages, 0);
+        let l = row_launch(&sessions, &pages, &drawn, 2).expect("launchable");
+        assert_eq!(l.cwd, "/repo/bright");
+        assert_eq!(l.command, "isayes");
+        assert!(l.login_shell, "as that session was");
+        assert_eq!(
+            l.at,
+            Slot {
+                page: 1,
+                row: 2,
+                col: 2
+            },
+            "leftmost free"
+        );
+    }
+
+    /// Copying `--resume <id>` would put a second pad on the same
+    /// conversation, which is the one thing a new agent must not be.
+    #[test]
+    fn a_launch_drops_the_arguments() {
+        let pages = Pages::default();
+        let sessions = [ran("a", "running", "1:1:1", "claude", "/repo")];
+        let drawn = resolve(&sessions, &BTreeMap::new(), &pages, 0);
+        let l = row_launch(&sessions, &pages, &drawn, 1).expect("launchable");
+        // `RowLaunch` has no args field at all -- there is nowhere for
+        // them to be carried, which is stronger than remembering not to.
+        assert_eq!(l.command, "claude");
+    }
+
+    /// A dead row still knows where it was.
+    #[test]
+    fn a_row_of_corpses_can_still_be_launched_into() {
+        let pages = Pages::default();
+        // Exit code 0: a *clean* exit, which frees its pad. An exited row
+        // with no code at all is anchor saying it cannot account for the
+        // ending, which is Lost, and Lost still holds the pad.
+        let mut gone = ran("a", "exited", "1:3:1", "claude", "/repo/tally");
+        gone.exit_code = Some(0);
+        let sessions = [gone];
+        let drawn = resolve(&sessions, &BTreeMap::new(), &pages, 3);
+        let l = row_launch(&sessions, &pages, &drawn, 3).expect("launchable");
+        assert_eq!(l.cwd, "/repo/tally");
+        assert_eq!(
+            l.at,
+            Slot {
+                page: 1,
+                row: 3,
+                col: 1
+            },
+            "a clean exit frees its own pad"
+        );
+    }
+
+    /// Dark when it would do nothing: nothing to inherit, or nowhere to
+    /// put it.
+    #[test]
+    fn an_empty_row_and_a_full_row_both_launch_nothing() {
+        let pages = Pages::default();
+        let drawn = BTreeMap::new();
+        assert_eq!(row_launch(&[], &pages, &drawn, 1), None, "never used");
+
+        let full: Vec<Session> = (1..=8)
+            .map(|col| ran("s", "running", &format!("1:4:{col}"), "claude", "/repo"))
+            .collect();
+        let drawn = resolve(&full, &BTreeMap::new(), &pages, 0);
+        assert_eq!(row_launch(&full, &pages, &drawn, 4), None, "no free column");
+    }
+
+    /// anchord lists newest first, and the newest is the one whose
+    /// directory you meant.
+    #[test]
+    fn a_launch_inherits_from_the_newest_session_in_the_row() {
+        let pages = Pages::default();
+        let sessions = [
+            ran("new", "running", "1:5:1", "claude", "/repo/new"),
+            ran("old", "exited", "1:5:2", "isayes", "/repo/old"),
+        ];
+        let drawn = resolve(&sessions, &BTreeMap::new(), &pages, 0);
+        let l = row_launch(&sessions, &pages, &drawn, 5).expect("launchable");
+        assert_eq!(l.cwd, "/repo/new");
+        assert_eq!(l.command, "claude");
+    }
+
+    /// A row with sessions but no recorded directory has nothing to
+    /// inherit, and a lit button would be a promise it cannot keep.
+    #[test]
+    fn a_row_with_no_directory_launches_nothing() {
+        let pages = Pages::default();
+        let sessions = [session("a", "running", Some("1:6:1"))];
+        let drawn = resolve(&sessions, &BTreeMap::new(), &pages, 0);
+        assert_eq!(row_launch(&sessions, &pages, &drawn, 6), None);
+    }
+
+    /// `>` is beside a *grid* row, so it follows the window.
+    #[test]
+    fn the_launch_column_follows_the_scroll() {
+        let pages = Pages::default();
+        // Page 2 row 1 is absolute row 9.
+        let sessions = [ran("a", "running", "2:1:1", "claude", "/repo/far")];
+        let drawn = resolve(&sessions, &BTreeMap::new(), &pages, 0);
+        assert_eq!(row_launch(&sessions, &pages, &drawn, 1), None, "not row 1");
+        let l = row_launch(&sessions, &pages, &drawn, 9).expect("row 9");
+        assert_eq!(
+            l.at,
+            Slot {
+                page: 2,
+                row: 1,
+                col: 2
+            }
+        );
+    }
+
     #[test]
     fn a_malformed_slot_is_ignored_not_clamped() {
         let pages = Pages::default();
@@ -980,9 +929,11 @@ mod tests {
             let sessions = [session("x", "running", Some(bad))];
             let f = frame(&sessions, &BTreeMap::new(), &NO_SPECS, &view(&pages));
             let lit = Button::all().filter(|&b| f.get(b) != Cell::Off).count();
-            // Only the controls: the current page button, plus the four
-            // action buttons that carry a gesture. `CC49`-`CC79` are dark.
-            assert_eq!(lit, 5, "{bad:?} lit a pad");
+            // Only the controls, and there are two: `▼` (there is somewhere
+            // to scroll) and `CC19` (kill, blue at rest). Every `>` is dark
+            // because an unparseable label puts nothing in any row, and the
+            // rest of the top row has nowhere to go and nothing to offer.
+            assert_eq!(lit, 2, "{bad:?} lit a pad");
         }
     }
 

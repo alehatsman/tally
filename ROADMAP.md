@@ -459,6 +459,59 @@ Exit:
 
 ---
 
+## M10 — The right column launches
+
+A day of use said the column was one button doing work, one that could
+not, and two nobody wanted:
+
+```text
+jump 341 · scroll 24 · next 4 · back 4 · kill 4 · respawn 0 · purge 0 · mute 0
+```
+
+**Respawn was unreachable, not unused.** It needs a resolvable spec and
+there is no `slots.toml` on this machine — `tallyd` loads *8 pages, 0
+slots* — so the preview could never light it. The same emptiness makes
+tap-a-dark-pad inert.
+
+The fact that changes the menu: **the grid knows the directory now.**
+anchord keeps `cwd` and `command` on every row, dead ones included, so the
+reason spawning lived in a shell stops being true for any row that has ever
+held a session ([docs/18](docs/18-the-launch-column.md)).
+
+Scope: `>` ×7 spawns into its row, inheriting the directory and command of
+that row's newest session and **dropping its arguments**. Kill keeps `CC19`
+and becomes the only modifier. Purge and mute move to `tally purge` and
+`tally mute`.
+
+Exit:
+- ⬜ a column of seven dim buttons beside the rows reads as *launch here*
+  and not as decoration
+- ⬜ the row-8 rule is learnable, or is a daily irritation
+- ⬜ a week in which `>` is used at all — if the shell still wins, the
+  column has again been given work it does not want
+
+> **Arguments are dropped on purpose.** A row running
+> `claude --resume d37ee7e5…` describes one conversation; copying that
+> would put a second pad on the same conversation, which is the one thing
+> a new agent must not be. Keeping `command` keeps the choice that matters
+> — a row running `isayes` gets another `isayes`.
+
+> **Row 8 is shell-only, by rule.** Eight buttons, eight rows, and one must
+> be the kill modifier. Moving kill means moving the one button that is
+> 8 mm from the wrong pad, with four presses of muscle memory in the corner
+> the silkscreen labels *Stop*. A grid where one row behaves differently is
+> a grid you remember rather than feel — affordable only because the window
+> scrolls, so row 8 is one `▼` from being row 7.
+
+> **Purge and mute had to keep existing.** `anchor` has no `purge`
+> subcommand (anchor#14), so deleting the gesture without replacing it
+> would leave rows accumulating with no remedy anywhere. And mute is the
+> starvation hatch for `►` and now the tempo: zero presses in a day is not
+> an argument that it is unneeded, it is an argument that the signal has
+> not lied yet.
+
+---
+
 ## Later, unscheduled
 
 - ~~the `settings.json` line for the `Notification` hook~~ — **M6**. It was
@@ -482,6 +535,7 @@ M6  the amber exists  ← M1's risk, answered: the signal was absent
 M7  where views live  ← a view is a pane; #1 #2 #3
 M8  the top row queue ← 61% of the time there is no *the* amber pad
 M9  the tempo         ← p50 187s, p90 1076s, and the pad looks the same
+M10 the launch column ← the row already knows the folder
 ```
 
 M6 is out of order on purpose. It is M1's work, and it is here rather than

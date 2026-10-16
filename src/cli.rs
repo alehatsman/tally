@@ -17,6 +17,8 @@ pub const DEFAULT_COMMAND: &str = "claude";
 /// The one-screen help, printed for `help` and for every usage error.
 pub const USAGE: &str = "\
 usage: tally spawn [--detach] <row:col | page:row:col> [-- command [args...]]
+       tally purge     <row:col | page:row:col>
+       tally mute      <row:col | page:row:col> [--off]
        tally attention <on | off>
 
 spawn   Claim a pad for a session started in the current directory, and
@@ -59,6 +61,19 @@ pub enum Request {
     /// because there is nobody to type one: the only caller is a hook
     /// inside the session it is talking about (`docs/14-attention.md`).
     Attention(bool),
+    /// `tally purge <addr>` — forget every ended row behind a pad.
+    ///
+    /// It has an address because the caller is you, not a hook, and
+    /// because `anchor` has no `purge` subcommand to defer to
+    /// (anchor#14). Moved here from the grid when the right column became
+    /// launchers (`docs/18-the-launch-column.md`).
+    Purge(Slot),
+    /// `tally mute <addr> [--off]` — stop a slot raising attention.
+    ///
+    /// Rare enough to live in a shell, and necessary enough not to delete:
+    /// it is the starvation hatch for `►` and for the tempo
+    /// (`docs/16-the-queue.md`, `docs/17-the-tempo.md`).
+    Mute(Slot, bool),
 }
 
 /// A validated `tally spawn`: a real address and a non-empty command.
@@ -115,6 +130,8 @@ pub fn parse(args: impl IntoIterator<Item = String>, pages: &Pages) -> Result<Re
         "help" | "-h" | "--help" => Ok(Request::Help),
         "spawn" => claim(args, pages).map(Request::Spawn),
         "attention" => attention(args).map(Request::Attention),
+        "purge" => one_address(args, pages).map(Request::Purge),
+        "mute" => mute(args, pages),
         other => Err(Error::Usage(format!("unknown subcommand {other:?}"))),
     }
 }
@@ -142,6 +159,39 @@ fn attention(mut args: impl Iterator<Item = String>) -> Result<bool, Error> {
         return Err(Error::Usage(format!("unexpected {extra:?}")));
     }
     Ok(on)
+}
+
+/// An address and nothing else.
+fn one_address(mut args: impl Iterator<Item = String>, pages: &Pages) -> Result<Slot, Error> {
+    let Some(text) = args.next() else {
+        return Err(Error::Usage("an address is required".to_owned()));
+    };
+    let at = address(&text, pages)?;
+    if let Some(extra) = args.next() {
+        return Err(Error::Usage(format!("unexpected {extra:?}")));
+    }
+    Ok(at)
+}
+
+/// `mute <addr> [--off]`.
+///
+/// A flag rather than a toggle, because a shell cannot see the pad. The
+/// grid's gesture toggled because you were looking at the colour; from a
+/// script you have to say which way you meant it.
+fn mute(mut args: impl Iterator<Item = String>, pages: &Pages) -> Result<Request, Error> {
+    let Some(text) = args.next() else {
+        return Err(Error::Usage("mute needs an address".to_owned()));
+    };
+    let at = address(&text, pages)?;
+    let on = match args.next().as_deref() {
+        None => true,
+        Some("--off") => false,
+        Some(other) => return Err(Error::Usage(format!("unexpected {other:?}"))),
+    };
+    if let Some(extra) = args.next() {
+        return Err(Error::Usage(format!("unexpected {extra:?}")));
+    }
+    Ok(Request::Mute(at, on))
 }
 
 fn claim(args: impl Iterator<Item = String>, pages: &Pages) -> Result<Claim, Error> {
@@ -332,6 +382,44 @@ mod tests {
             spawn(&["spawn", "--detach"], &named()),
             Err(Error::Usage(_))
         ));
+    }
+
+    fn one(args: &[&str]) -> Result<Request, Error> {
+        parse(args.iter().map(|s| (*s).to_owned()), &named())
+    }
+
+    /// Both moved off the grid when the right column became launchers,
+    /// and both had to keep existing: `anchor` has no purge of its own,
+    /// and mute is the starvation hatch for `►` and the tempo.
+    #[test]
+    fn purge_and_mute_take_an_address() {
+        let at = Slot {
+            page: 2,
+            row: 3,
+            col: 4,
+        };
+        assert_eq!(one(&["purge", "infra:3:4"]), Ok(Request::Purge(at)));
+        assert_eq!(one(&["mute", "infra:3:4"]), Ok(Request::Mute(at, true)));
+        assert_eq!(
+            one(&["mute", "infra:3:4", "--off"]),
+            Ok(Request::Mute(at, false))
+        );
+    }
+
+    /// A shell cannot see the pad, so mute says which way it meant rather
+    /// than toggling blind.
+    #[test]
+    fn purge_and_mute_refuse_what_they_cannot_act_on() {
+        for args in [
+            &["purge"][..],
+            &["purge", "1:1", "extra"],
+            &["purge", "nope:1:1"],
+            &["mute"],
+            &["mute", "1:1", "--on"],
+            &["mute", "1:1", "--off", "extra"],
+        ] {
+            assert!(one(args).is_err(), "{args:?} was accepted");
+        }
     }
 
     #[test]

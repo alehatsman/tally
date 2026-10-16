@@ -33,8 +33,17 @@ file.
 
 ```text
 tally spawn     [--detach] <row:col | page:row:col> [-- command [args…]]
+tally purge     <row:col | page:row:col>
+tally mute      <row:col | page:row:col> [--off]
 tally attention <on | off>
 ```
+
+`purge` and `mute` are here because the grid gave them up
+([18](18-the-launch-column.md)), and they could not simply be deleted:
+`anchor` has no `purge` subcommand to defer to (anchor#14), and mute is
+the starvation hatch for `►` and the tempo ([16](16-the-queue.md),
+[17](17-the-tempo.md)). **`mute` takes a flag rather than toggling**: a
+shell cannot see the pad, so it says which way it meant.
 
 ```sh
 $ cd ~/projects/futurumlab/anchor

@@ -24,13 +24,13 @@ use crate::surface::Button;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Action {
     /// `CC19` — end the session in this slot.
+    ///
+    /// **The only modifier left.** Respawn was unreachable without a
+    /// `slots.toml`, and purge and mute moved to the shell when the column
+    /// became launchers (`docs/18-the-launch-column.md`). Being the only
+    /// one makes it easier to find rather than harder, and it keeps the
+    /// corner the silkscreen labels *Stop*.
     Kill,
-    /// `CC29` — run its spec again.
-    Respawn,
-    /// `CC39` — make anchord forget it.
-    Purge,
-    /// `CC89` — toggle `tl.mute`.
-    Mute,
 }
 
 impl Action {
@@ -41,9 +41,9 @@ impl Action {
     pub fn of(button: Button) -> Option<Self> {
         match button {
             Button::Action(8) => Some(Self::Kill),
-            Button::Action(7) => Some(Self::Respawn),
-            Button::Action(6) => Some(Self::Purge),
-            Button::Action(1) => Some(Self::Mute),
+            // `Action(1)`-`Action(7)` are `>`, and they are **taps**, not
+            // modifiers: they destroy nothing, so there is nothing for a
+            // hold to protect (`docs/18-the-launch-column.md`).
             _ => None,
         }
     }
@@ -52,15 +52,12 @@ impl Action {
     pub fn button(self) -> Button {
         match self {
             Self::Kill => Button::Action(8),
-            Self::Respawn => Button::Action(7),
-            Self::Purge => Button::Action(6),
-            Self::Mute => Button::Action(1),
         }
     }
 
-    /// Every action, in top-row-to-bottom order.
-    pub fn all() -> [Self; 4] {
-        [Self::Mute, Self::Purge, Self::Respawn, Self::Kill]
+    /// Every action, in top-to-bottom order.
+    pub fn all() -> [Self; 1] {
+        [Self::Kill]
     }
 }
 
@@ -98,6 +95,11 @@ pub enum Gesture {
     Next,
     /// Scroll back to row 1 (`⌂`, the `Session` button).
     Home,
+    /// `>` beside a grid row: spawn into it (`docs/18-the-launch-column.md`).
+    Launch {
+        /// Grid row 1-7, 1 is the top. There is no `>` beside row 8.
+        row: u8,
+    },
 }
 
 /// What a top-row button does.
@@ -170,6 +172,12 @@ impl Chords {
             // Switching page under a held modifier is allowed, and useful:
             // it is how you kill something that is not on the grid.
             Button::Top(n) => top(n),
+            // `>` fires on press-down like everything else here. It is a
+            // tap and not a chord, so a held modifier owns the surface and
+            // suppresses it: you are mid-kill, not mid-launch.
+            Button::Action(row) if row <= 7 => {
+                self.held.is_empty().then_some(Gesture::Launch { row })
+            }
             Button::Action(_) | Button::Logo => None,
         }
     }
@@ -297,10 +305,8 @@ mod tests {
     #[test]
     fn letting_go_without_tapping_does_nothing() {
         let mut c = Chords::default();
-        for button in [KILL, RESPAWN, PURGE, MUTE] {
-            assert_eq!(c.feed(button, true), None);
-            assert_eq!(c.feed(button, false), None);
-        }
+        assert_eq!(c.feed(KILL, true), None);
+        assert_eq!(c.feed(KILL, false), None);
         assert_eq!(c.modifier(), None);
     }
 
@@ -320,38 +326,6 @@ mod tests {
             );
             assert_eq!(c.feed(Button::Grid { row: 1, col }, false), None);
         }
-    }
-
-    /// A fumble must not be destructive. Two modifiers down fires nothing
-    /// — and the preview, which reads the same `modifier()`, shows no
-    /// targets, so the dead zone is visible before you press.
-    #[test]
-    fn two_modifiers_down_fires_nothing() {
-        let mut c = Chords::default();
-        let _k = c.feed(KILL, true);
-        let _p = c.feed(PURGE, true);
-        assert_eq!(c.modifier(), None);
-        assert_eq!(c.feed(PAD, true), None);
-        assert!(c.is_held(Action::Kill) && c.is_held(Action::Purge));
-    }
-
-    /// Letting go of one of two leaves the other in effect, rather than
-    /// leaving the surface inert until both are released.
-    #[test]
-    fn releasing_one_of_two_restores_the_other() {
-        let mut c = Chords::default();
-        let _k = c.feed(KILL, true);
-        let _p = c.feed(PURGE, true);
-        let _r = c.feed(PURGE, false);
-        assert_eq!(c.modifier(), Some(Action::Kill));
-        assert_eq!(
-            c.feed(PAD, true),
-            Some(Gesture::Chord {
-                action: Action::Kill,
-                row: 3,
-                col: 5
-            })
-        );
     }
 
     /// The hardware sends exactly one release per press (M0), but a

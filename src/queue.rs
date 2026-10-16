@@ -143,6 +143,9 @@ mod tests {
             labels,
             output_bytes: 0,
             pid: None,
+            cwd: None,
+            command: None,
+            login_shell: false,
         }
     }
 

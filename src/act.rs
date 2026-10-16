@@ -95,19 +95,13 @@ impl Context<'_> {
     ///
     /// # Errors
     /// Whatever anchord returned. A refusal is reported, not retried.
-    pub fn chord(&self, action: Action, at: Slot, pages: &Pages) -> Result<Done, anchor::Error> {
+    pub fn chord(&self, action: Action, at: Slot) -> Result<Done, anchor::Error> {
         let what = effect(action, self.pads.at(at));
         if matches!(what, Effect::None | Effect::Skips) {
             return Ok(Done::Nothing);
         }
         match action {
             Action::Kill => self.kill(at),
-            Action::Respawn => match self.pads.launch(at) {
-                Some(launch) => self.spawn(launch, at, pages),
-                None => Ok(Done::Nothing),
-            },
-            Action::Purge => self.purge(at),
-            Action::Mute => self.mute(at, what == Effect::Acts),
         }
     }
 
@@ -161,43 +155,6 @@ impl Context<'_> {
             return Err(e);
         }
         Ok(Done::Killed(r.session.clone()))
-    }
-
-    /// Forget every purgeable row on this pad, not just the drawn one.
-    ///
-    /// A pad with eight clean exits behind it is one gesture to clear,
-    /// because eight presses that each look like nothing happening is not
-    /// a gesture anybody would complete.
-    fn purge(&self, at: Slot) -> Result<Done, anchor::Error> {
-        let mut gone = 0;
-        for id in self.pads.rows(at) {
-            match self.client.purge(id) {
-                Ok(()) => gone += 1,
-                // Someone else forgot it between the `list` and the
-                // press. That is the outcome we wanted.
-                Err(anchor::Error::Refused { ref code, .. }) if code == "not_found" => {}
-                // Stop on anything else: if anchord is refusing or gone,
-                // the remaining ids will fail the same way, and a burst
-                // of identical errors in the log buries the first one.
-                Err(e) => return Err(e),
-            }
-        }
-        Ok(Done::Purged(gone))
-    }
-
-    fn mute(&self, at: Slot, on: bool) -> Result<Done, anchor::Error> {
-        let Some(r) = self.pads.grid().get(&at) else {
-            return Ok(Done::Nothing);
-        };
-        let mut set = BTreeMap::new();
-        let remove: &[&str] = if on {
-            let _mute = set.insert(anchor::LABEL_MUTE.to_owned(), "1".to_owned());
-            &[]
-        } else {
-            &[anchor::LABEL_MUTE]
-        };
-        self.client.label(&r.session, &set, remove)?;
-        Ok(Done::Muted(on))
     }
 }
 
@@ -292,14 +249,10 @@ spec = "claude"
         );
         let (client, config, purge) = (nowhere(), Config::default(), BTreeMap::new());
         let ctx = context(&client, &config, &grid, &purge);
-        for action in [Action::Kill, Action::Mute, Action::Respawn] {
-            assert_eq!(
-                ctx.chord(action, at(2, 2), &Pages::default())
-                    .expect("no call"),
-                Done::Nothing,
-                "{action:?}"
-            );
-        }
+        assert_eq!(
+            ctx.chord(Action::Kill, at(2, 2)).expect("no call"),
+            Done::Nothing
+        );
     }
 
     /// `tl.spec` is the fallback, so a session spawned from a shell stays
@@ -339,8 +292,13 @@ spec = "claude"
     /// Asserted as the two halves agreeing rather than as one expected
     /// colour: what matters is that the pixel and the press tell the same
     /// story, whichever story that is.
+    ///
+    /// Originally written against the respawn chord, which is gone
+    /// (`docs/18-the-launch-column.md`). The invariant it guards is not:
+    /// the pixel and the press ask the same function, and a pad the
+    /// preview dims is a pad the press leaves alone.
     #[test]
-    fn a_spec_label_that_resolves_to_nothing_neither_lights_nor_spawns() {
+    fn the_preview_and_the_press_agree_about_a_dead_pad() {
         let config = Config::parse(CONFIG).expect("valid");
         let mut grid = BTreeMap::new();
         // Nothing in `slots.toml` names `ghost`: the `[[spec]]` it was
@@ -366,19 +324,19 @@ spec = "claude"
                 now: 0,
                 can_go_back: false,
                 queued: 0,
-                held: Some(Action::Respawn),
+                launchable: &BTreeSet::new(),
+                held: Some(Action::Kill),
                 pressed: &pressed,
             },
         );
 
         assert_eq!(
             frame.get(Button::Grid { row: 5, col: 5 }),
-            render::preview(Action::Respawn, Effect::Skips),
-            "a spec that does not resolve must not read as a respawn"
+            render::preview(Action::Kill, Effect::Skips),
+            "a pad that already ended is not a kill target"
         );
         assert_eq!(
-            ctx.chord(Action::Respawn, at(5, 5), &pages)
-                .expect("no call"),
+            ctx.chord(Action::Kill, at(5, 5)).expect("no call"),
             Done::Nothing,
             "and the press must agree with the pixel"
         );
@@ -404,35 +362,6 @@ spec = "claude"
         assert_eq!(
             ctx.pads.launch(at(1, 1)).map(|l| l.spec.as_str()),
             Some("claude")
-        );
-    }
-
-    /// A dark pad with rows behind it is a purge target, and the pad the
-    /// context builds has to say so or the preview will not light it.
-    #[test]
-    fn a_dark_pad_with_hidden_exits_is_purgeable() {
-        let mut purge = BTreeMap::new();
-        let _p = purge.insert(at(3, 3), vec!["01A".to_owned(), "01B".to_owned()]);
-        let (client, config, grid) = (nowhere(), Config::default(), BTreeMap::new());
-        let ctx = context(&client, &config, &grid, &purge);
-        let pad = ctx.pads.at(at(3, 3));
-        assert!(pad.purgeable && pad.state.is_none());
-        assert_eq!(effect(Action::Purge, pad), Effect::Acts);
-    }
-
-    #[test]
-    fn a_pad_with_nothing_behind_it_is_not_a_purge_target() {
-        let (client, config, grid, purge) = (
-            nowhere(),
-            Config::default(),
-            BTreeMap::new(),
-            BTreeMap::new(),
-        );
-        let ctx = context(&client, &config, &grid, &purge);
-        assert_eq!(
-            ctx.chord(Action::Purge, at(3, 3), &Pages::default())
-                .expect("no call"),
-            Done::Nothing
         );
     }
 
