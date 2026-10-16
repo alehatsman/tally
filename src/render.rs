@@ -153,10 +153,6 @@ pub fn preview(action: Action, effect: Effect) -> Cell {
     match effect {
         Effect::None => Cell::Off,
         Effect::Skips => Cell::Static(DARK_GREY),
-        // Kept for the shape rather than the case: there is one action
-        // now, and `Unmutes` was the toggle half of a gesture that moved
-        // to the shell (`docs/18-the-launch-column.md`).
-        Effect::Unmutes => Cell::Static(WHITE),
         // The colour of the **consequence**, not of the button: kill reds
         // the pads that are about to be red.
         Effect::Acts => Cell::Static(match action {
@@ -407,7 +403,7 @@ mod tests {
         assert_eq!(arrow(true), Cell::Static(DARK_GREY));
     }
 
-    const EFFECTS: [Effect; 4] = [Effect::Acts, Effect::Unmutes, Effect::Skips, Effect::None];
+    const EFFECTS: [Effect; 3] = [Effect::Acts, Effect::Skips, Effect::None];
 
     /// The one reservation the whole design rests on. A preview that
     /// borrowed amber would put a second amber thing on a surface whose

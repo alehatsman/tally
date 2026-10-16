@@ -114,15 +114,24 @@ The deferral was worth it. Had this been built in M1 it would have been a
 wrapper around guesses; built after M3 shipped and went unused, it was built
 around a measured gap.
 
-### Whether respawn should stop asking `slots.toml`
+### ~~Whether respawn should stop asking `slots.toml`~~ — settled, and not the way it reads
 
-Respawn looks up what to run in the config (`src/act.rs:85`), so every pad
-claimed with `tally spawn` has a dead respawn button —
-[11-cli.md](11-cli.md) makes that the common case rather than the rare one.
-anchor already records a dead session's `command`, `args`, `cwd` and
-`login_shell`, so respawn could re-create from the row it is standing on
-and work everywhere. That changes what the held preview promises, so it
-waits for a week of use to say whether the button is missed at all.
+The diagnosis was right and the proposed fix was aimed at the wrong
+button. A week of use was asked for; a **day** answered it — respawn was
+pressed zero times, and could not have been: with no `slots.toml` on the
+machine it was not merely dead on CLI-claimed pads, it was unreachable
+everywhere.
+
+The record anchor keeps — `command`, `cwd`, `login_shell` — did turn out
+to be the answer, and it went to `>` rather than to respawn
+([18](18-the-launch-column.md)). `>` spawns into a **row**, inheriting
+that row's directory, and **drops the arguments** on purpose: copying
+`--resume <id>` would put a second pad on the same conversation, which is
+the one thing a new agent must not be. Respawn's *put the old one back*
+was not rescued, because it is `tally spawn <addr> -- claude --resume
+<id>` — exact, visible, and already working.
+
+Respawn's button is now a launcher, and so are five others.
 
 ### Multiple devices, multiple machines
 

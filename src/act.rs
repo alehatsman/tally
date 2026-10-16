@@ -33,10 +33,6 @@ pub enum Done {
     Spawned(String),
     /// A session ended.
     Killed(String),
-    /// Forgotten, and how many rows went with it.
-    Purged(usize),
-    /// `tl.mute` set (`true`) or cleared.
-    Muted(bool),
     /// The gesture did not apply here. The preview said so first.
     Nothing,
 }
@@ -46,9 +42,6 @@ impl std::fmt::Display for Done {
         match self {
             Self::Spawned(id) => write!(f, "spawned {id}"),
             Self::Killed(id) => write!(f, "killed {id}"),
-            Self::Purged(n) => write!(f, "purged {n}"),
-            Self::Muted(true) => write!(f, "muted"),
-            Self::Muted(false) => write!(f, "unmuted"),
             Self::Nothing => write!(f, "nothing to do"),
         }
     }
@@ -367,9 +360,6 @@ spec = "claude"
 
     #[test]
     fn done_says_what_happened() {
-        assert_eq!(Done::Muted(true).to_string(), "muted");
-        assert_eq!(Done::Muted(false).to_string(), "unmuted");
-        assert_eq!(Done::Purged(3).to_string(), "purged 3");
         assert_eq!(Done::Spawned("01J".to_owned()).to_string(), "spawned 01J");
     }
 }

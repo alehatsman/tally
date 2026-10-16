@@ -210,7 +210,7 @@ absent.
 | any non-whitespace output | a pending **bell** — it answered, or it started talking again |
 | `UserPromptSubmit` / `PreToolUse` hook | a **declared** attention — see [below](#4-a-hook--it-told-us) |
 | the session exits | both: terminal states outrank attention ([precedence](#precedence)) |
-| the mute chord ([05](05-interaction.md#gestures)) | neither — mute suppresses the *rendering*, leaving the state underneath |
+| `tally mute` ([11](11-cli.md)) | neither — mute suppresses the *rendering*, leaving the state underneath |
 
 Notably **jumping to a slot does not clear it.** Looking at a window is not
 answering the question in it, and a pad that goes quiet because your eyes

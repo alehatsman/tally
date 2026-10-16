@@ -13,7 +13,7 @@ full surface we use:
 | `create` with `tl.slot` / `tl.spec` labels | spawn a slot |
 | `attach` with `control:false` | derive signals ([04](04-signals.md)) |
 | `terminate` | the kill chord |
-| `purge` | the purge chord |
+| `purge` | `tally purge` ([11](11-cli.md)) |
 | `label` | rebind a slot, mute, clear declared attention |
 
 That is six of nine ops. We never `resize` (the view window owns the size),

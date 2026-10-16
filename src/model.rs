@@ -184,8 +184,6 @@ pub fn purgeable(sessions: &[Session], pages: &Pages) -> BTreeMap<Slot, Vec<Stri
 pub enum Effect {
     /// It will act on this pad.
     Acts,
-    /// Mute only: `tl.mute` is set and the tap would clear it.
-    Unmutes,
     /// Something is here and this gesture does not apply to it. Dim.
     Skips,
     /// Nothing here for this gesture. Dark.
@@ -214,22 +212,6 @@ pub struct Pad {
 }
 
 impl Pad {
-    /// Is this pad free to claim?
-    ///
-    /// Dark, failed, or held only by a row anchord lost to its own
-    /// restart. **One predicate, three readers** — the respawn preview,
-    /// the respawn press, and `tally spawn` from a shell. They did not
-    /// always share one, and a grid that disagrees with the CLI about
-    /// what a pad is, is a grid that lies about what pressing it does
-    /// (`docs/11-cli.md`).
-    #[must_use]
-    pub fn reclaimable(&self) -> bool {
-        matches!(
-            self.state,
-            None | Some(SlotState::Failed { .. } | SlotState::Lost { reclaimable: true })
-        )
-    }
-
     /// Alive: working, quiet, or asking. The three states a kill ends and
     /// a mute is about.
     fn alive(self) -> bool {

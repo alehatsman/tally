@@ -80,6 +80,25 @@ pub enum SlotState {
     },
 }
 
+impl SlotState {
+    /// Is this pad free for something new?
+    ///
+    /// Dark, failed, or held only by a row anchord lost to its own
+    /// restart. **One predicate, and it lives on the state rather than on
+    /// a pad** because the two things that ask are a grid and a shell, and
+    /// only one of them has a [`crate::model::Pad`] to ask with. They did
+    /// not share one before, and a grid that disagrees with the CLI about
+    /// what a pad is, is a grid that lies about what pressing it does
+    /// ([#9](https://github.com/alehatsman/tally/issues/9)).
+    #[must_use]
+    pub fn frees_the_pad(self) -> bool {
+        matches!(
+            self,
+            Self::Empty | Self::Failed { .. } | Self::Lost { reclaimable: true }
+        )
+    }
+}
+
 /// anchor's view of a session's lifecycle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionState {
@@ -447,6 +466,23 @@ mod tests {
             slot_state(Some(s), T0),
             SlotState::Lost { reclaimable: false }
         );
+    }
+
+    /// The predicate a grid and a shell both ask. They did not share one
+    /// before, which is how a grid starts lying about what pressing it
+    /// does.
+    #[test]
+    fn a_pad_is_free_when_nothing_live_holds_it() {
+        assert!(SlotState::Empty.frees_the_pad());
+        assert!(SlotState::Failed { code: 1 }.frees_the_pad());
+        assert!(SlotState::Lost { reclaimable: true }.frees_the_pad());
+        assert!(!SlotState::Lost { reclaimable: false }.frees_the_pad());
+        assert!(!SlotState::Working.frees_the_pad());
+        assert!(!SlotState::Quiet.frees_the_pad());
+        assert!(!SlotState::NeedsAnswer {
+            source: Source::Declared
+        }
+        .frees_the_pad());
     }
 
     /// `lost` usually means *anchor cannot account for this*, which

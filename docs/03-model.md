@@ -64,7 +64,7 @@ it does not show what is possible.
 
 ```text
 tl.slot       = "work:3:5"  page, row, col — the binding
-tl.spec       = "claude"    which spec spawned it, for respawn
+tl.spec       = "claude"    which spec spawned it
 tl.mute       = "1"         this slot never raises attention
 tl.attention  = "1"         a hook declared it is waiting
 tl.killed     = "1"         tally ended it on purpose, so the pad is dark
@@ -165,15 +165,18 @@ is three lines and all three are places to be wrong:
 | `env = { … }` | `env` | passed through; anchor never echoes it back ([04-protocol](../../anchor/docs/04-protocol.md)) |
 
 Labels go with it: `tl.slot` is the address being claimed and `tl.spec` is
-the spec's name, so a respawn can find what to run again without the slot
-table. An empty `argv` is a config error, not a spawn of the empty string.
+the spec's name. An empty `argv` is a config error, not a spawn of the
+empty string.
 
 `tl.spec` is a **name, resolved against the file you have now** — it is not
-a copy of the spec. Rename or delete the `[[spec]]` and every dead session
-that carries the old name stops being respawnable, which is the only
-answer available: there is nothing left to run. The pad says so under a
-held respawn rather than lighting and then refusing
-([05](05-interaction.md#the-held-preview)).
+a copy of the spec. Rename or delete the `[[spec]]` and the name points at
+nothing, which is the only answer available: there is nothing left to run.
+
+⚠️ **This used to be about the respawn chord**, which is gone
+([18](18-the-launch-column.md)). `tl.spec` is now read by one thing only —
+a tap on a dark pad — and on a machine with no `slots.toml` nothing writes
+it at all. The *rule* stands because it is about what a name means, not
+about which gesture asked.
 
 **Size is not ours.** `create` takes `cols`/`rows` and we send anchor's
 defaults, because `anchor attach` resizes the session to the terminal it is
@@ -289,7 +292,8 @@ claiming the same address, and newest-wins renders the new one.
 Over a week of pressing one pad that is a pile of exited rows on one slot.
 This is anchor's model working as designed, not a leak: rows live until
 somebody asks for them to be gone, because an exited session is still worth
-`anchor logs`. The purge chord is how you ask. tally does **not** purge on
+`anchor logs`. `tally purge` ([11](11-cli.md)) is how you ask. tally does
+**not** purge on
 spawn — that would delete the log of the run you just finished, to tidy a
 list you were not looking at.
 

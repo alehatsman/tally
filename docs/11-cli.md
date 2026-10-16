@@ -141,8 +141,9 @@ id is the only way to end it.
   `[[spec]]` declares would be a label that lies, and worse, a respawn that
   found a spec would spawn in the **spec's** cwd rather than the folder you
   spawned from — the exact bug this document exists to fix.
-  **Consequence: the respawn chord does nothing on a pad claimed this way.**
-  Kill, purge and mute all work. See the open question below.
+  **This used to mean the respawn chord did nothing on a pad claimed this
+  way.** There is no respawn chord now, and `tl.spec` is read only by a
+  tap on a dark pad ([18](18-the-launch-column.md)).
 - **No pad-picking.** It will not find you a free slot. The address is how
   you build muscle memory, and a grid that assigns addresses is one you look
   up rather than know.
@@ -199,16 +200,12 @@ reaches anchord reports what anchord said.
 | anchord unreachable | refused — a surface that cannot see is not a surface that spawns |
 | `--` with nothing after it | refused; an empty argv is a config error, not a spawn of the empty string |
 
-## Open question — respawn on a shell-spawned pad
+## ~~Open question — respawn on a shell-spawned pad~~ — settled
 
-Respawn needs to know what to run again, and today it asks `slots.toml`
-(`src/act.rs:85`). Every pad claimed from the CLI therefore has a dead
-respawn button, and this document makes that the *common* case rather than
-the rare one.
+Respawn is gone. It asked `slots.toml`, there is no `slots.toml`, and a
+day of use recorded zero presses because the preview could never light it
+([18](18-the-launch-column.md)).
 
-The fix is probably to stop asking the config: **anchor already records a
-dead session's `command`, `args`, `cwd` and `login_shell`**, so respawn
-could re-create from the row it is standing on and work everywhere,
-`slots.toml` or not. That is a change to `effect`'s `pad.spec` predicate
-(`src/model.rs:204`) and to what the held preview promises, so it is not
-folded in here.
+The record anchor keeps is still the answer, and it went to `>`: the right
+column spawns into a **row**, inheriting that row's directory and command.
+What a shell-claimed pad loses is nothing it had.
