@@ -44,9 +44,16 @@ pub enum SlotState {
     /// it finished its turn and is sitting at a prompt, which is why this
     /// is green rather than something that looks finished.
     Quiet,
-    NeedsAnswer { source: Source },
+    /// It rang and went silent, or a hook said so outright.
+    NeedsAnswer {
+        /// Scraped from the stream, or declared by a hook.
+        source: Source,
+    },
     /// Exited non-zero. Stays visible because you need to go and look.
-    Failed { code: i32 },
+    Failed {
+        /// The exit status anchor recorded.
+        code: i32,
+    },
     /// anchor cannot say how this ended. `EXITED` means the daemon can
     /// account for it, `LOST` means it cannot (`anchor/docs/02-model.md`):
     /// either the PTY died with the daemon, or a kill was never observed
@@ -62,11 +69,14 @@ pub enum SlotState {
 /// anchor's view of a session's lifecycle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionState {
+    /// Alive, with a live PTY.
     Running,
     /// Termination requested; the child has not been reaped yet. Still
     /// **alive**, and it has no exit code to render.
     Closing,
+    /// The child is gone and anchor can say how it ended.
     Exited,
+    /// anchor cannot account for how it ended.
     Lost,
 }
 
@@ -103,7 +113,7 @@ impl Derived {
             Some(i) => {
                 self.last_bell_ms = Some(now);
                 self.bell_pending = true;
-                &bytes[i + 1..]
+                bytes.get(i + 1..).unwrap_or_default()
             }
             None => bytes,
         };
@@ -131,7 +141,9 @@ impl Derived {
 /// Everything about a session that the state decision needs.
 #[derive(Debug, Clone, Copy)]
 pub struct Session<'a> {
+    /// Where anchor says this session is in its lifecycle.
     pub state: SessionState,
+    /// Set once the session reaches a terminal state anchor can account for.
     pub exit_code: Option<i32>,
     /// `tl.mute` — suppresses attention, nothing else.
     pub muted: bool,
@@ -175,10 +187,14 @@ pub fn slot_state(session: Option<Session<'_>>, now: i64) -> SlotState {
 
     if !s.muted {
         if s.declared_attention {
-            return SlotState::NeedsAnswer { source: Source::Declared };
+            return SlotState::NeedsAnswer {
+                source: Source::Declared,
+            };
         }
         if s.derived.is_some_and(|d| d.needs_answer(now)) {
-            return SlotState::NeedsAnswer { source: Source::Derived };
+            return SlotState::NeedsAnswer {
+                source: Source::Derived,
+            };
         }
     }
 
@@ -197,7 +213,10 @@ mod tests {
     const T0: i64 = 1_760_000_000_000;
 
     fn fed(chunks: &[(&[u8], i64)]) -> Derived {
-        let mut d = Derived { last_output_ms: T0, ..Derived::default() };
+        let mut d = Derived {
+            last_output_ms: T0,
+            ..Derived::default()
+        };
         for (bytes, at) in chunks {
             d.feed(bytes, *at);
         }
@@ -242,10 +261,16 @@ mod tests {
     #[test]
     fn whitespace_after_a_bell_never_cancels_it() {
         let same_chunk = fed(&[(b"ready?\x07\r\n", T0)]);
-        assert!(same_chunk.needs_answer(T0 + 3_000), "trailing newline cancelled it");
+        assert!(
+            same_chunk.needs_answer(T0 + 3_000),
+            "trailing newline cancelled it"
+        );
 
         let next_chunk = fed(&[(b"ready?\x07", T0), (b"\r\n", T0 + 50)]);
-        assert!(next_chunk.needs_answer(T0 + 3_000), "newline in the next chunk cancelled it");
+        assert!(
+            next_chunk.needs_answer(T0 + 3_000),
+            "newline in the next chunk cancelled it"
+        );
 
         let spaces = fed(&[(b"\x07", T0), (b"   \t\n", T0 + 10)]);
         assert!(spaces.needs_answer(T0 + 3_000));
@@ -276,7 +301,10 @@ mod tests {
         }
         assert!(!d.needs_answer(T0 + 100_000));
         assert_eq!(d.scanned_to, 4 + 160 * 64 * 1024);
-        assert_eq!(std::mem::size_of_val(&d), std::mem::size_of::<Derived>());
+        // Nothing here grows with the stream. `Derived` holds four scalars
+        // and no heap, so 10MB of output through `feed` costs no memory --
+        // a bound, not an exact layout, so it does not break on padding.
+        assert!(size_of::<Derived>() <= 64, "{}", size_of::<Derived>());
     }
 
     #[test]
@@ -297,15 +325,26 @@ mod tests {
     #[test]
     fn a_bell_then_a_clean_exit_goes_dark_not_amber() {
         let d = fed(&[(b"?\x07", T0)]);
-        let s = Session { state: SessionState::Exited, exit_code: Some(0), ..live(&d) };
+        let s = Session {
+            state: SessionState::Exited,
+            exit_code: Some(0),
+            ..live(&d)
+        };
         assert_eq!(slot_state(Some(s), T0 + 5_000), SlotState::Empty);
     }
 
     #[test]
     fn a_bell_then_a_failure_is_red_not_amber() {
         let d = fed(&[(b"?\x07", T0)]);
-        let s = Session { state: SessionState::Exited, exit_code: Some(2), ..live(&d) };
-        assert_eq!(slot_state(Some(s), T0 + 5_000), SlotState::Failed { code: 2 });
+        let s = Session {
+            state: SessionState::Exited,
+            exit_code: Some(2),
+            ..live(&d)
+        };
+        assert_eq!(
+            slot_state(Some(s), T0 + 5_000),
+            SlotState::Failed { code: 2 }
+        );
     }
 
     /// A terminal row with no exit code is anchor saying it cannot account
@@ -313,14 +352,21 @@ mod tests {
     #[test]
     fn a_terminal_row_without_a_code_is_lost_not_clean() {
         let d = fed(&[(b"x", T0)]);
-        let s = Session { state: SessionState::Exited, exit_code: None, ..live(&d) };
+        let s = Session {
+            state: SessionState::Exited,
+            exit_code: None,
+            ..live(&d)
+        };
         assert_eq!(slot_state(Some(s), T0), SlotState::Lost);
     }
 
     #[test]
     fn lost_is_not_a_clean_exit() {
         let d = fed(&[(b"x", T0)]);
-        let s = Session { state: SessionState::Lost, ..live(&d) };
+        let s = Session {
+            state: SessionState::Lost,
+            ..live(&d)
+        };
         assert_eq!(slot_state(Some(s), T0), SlotState::Lost);
     }
 
@@ -329,29 +375,43 @@ mod tests {
     #[test]
     fn closing_still_renders_as_live() {
         let d = fed(&[(b"x", T0)]);
-        let s = Session { state: SessionState::Closing, exit_code: None, ..live(&d) };
+        let s = Session {
+            state: SessionState::Closing,
+            exit_code: None,
+            ..live(&d)
+        };
         assert_eq!(slot_state(Some(s), T0 + 1_000), SlotState::Working);
     }
 
     #[test]
     fn a_declared_signal_overrides_a_quiet_stream() {
         let d = fed(&[(b"busy", T0)]);
-        let s = Session { declared_attention: true, ..live(&d) };
+        let s = Session {
+            declared_attention: true,
+            ..live(&d)
+        };
         // No bell anywhere in the stream, and it spoke a moment ago.
         assert!(!d.needs_answer(T0 + 1_000));
         assert_eq!(
             slot_state(Some(s), T0 + 1_000),
-            SlotState::NeedsAnswer { source: Source::Declared }
+            SlotState::NeedsAnswer {
+                source: Source::Declared
+            }
         );
     }
 
     #[test]
     fn a_declared_signal_survives_its_source_going_quiet() {
         let d = fed(&[(b"busy", T0)]);
-        let s = Session { declared_attention: true, ..live(&d) };
+        let s = Session {
+            declared_attention: true,
+            ..live(&d)
+        };
         assert_eq!(
             slot_state(Some(s), T0 + 600_000),
-            SlotState::NeedsAnswer { source: Source::Declared }
+            SlotState::NeedsAnswer {
+                source: Source::Declared
+            }
         );
     }
 
@@ -360,13 +420,26 @@ mod tests {
     #[test]
     fn mute_suppresses_attention_and_nothing_else() {
         let d = fed(&[(b"?\x07", T0)]);
-        let derived_amber = Session { muted: true, ..live(&d) };
-        assert_eq!(slot_state(Some(derived_amber), T0 + 3_000), SlotState::Working);
+        let derived_amber = Session {
+            muted: true,
+            ..live(&d)
+        };
+        assert_eq!(
+            slot_state(Some(derived_amber), T0 + 3_000),
+            SlotState::Working
+        );
 
-        let declared = Session { muted: true, declared_attention: true, ..live(&d) };
+        let declared = Session {
+            muted: true,
+            declared_attention: true,
+            ..live(&d)
+        };
         assert_eq!(slot_state(Some(declared), T0 + 3_000), SlotState::Working);
 
-        let long_quiet = Session { muted: true, ..live(&d) };
+        let long_quiet = Session {
+            muted: true,
+            ..live(&d)
+        };
         assert_eq!(slot_state(Some(long_quiet), T0 + 60_000), SlotState::Quiet);
     }
 
@@ -375,8 +448,14 @@ mod tests {
     /// is already the feedback that the press landed.
     #[test]
     fn a_session_with_no_watcher_yet_is_alive_and_idle() {
-        let empty = Derived { last_output_ms: T0, ..Derived::default() };
-        let s = Session { derived: None, ..live(&empty) };
+        let empty = Derived {
+            last_output_ms: T0,
+            ..Derived::default()
+        };
+        let s = Session {
+            derived: None,
+            ..live(&empty)
+        };
         assert_eq!(slot_state(Some(s), T0), SlotState::Quiet);
     }
 
@@ -386,7 +465,9 @@ mod tests {
         let d = fed(&[(b"\x07", T0)]);
         assert_eq!(
             slot_state(Some(live(&d)), T0 + 3_000),
-            SlotState::NeedsAnswer { source: Source::Derived }
+            SlotState::NeedsAnswer {
+                source: Source::Derived
+            }
         );
     }
 
@@ -394,7 +475,13 @@ mod tests {
     fn working_becomes_quiet_at_the_idle_threshold() {
         let d = fed(&[(b"tokens", T0)]);
         let s = live(&d);
-        assert_eq!(slot_state(Some(s), T0 + IDLE_THRESHOLD_MS - 1), SlotState::Working);
-        assert_eq!(slot_state(Some(s), T0 + IDLE_THRESHOLD_MS), SlotState::Quiet);
+        assert_eq!(
+            slot_state(Some(s), T0 + IDLE_THRESHOLD_MS - 1),
+            SlotState::Working
+        );
+        assert_eq!(
+            slot_state(Some(s), T0 + IDLE_THRESHOLD_MS),
+            SlotState::Quiet
+        );
     }
 }

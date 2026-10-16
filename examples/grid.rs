@@ -6,8 +6,10 @@ use tally::signal::{SlotState, Source};
 use tally::surface::{Button, Cell, Frame};
 
 fn main() {
-    use SlotState::*;
-    let wants_you = NeedsAnswer { source: Source::Derived };
+    use SlotState::{Failed, Lost, NeedsAnswer, Quiet, Working};
+    let wants_you = NeedsAnswer {
+        source: Source::Derived,
+    };
 
     // (row, col, state) -- row 1 is the TOP.
     let slots = [
@@ -28,14 +30,30 @@ fn main() {
     for (row, col, state) in slots {
         f.set(Button::Grid { row, col }, render::slot(state));
     }
-    f.set(Button::Page(1), render::page(Page { current: true, occupied: true, attention: false }));
-    f.set(Button::Page(2), render::page(Page { occupied: true, ..Page::default() }));
+    f.set(
+        Button::Page(1),
+        render::page(Page {
+            current: true,
+            occupied: true,
+            attention: false,
+        }),
+    );
+    f.set(
+        Button::Page(2),
+        render::page(Page {
+            occupied: true,
+            ..Page::default()
+        }),
+    );
     for row in 1..=8 {
         f.set(Button::Action(row), render::action(false));
     }
     f.set(
         Button::Logo,
-        render::logo(Health { anchord_reachable: true, offscreen_attention: false }),
+        render::logo(Health {
+            anchord_reachable: true,
+            offscreen_attention: false,
+        }),
     );
 
     let bytes = f.repaint();
@@ -43,5 +61,12 @@ fn main() {
         .filter(|&b| matches!(f.get(b), Cell::Pulse(_) | Cell::Flash { .. }))
         .count();
     eprintln!("{} bytes, {moving} moving pads", bytes.len());
-    println!("{}", bytes.iter().map(|b| format!("{b:02X}")).collect::<Vec<_>>().join(" "));
+    println!(
+        "{}",
+        bytes
+            .iter()
+            .map(|b| format!("{b:02X}"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    );
 }

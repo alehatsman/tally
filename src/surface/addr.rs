@@ -12,7 +12,12 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Button {
     /// One of the 64 slots.
-    Grid { row: u8, col: u8 },
+    Grid {
+        /// 1-8, **1 is the top row**.
+        row: u8,
+        /// 1-8, 1 is the left column.
+        col: u8,
+    },
     /// Top row, left to right: the page selectors.
     Page(u8),
     /// Right column, top to bottom: the action modifiers.
@@ -46,21 +51,25 @@ impl Button {
             (9, 9) => Some(Self::Logo),
             (9, 1..=8) => Some(Self::Page(col)),
             (1..=8, 9) => Some(Self::Action(9 - hw_row)),
-            (1..=8, 1..=8) => Some(Self::Grid { row: 9 - hw_row, col }),
+            (1..=8, 1..=8) => Some(Self::Grid {
+                row: 9 - hw_row,
+                col,
+            }),
             _ => None,
         }
     }
 
-    /// Position in a frame's cell array. Dense, 0..SURFACE_LEN.
+    /// Position in a frame's cell array. Dense, `0..SURFACE_LEN`.
     pub(crate) fn slot(self) -> usize {
         let i = self.index();
         (i / 10 - 1) as usize * 9 + (i % 10 - 1) as usize
     }
 
-    /// Inverse of [`Self::slot`].
+    /// Inverse of [`Button::slot`].
     pub(crate) fn from_slot(slot: usize) -> Self {
-        let index = (slot / 9 + 1) as u8 * 10 + (slot % 9 + 1) as u8;
-        Self::from_index(index).expect("slot is in range by construction")
+        let row = u8::try_from(slot / 9 + 1).unwrap_or(0);
+        let col = u8::try_from(slot % 9 + 1).unwrap_or(0);
+        Self::from_index(row * 10 + col).expect("slot is in range by construction")
     }
 
     /// Every button on the surface, in frame order.

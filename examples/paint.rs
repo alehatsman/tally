@@ -2,7 +2,7 @@
 //! M1 scaffolding: proves the encoder against hardware before `midir` is
 //! anywhere near the picture.
 
-use tally::surface::palette::*;
+use tally::surface::palette::{AMBER, BLUE, DARK_RED, GREEN, RED, TURQUOISE, WHITE};
 use tally::surface::{Button, Cell, Frame};
 
 fn main() {
@@ -27,5 +27,12 @@ fn main() {
 
     let bytes = f.repaint();
     eprintln!("{} bytes", bytes.len());
-    println!("{}", bytes.iter().map(|b| format!("{b:02X}")).collect::<Vec<_>>().join(" "));
+    println!(
+        "{}",
+        bytes
+            .iter()
+            .map(|b| format!("{b:02X}"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    );
 }

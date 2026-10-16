@@ -12,11 +12,18 @@ use super::sysex::{EOX, HEADER};
 /// repaint loop, no drift (`docs/02-surface.md`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Cell {
+    /// Unlit.
     #[default]
     Off,
+    /// One colour, held.
     Static(Entry),
     /// Alternates `b` and `a` at one beat, 50% duty.
-    Flash { b: Entry, a: Entry },
+    Flash {
+        /// The colour flashed *to*.
+        b: Entry,
+        /// The colour flashed *from*.
+        a: Entry,
+    },
     /// Ramps dark to full over two beats.
     Pulse(Entry),
 }
@@ -24,8 +31,8 @@ pub enum Cell {
 impl Cell {
     /// The colourspec bytes for this cell at `index`.
     ///
-    /// The SysEx form takes **both** flash colours, where channel-2 note-on
-    /// only sets one and inherits the other from whatever was on the pad.
+    /// The `SysEx` form takes **both** flash colours, where channel-2
+    /// note-on sets one and inherits the other from whatever was on the pad.
     /// Taking both is what makes a frame total, and therefore a pure
     /// function of the model with no dependence on history.
     fn encode(self, index: u8, out: &mut Vec<u8>) {
@@ -46,7 +53,9 @@ pub struct Frame {
 
 impl Default for Frame {
     fn default() -> Self {
-        Self { cells: [Cell::Off; SURFACE_LEN] }
+        Self {
+            cells: [Cell::Off; SURFACE_LEN],
+        }
     }
 }
 
@@ -56,33 +65,37 @@ impl Frame {
         Self::default()
     }
 
+    /// Light one button.
     pub fn set(&mut self, button: Button, cell: Cell) {
-        self.cells[button.slot()] = cell;
+        if let Some(slot) = self.cells.get_mut(button.slot()) {
+            *slot = cell;
+        }
     }
 
+    /// How one button is currently lit.
     pub fn get(&self, button: Button) -> Cell {
-        self.cells[button.slot()]
+        self.cells.get(button.slot()).copied().unwrap_or_default()
     }
 
-    /// One SysEx painting every position. Used on connect and on replug,
+    /// One `SysEx` painting every position. Used on connect and on replug,
     /// where repainting everything is both correct and cheap.
     pub fn repaint(&self) -> Vec<u8> {
-        self.message(Button::all().map(|b| (b, self.get(b))))
+        Self::message(Button::all().map(|b| (b, self.get(b))))
             .expect("a full repaint always has 81 changes")
     }
 
-    /// One SysEx carrying only what changed since `prev`, or `None` if
+    /// One `SysEx` carrying only what changed since `prev`, or `None` if
     /// nothing did — the steady state, where the right number of bytes to
     /// send is zero.
     pub fn diff(&self, prev: &Self) -> Option<Vec<u8>> {
-        self.message(
+        Self::message(
             Button::all()
                 .map(|b| (b, self.get(b)))
                 .filter(|&(b, cell)| prev.get(b) != cell),
         )
     }
 
-    fn message(&self, changes: impl Iterator<Item = (Button, Cell)>) -> Option<Vec<u8>> {
+    fn message(changes: impl Iterator<Item = (Button, Cell)>) -> Option<Vec<u8>> {
         let mut msg = HEADER.to_vec();
         msg.push(0x03);
         let mut any = false;
@@ -103,7 +116,11 @@ mod tests {
     use crate::surface::palette::*;
 
     fn hex(bytes: &[u8]) -> String {
-        bytes.iter().map(|b| format!("{b:02X}")).collect::<Vec<_>>().join(" ")
+        bytes
+            .iter()
+            .map(|b| format!("{b:02X}"))
+            .collect::<Vec<_>>()
+            .join(" ")
     }
 
     /// The manual's own third worked example, byte for byte. If the encoder
@@ -114,7 +131,10 @@ mod tests {
         let mut f = Frame::dark();
         // Pads 0B, 0C, 0D -- the bottom-left three, i.e. logical row 8.
         f.set(Button::Grid { row: 8, col: 1 }, Cell::Static(YELLOW));
-        f.set(Button::Grid { row: 8, col: 2 }, Cell::Flash { b: 0x0C, a: YELLOW });
+        f.set(
+            Button::Grid { row: 8, col: 2 },
+            Cell::Flash { b: 0x0C, a: YELLOW },
+        );
         f.set(Button::Grid { row: 8, col: 3 }, Cell::Pulse(YELLOW));
 
         let msg = f.diff(&Frame::dark()).unwrap();
@@ -145,7 +165,10 @@ mod tests {
     fn a_repaint_covers_the_logo() {
         // Skipping index 99 on shutdown leaves the health light burning,
         // which asserts "anchord unreachable" on the way out.
-        assert!(Frame::dark().repaint().windows(3).any(|w| w == [0x00, 99, OFF]));
+        assert!(Frame::dark()
+            .repaint()
+            .windows(3)
+            .any(|w| w == [0x00, 99, OFF]));
     }
 
     #[test]
@@ -169,19 +192,25 @@ mod tests {
         let mut a = Frame::dark();
         a.set(Button::Logo, Cell::Static(DARK_RED));
         a.set(Button::Action(8), Cell::Static(BLUE));
-        a.set(Button::Page(3), Cell::Flash { b: AMBER, a: TURQUOISE });
+        a.set(
+            Button::Page(3),
+            Cell::Flash {
+                b: AMBER,
+                a: TURQUOISE,
+            },
+        );
         // Every position in a repaint; only the three set here in a diff.
         assert_eq!(a.repaint().len(), 8 + 78 * 3 + 2 * 3 + 4);
         assert_eq!(a.diff(&Frame::dark()).unwrap().len(), 8 + 2 * 3 + 4);
     }
 
-    /// No byte in a SysEx body may have the high bit set: the device reads
+    /// No byte in a `SysEx` body may have the high bit set: the device reads
     /// it as a status byte and ends the message early.
     #[test]
     fn no_body_byte_is_ever_a_status_byte() {
         let mut f = Frame::dark();
         for (i, b) in Button::all().enumerate() {
-            f.set(b, Cell::Static((i * 7 % 128) as Entry));
+            f.set(b, Cell::Static(Entry::try_from(i * 7 % 128).unwrap_or(0)));
         }
         let msg = f.repaint();
         assert_eq!(msg[0], 0xF0);
