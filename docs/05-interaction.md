@@ -13,7 +13,7 @@ and it rules out more than a handful of states.
 | nothing here | off | — | — |
 | working | 21 green | **pulsing** | alive, producing output |
 | quiet | 21 green | static | alive, idle |
-| **needs an answer** | 9 amber | **flashing** vs 0 | **look at me** |
+| **needs an answer** | 9 amber | **pulsing** | **look at me** |
 | ended badly | 5 red | static | go and look |
 | lost | 7 dark red | static | the daemon cannot account for it |
 
@@ -53,21 +53,34 @@ That is tolerable because a *failed* one does not, and because an
 interactive agent rarely exits at all — Claude Code sits at a prompt when
 it is done, so "alive and idle" is the common resting state, not "exited".
 
-### Only one thing flashes
+### Nothing blinks
 
-Working pulses — a slow two-beat ramp. Attention flashes — a hard 50%
-blink. They are different gestures rather than two intensities, so several
-breathing pads do not compete with the one that wants you. Everything else
-is still.
+Two things move and **both breathe** — the device's two-beat ramp. What
+separates them is **hue, not rhythm**: green is alive, amber wants you, and
+amber is reserved so nothing else on the surface is ever that colour.
 
-**`lost` is deliberately not animated**, and this is the case that proves
-the rule. It arrives in **bulk**: anchord restarts and every running session
-becomes a question mark at once. Sixty-four flashing pads is noise, and a
-grid of *red* would say "twenty things failed" — false, and it sends you
-debugging instead of purging. Dark red, static, is the truth: the daemon
-lost track of these. It is the same colour the logo uses for an unreachable
-anchord, so **dark red means the daemon had a problem, wherever you see
-it**.
+An earlier version of this section argued the opposite, and it is worth
+recording why it was wrong. It said *movement is the alphabet* and gave
+attention a hard 50% blink so it would outrank the slow green pulse. That
+is correct for a glance and wrong for a day. The blink was confirmed on
+hardware as reading "urgent" — and then confirmed in use as **stressful**,
+which is a different measurement that only a few hours beside the thing can
+take. A surface you sit next to all day has a constraint a surface you
+glance at does not.
+
+So the alphabet is colour. Breathing says *something is happening here*;
+the hue says what, and only one hue is ever a request. Checked both ways
+after the change, because gentler is only an improvement if it still works:
+**calmer, and still catches the eye** from a screen.
+
+**`lost` is deliberately not animated at all**, and this is the case that
+proves the rule holds. It arrives in **bulk**: anchord restarts and every
+running session becomes a question mark at once. Sixty-four moving pads is
+noise, and a grid of *red* would say "twenty things failed" — false, and it
+sends you debugging instead of purging. Dark red, static, is the truth: the
+daemon lost track of these. It is the same colour the logo uses for an
+unreachable anchord, so **dark red means the daemon had a problem, wherever
+you see it**.
 
 A muted slot ([04](04-signals.md#the-state-a-pad-renders)) renders the state
 *underneath* its attention — green, pulsing or not. It does not get a colour
@@ -90,14 +103,14 @@ colours so the grid never has to be read for them:
 |---|---|---|
 | page, holds no session | off | — |
 | page, holds sessions | 37 turquoise, static | 3 white — the page you are on |
-| page, off-screen attention | 9 amber, **flashing** vs 37 | — |
+| page, off-screen attention | 9 amber, **pulsing** | — |
 | action button (right column) | 45 blue, static | 3 white while held |
 
 Page buttons use turquoise and action buttons blue because they must not be
 mistakable for *any* slot state at a glance. Nothing in the slot palette is
 near either.
 
-An amber-flashing page button says **which** page wants you; the logo says
+An amber-pulsing page button says **which** page wants you; the logo says
 **that some page does**. Both, deliberately: the logo is visible from
 further away and the page button is what you act on. See
 [03-model.md](03-model.md#pages).
@@ -116,12 +129,12 @@ does not.
 |---|---|
 | off | tallyd running, anchord reachable, nothing to say |
 | 7 dark red, static | **anchord unreachable** |
-| 9 amber, flashing vs 0 | a session on a page you are not looking at needs an answer |
+| 9 amber, pulsing | a session on a page you are not looking at needs an answer |
 
 Unreachable wins. If anchord is down there is no session list, so there is
 nothing that could be known to want you, and a logo doing both at once would
-have to alternate — which is a third animation, on the one light whose whole
-job is being unambiguous.
+have to alternate — two meanings on the one light whose whole job is being
+unambiguous.
 
 An unreachable anchord lighting the logo rather than clearing the grid is
 the point. anchor made the same distinction for teleport — *"an unreachable

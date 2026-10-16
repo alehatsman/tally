@@ -307,12 +307,9 @@ mod tests {
         };
         let f = frame(&sessions, &derived, &v);
 
+        assert_eq!(f.get(Button::Logo), Cell::Pulse(AMBER), "logo must say so");
         assert!(
-            matches!(f.get(Button::Logo), Cell::Flash { b: AMBER, .. }),
-            "logo must say so"
-        );
-        assert!(
-            matches!(f.get(Button::Page(4)), Cell::Flash { b: AMBER, .. }),
+            matches!(f.get(Button::Page(4)), Cell::Pulse(AMBER)),
             "and which page"
         );
     }

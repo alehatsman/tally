@@ -157,8 +157,12 @@ Three of these took a judgment a photograph could not make, and all three
 were checked by looking, which is the only way they *can* be checked
 ([09-testing.md](09-testing.md#what-a-green-suite-does-not-prove)):
 
-- **Amber flashing against 0 reads as urgent from across the room.** The
-  single perceptual claim the whole attention design rests on.
+- **Amber reads as urgent from across the room.** The single perceptual
+  claim the whole attention design rests on. Checked first as a hard flash,
+  which worked; then changed to a pulse, because the flash turned out to be
+  *stressful* over hours — a measurement a glance cannot take. Re-checked
+  after the change: still catches the eye
+  ([05](05-interaction.md#nothing-blinks)).
 - **21 and 23 are tellable apart at a glance.** They photograph almost
   identically, and they carry the two most common meanings on the grid —
   *it is alive* versus *it is done*. Confirmed legible in place; worth

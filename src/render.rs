@@ -7,11 +7,16 @@
 //! see the difference and could not recall which was which.
 //!
 //! So the rule is one sentence. **Green means alive**; motion inside green
-//! means producing output. Anything not green is gone. Exactly one thing on
-//! the whole surface flashes, and it is the one that wants you.
+//! means producing output. Anything not green is gone, and the pad that
+//! wants you is the only amber thing on the surface.
+//!
+//! **Nothing blinks.** Everything that moves breathes -- the device's
+//! two-beat ramp -- because this is a surface somebody sits beside all day,
+//! and a hard 50% flash reads as urgent for a minute and as stressful by
+//! the afternoon. Urgency is carried by hue, which does not get tiring.
 
 use crate::signal::SlotState;
-use crate::surface::palette::{AMBER, BLUE, DARK_RED, GREEN, OFF, RED, TURQUOISE, WHITE};
+use crate::surface::palette::{AMBER, BLUE, DARK_RED, GREEN, RED, TURQUOISE, WHITE};
 use crate::surface::Cell;
 
 /// How one slot is lit.
@@ -20,7 +25,12 @@ pub fn slot(state: SlotState) -> Cell {
         SlotState::Empty => Cell::Off,
         SlotState::Working => Cell::Pulse(GREEN),
         SlotState::Quiet => Cell::Static(GREEN),
-        SlotState::NeedsAnswer { .. } => Cell::Flash { b: AMBER, a: OFF },
+        // Breathing, not blinking. A hard 50% flash reads as urgent for
+        // about a minute and as stressful for an afternoon, and this is a
+        // surface someone sits next to all day. The pulse is a two-beat
+        // ramp against the flash's one-beat chop, so it still moves while
+        // the amber does the work of saying which pad.
+        SlotState::NeedsAnswer { .. } => Cell::Pulse(AMBER),
         SlotState::Failed { .. } => Cell::Static(RED),
         // Dark red wherever the daemon had a problem — the same colour the
         // logo uses for an unreachable anchord. Static, because `lost`
@@ -47,10 +57,7 @@ pub fn page(p: Page) -> Cell {
         // report: walking onto a page is how you stop being told about it.
         Cell::Static(WHITE)
     } else if p.attention {
-        Cell::Flash {
-            b: AMBER,
-            a: TURQUOISE,
-        }
+        Cell::Pulse(AMBER)
     } else if p.occupied {
         Cell::Static(TURQUOISE)
     } else {
@@ -87,7 +94,7 @@ pub fn logo(h: Health) -> Cell {
     if !h.anchord_reachable {
         Cell::Static(DARK_RED)
     } else if h.offscreen_attention {
-        Cell::Flash { b: AMBER, a: OFF }
+        Cell::Pulse(AMBER)
     } else {
         Cell::Off
     }
@@ -113,42 +120,63 @@ mod tests {
         SlotState::Lost,
     ];
 
-    /// Movement is the alphabet, and the alphabet has two letters: a calm
-    /// one and an urgent one.
+    /// Two things move, and both breathe. What separates them is hue, not
+    /// rhythm -- green for alive, amber for wanting you.
     #[test]
-    fn only_two_slot_states_move() {
+    fn only_two_slot_states_move_and_both_breathe() {
         let moving: Vec<_> = ALL.into_iter().filter(|&s| animated(slot(s))).collect();
         assert_eq!(moving.len(), 2, "{moving:?}");
-        assert!(
-            matches!(slot(SlotState::Working), Cell::Pulse(_)),
-            "working breathes"
-        );
-        assert!(
-            matches!(
-                slot(SlotState::NeedsAnswer {
-                    source: Source::Derived
-                }),
-                Cell::Flash { .. }
-            ),
-            "attention flashes"
+        assert_eq!(slot(SlotState::Working), Cell::Pulse(GREEN));
+        assert_eq!(
+            slot(SlotState::NeedsAnswer {
+                source: Source::Derived
+            }),
+            Cell::Pulse(AMBER)
         );
     }
 
-    /// Exactly one thing on the surface flashes. A pulse is a two-beat ramp
-    /// and a flash is a hard blink, so they are different gestures rather
-    /// than two intensities — but only one of them is allowed to be alarming.
+    /// Nothing blinks, anywhere. A hard 50% flash is legible and tiring,
+    /// and this is a surface somebody sits beside all day -- so urgency is
+    /// carried by hue, which does not wear out.
     #[test]
-    fn exactly_one_slot_state_flashes() {
-        let flashing: Vec<_> = ALL
+    fn nothing_on_the_surface_blinks() {
+        let blinking: Vec<_> = ALL
             .into_iter()
             .filter(|&s| matches!(slot(s), Cell::Flash { .. }))
             .collect();
-        assert_eq!(
-            flashing,
-            vec![SlotState::NeedsAnswer {
-                source: Source::Derived
-            }]
-        );
+        assert!(blinking.is_empty(), "{blinking:?}");
+        for control in [
+            logo(Health {
+                anchord_reachable: true,
+                offscreen_attention: true,
+            }),
+            page(Page {
+                occupied: true,
+                attention: true,
+                ..Page::default()
+            }),
+            action(true),
+            action(false),
+        ] {
+            assert!(!matches!(control, Cell::Flash { .. }), "{control:?} blinks");
+        }
+    }
+
+    /// Amber is reserved. Nothing else on the surface uses it, so the one
+    /// pad that wants you is the only one of its colour.
+    #[test]
+    fn amber_means_exactly_one_thing() {
+        let amber = |c: Cell| matches!(c, Cell::Pulse(AMBER) | Cell::Static(AMBER));
+        assert!(amber(slot(SlotState::NeedsAnswer {
+            source: Source::Derived
+        })));
+        for other in ALL
+            .into_iter()
+            .filter(|s| !matches!(s, SlotState::NeedsAnswer { .. }))
+        {
+            assert!(!amber(slot(other)), "{other:?} is amber too");
+        }
+        assert!(!amber(action(false)) && !amber(action(true)));
     }
 
     /// Green means alive, and nothing else does. The failure this guards is
