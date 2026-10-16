@@ -22,6 +22,8 @@ path = "src/bin/tallyd.rs"
 # docs/02-surface.md and docs/08-lifecycle.md; nothing is added before the
 # milestone that needs it (ROADMAP.md).
 [dependencies]
+libc = "0.2.190"
+midir = "0.11.1"
 
 # Fleet lint block, from alehatsman/rust-quality `lints.toml`.
 # Not hand-maintained: `rq/lints-check` reports drift against that file.
