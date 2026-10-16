@@ -16,8 +16,6 @@ pub const IDLE_THRESHOLD_MS: i64 = 30_000;
 /// fast, and "nothing since the bell" is a far cheaper claim than "idle".
 pub const ANSWER_QUIET_MS: i64 = 2_000;
 
-const BEL: u8 = 0x07;
-
 /// Where a `NeedsAnswer` came from. Carrying the distinction from the start
 /// means accepting an authoritative signal later is a match arm rather than
 /// a rewrite.
@@ -81,7 +79,7 @@ pub enum SessionState {
 }
 
 /// Signals scraped from one session's output stream.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Derived {
     /// When a BEL was last seen. `None` if never.
     pub last_bell_ms: Option<i64>,
@@ -92,6 +90,11 @@ pub struct Derived {
     pub scanned_to: u64,
     /// A bell is outstanding: it rang and has not spoken since.
     bell_pending: bool,
+    /// What the agent last called itself, if it said.
+    title: Option<String>,
+    /// Chunk-boundary-safe OSC state. Also the only thing that can tell a
+    /// real bell from a title's terminator.
+    scanner: crate::osc::Scanner,
 }
 
 impl Derived {
@@ -120,7 +123,16 @@ impl Derived {
         if bytes.is_empty() {
             return;
         }
-        let tail = match bytes.iter().rposition(|&b| b == BEL) {
+        // The scan runs first, because **`BEL` is also an OSC string
+        // terminator**. `ESC ] 0 ; title BEL` contains a `0x07` that is not
+        // a ring, and an agent that sets its terminal title would otherwise
+        // look like one that asked a question — a pad flashing amber for
+        // nothing, which is the failure M1 is counting.
+        let scan = self.scanner.feed(bytes);
+        if let Some(title) = scan.titles.into_iter().next_back() {
+            self.title = Some(title);
+        }
+        let tail = match scan.last_bell {
             Some(i) => {
                 self.last_bell_ms = Some(now);
                 self.bell_pending = true;
@@ -141,6 +153,15 @@ impl Derived {
     /// Bell outstanding, and quiet for long enough to believe it.
     pub fn needs_answer(&self, now: i64) -> bool {
         self.bell_pending && now - self.last_output_ms > ANSWER_QUIET_MS
+    }
+
+    /// What the agent last called itself.
+    ///
+    /// Allowed to be absent, always. Losing the title loses a word, never
+    /// a pad: no signal here may become load-bearing enough that losing it
+    /// breaks the surface.
+    pub fn title(&self) -> Option<&str> {
+        self.title.as_deref()
     }
 
     /// Nothing for [`IDLE_THRESHOLD_MS`].
@@ -287,6 +308,34 @@ mod tests {
         assert!(spaces.needs_answer(T0 + 3_000));
     }
 
+    /// The defect this scanner was ported to fix. `ESC ] 0 ; title BEL`
+    /// ends in a `0x07` that is a string terminator, not a ring — and
+    /// Claude Code sets its title constantly. A naive `bytes.contains(7)`
+    /// turns every title into a question and floods the grid with amber.
+    #[test]
+    fn setting_a_terminal_title_is_not_asking_a_question() {
+        let d = fed(&[(b"\x1b]0;\xe2\x9c\xb3 tally \xe2\x80\x94 building\x07", T0)]);
+        assert!(!d.needs_answer(T0 + 10_000), "a title must not go amber");
+        assert_eq!(d.title(), Some("✳ tally — building"));
+    }
+
+    /// And the title must not mask a real question that follows it.
+    #[test]
+    fn a_title_then_a_real_bell_still_asks() {
+        let d = fed(&[(b"\x1b]0;tally\x07", T0), (b"what next?\x07", T0 + 100)]);
+        assert!(d.needs_answer(T0 + 3_000));
+        assert_eq!(d.title(), Some("tally"));
+    }
+
+    /// A title arriving *after* a bell is output, so it cancels — the agent
+    /// spoke again. Whitespace does not cancel, but an escape sequence is
+    /// not whitespace.
+    #[test]
+    fn a_title_after_a_bell_cancels_it() {
+        let d = fed(&[(b"done?\x07", T0), (b"\x1b]0;working\x07", T0 + 100)]);
+        assert!(!d.needs_answer(T0 + 10_000), "it started talking again");
+    }
+
     #[test]
     fn answering_clears_the_amber() {
         let mut d = fed(&[(b"?\x07", T0)]);
@@ -312,10 +361,11 @@ mod tests {
         }
         assert!(!d.needs_answer(T0 + 100_000));
         assert_eq!(d.scanned_to, 4 + 160 * 64 * 1024);
-        // Nothing here grows with the stream. `Derived` holds four scalars
-        // and no heap, so 10MB of output through `feed` costs no memory --
-        // a bound, not an exact layout, so it does not break on padding.
-        assert!(size_of::<Derived>() <= 64, "{}", size_of::<Derived>());
+        // Nothing here grows with the stream. The only heap `Derived` owns
+        // is the scanner's mid-sequence buffer and the last title, and
+        // plain output puts nothing in either -- so 10MB costs no memory.
+        assert_eq!(d.scanner.buffered(), 0, "ordinary output retained bytes");
+        assert_eq!(d.title(), None);
     }
 
     #[test]

@@ -10,6 +10,7 @@ pub mod device;
 pub mod journal;
 pub mod lock;
 pub mod model;
+pub mod osc;
 pub mod render;
 pub mod signal;
 pub mod slot;

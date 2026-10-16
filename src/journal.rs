@@ -59,11 +59,16 @@ impl Journal {
                 Source::Derived => "derived",
                 Source::Declared => "declared",
             };
+            // The title is what makes a week of these judgeable. A line
+            // naming only a ULID cannot be scored as a right or wrong
+            // amber seven days later; one carrying "edit tests/pty.rs?"
+            // can. Absent is normal and must stay legal.
             writeln!(
                 out,
-                r#"{{"ms":{now},"session":"{}","slot":"{}","to":"needs_answer","source":"{source}"}}"#,
+                r#"{{"ms":{now},"session":"{}","slot":"{}","to":"needs_answer","source":"{source}","title":{}}}"#,
                 r.session,
                 address(*slot, pages),
+                json_string(r.title.as_deref()),
             )?;
         }
 
@@ -98,6 +103,32 @@ impl Journal {
     }
 }
 
+/// A JSON string, or `null`. Escapes only what JSON requires; a terminal
+/// title is arbitrary bytes and a raw quote would corrupt the line.
+fn json_string(text: Option<&str>) -> String {
+    let Some(text) = text else {
+        return "null".to_owned();
+    };
+    let mut out = String::with_capacity(text.len() + 2);
+    out.push('"');
+    for c in text.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => {
+                use std::fmt::Write as _;
+                let _written = write!(out, "\\u{:04x}", c as u32);
+            }
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
 /// `page:row:col`, using the page's name where it has one.
 fn address(slot: Slot, pages: &Pages) -> String {
     let page = pages
@@ -119,6 +150,7 @@ mod tests {
             Resolved {
                 slot,
                 session: session.to_owned(),
+                title: Some("edit tests/pty.rs?".to_owned()),
                 state: SlotState::NeedsAnswer {
                     source: Source::Derived,
                 },
@@ -158,6 +190,7 @@ mod tests {
         assert!(got[0].contains(r#""to":"needs_answer""#));
         assert!(got[0].contains(r#""slot":"1:3:5""#));
         assert!(got[0].contains(r#""source":"derived""#));
+        assert!(got[0].contains(r#""title":"edit tests/pty.rs?""#));
         assert_eq!(j.asking(), 1);
     }
 
@@ -227,5 +260,24 @@ mod tests {
             .record(&BTreeMap::new(), &Pages::default(), T0, &mut out)
             .expect("write");
         assert!(out.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod escaping_tests {
+    use super::json_string;
+
+    /// A terminal title is arbitrary bytes. A raw quote in one would
+    /// corrupt the line it lands in, and the journal is read back by
+    /// `jq` or an eye, both of which deserve valid JSON.
+    #[test]
+    fn titles_that_would_break_the_line_are_escaped() {
+        assert_eq!(json_string(None), "null");
+        assert_eq!(json_string(Some("plain")), r#""plain""#);
+        assert_eq!(json_string(Some(r#"say "hi""#)), r#""say \"hi\"""#);
+        assert_eq!(json_string(Some("a\\b")), r#""a\\b""#);
+        assert_eq!(json_string(Some("two\nlines")), r#""two\nlines""#);
+        // Non-ASCII stays as-is: JSON is UTF-8 and agents title in it.
+        assert_eq!(json_string(Some("tally")), r#""tally""#);
     }
 }

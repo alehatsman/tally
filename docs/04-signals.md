@@ -74,8 +74,23 @@ input. Claude Code rings it; so do most of the others; so does a shell with
 a failed completion, which is the problem.
 
 ```text
-bytes.contains(&0x07)  →  last_bell_ms = now
+a 0x07 seen in GROUND state  →  last_bell_ms = now
 ```
+
+**Not `bytes.contains(&0x07)`.** `BEL` is also an OSC *string
+terminator*, so `ESC ] 0 ; some title BEL` carries a `0x07` that is not a
+ring — and an agent that sets its terminal title, which Claude Code does
+constantly, would look exactly like one that asked a question and went
+quiet. The pad would flash amber for nothing, which is precisely the
+"wrong amber" [M1 counts](#measuring-whether-any-of-this-works).
+
+Telling the two apart needs the OSC state machine in
+[signal 3](#3-osc-title--what-it-is-doing) running *before* the bell check,
+which is why that scanner is in the attention path rather than only in the
+title-scrolling one. teleport has the naive check and is not wrong to —
+it only ever stores `last_bell_ms` as a field for a UI to show. tally is
+the first consumer to **act** on it, and acting is where the distinction
+starts to matter.
 
 It is one byte with no structure, so it carries no reason and cannot be
 attributed. It is a **hint that something changed**, and on its own it is

@@ -36,6 +36,8 @@ pub struct Resolved {
     pub slot: Slot,
     /// The session in it.
     pub session: String,
+    /// What that session last called itself, if it said. Absent is normal.
+    pub title: Option<String>,
     /// What that pad renders.
     pub state: SlotState,
 }
@@ -76,11 +78,15 @@ pub fn resolve(
             // onto the same pad, which is exactly what pressing it does.
             continue;
         }
+        let title = derived
+            .get(&session.id)
+            .and_then(|d| d.title().map(str::to_owned));
         let _previous = taken.insert(
             slot,
             Resolved {
                 slot,
                 session: session.id.clone(),
+                title,
                 state,
             },
         );
