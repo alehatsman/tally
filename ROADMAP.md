@@ -512,6 +512,45 @@ Exit:
 
 ---
 
+## M11 — The overview
+
+Seven rows of sixty-four have ever held a session, and they are already
+discontiguous — row 13 sits five rows past the nearest neighbour, reachable
+only by five `▼` presses across four rows of nothing:
+
+```text
+rows touched  1 2 3 4 6 8 13      of 64
+```
+
+The space is not a plane you survey, it is sparse islands you hop between,
+and the surface has no gesture that shows the set. Sparsity is the argument
+*for* a map: seven lit pads out of sixty-four is legible at a glance, and
+every lit pad is a destination.
+
+Scope: hold `Session` and the grid becomes the whole 64-row space, one pad
+per absolute row in reading order, coloured by the worst state in that row.
+Tap a pad and the window lands there. Release without tapping and nothing
+happened. The window is marked by dim grey on its empty pads
+([docs/20](docs/20-the-overview.md)).
+
+Exit:
+- ⬜ seven lit pads and a grey run reads as a map, without counting
+- ⬜ row 1 to row 13 in one gesture
+- ⬜ `Session` + kill disarms visibly, like two right-column modifiers do
+- ⬜ a week of `via:"overview"` lines — is it reached for, and does `lit`
+  move off seven
+
+> **A latched mode was rejected.** The top row is built on *dark does
+> nothing, lit does one thing, there is no state to remember*. A latched
+> overview makes the grid mean two things depending on something invisible,
+> and it is the only proposal here that breaks that rule.
+
+> **If `lit` sits at seven for a month, the follow-up is not a better map.**
+> It is a smaller address space. The instrument is written to be able to
+> say so.
+
+---
+
 ## Later, unscheduled
 
 - ~~the `settings.json` line for the `Notification` hook~~ — **M6**. It was
@@ -536,6 +575,7 @@ M7  where views live  ← a view is a pane; #1 #2 #3
 M8  the top row queue ← 61% of the time there is no *the* amber pad
 M9  the tempo         ← p50 187s, p90 1076s, and the pad looks the same
 M10 the launch column ← the row already knows the folder
+M11 the overview      ← 7 rows of 64, and already discontiguous
 ```
 
 M6 is out of order on purpose. It is M1's work, and it is here rather than

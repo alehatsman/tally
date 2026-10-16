@@ -59,15 +59,26 @@ session is dying.
 ### Where it goes
 
 `Tmux::tag` (`src/jump.rs:441`) — the single choke point. It already sets
-`@tally_session` and `remain-on-exit`, it is idempotent, and it runs on
-every resolve, so:
+`@tally_session` and `remain-on-exit`, and it is idempotent, so:
 
 | path | covered because |
 |---|---|
 | a view tally creates | `view_pane` tags it (`src/jump.rs:479`) |
 | a view tally revives | `view_pane` tags it after respawn (`src/jump.rs:459`) |
 | a pane `tally spawn` adopts | `adopt` is `Tmux::tag` (`src/jump.rs:515`) |
-| a view created before this existed | re-tagged on the next resolve |
+| a view created before this existed | re-tagged on the next **jump** to it |
+
+**"Every resolve" means every jump, not every tick.** `tag` is reached
+only through `view_pane` and `adopt`, and the reconcile loop calls neither
+— its one tmux call is `viewing()` (`src/bin/tallyd.rs:553`), which reads.
+So a view that existed before this shipped keeps the old line until you
+jump to its pad once. Measured after a `tallyd` restart: seven live view
+panes, all still on tmux's default format.
+
+That is the right trade and not worth a per-tick repair: tagging on every
+reconcile would mean two `set-option` calls per view every 2s, forever, to
+fix something one press fixes — and you press that pad before you kill it
+anyway.
 
 Pane-scoped (`-p`), for the reason `remain_on_exit_args` already documents
 (`src/jump.rs:189-199`): an adopted view sits among panes that are yours,
