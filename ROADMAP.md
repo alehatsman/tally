@@ -311,14 +311,17 @@ holding them behind:
 | 3. the return trip — `◄` on the top row | #3 | ✅ |
 
 Exit, for step 1:
-- ⬜ kill a session while focused on its view: still attached, corpse
-  readable, layout intact — and the same when an agent exits on its own
-  (every live view is now pane-tagged with `remain-on-exit`, migrated in
-  place by ordinary pad presses, so the fix is armed and waiting on a kill)
-- ⬜ kill the only live session and the `tally` session survives, with no
-  stray shell window reintroduced
+- ✅ kill a session while focused on its view: still attached, corpse
+  readable, layout intact — killed a throwaway to check. The pane goes
+  `dead=1` instead of vanishing, the agent's output stays in its history,
+  and the visible line is `anchor: session exited (1)`, so the corpse says
+  why it died as well as what it was doing
+- ✅ kill the only live session and the `tally` session survives, with no
+  stray shell window reintroduced — measured both ways on tmux 3.6b before
+  the code was written: without `remain-on-exit` the session is destroyed,
+  with it the session survives and the pane holds
 - ⬜ a detach leaves the pad green and the next press revives the view in
-  the pane it was already in
+  the pane it was already in — the one path nothing has exercised yet
 
 > **Two tmux facts that argue against the obvious implementation**, both
 > measured on a live 3.6b server rather than assumed. A window option is
