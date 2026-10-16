@@ -61,7 +61,23 @@ pub enum SlotState {
     /// and every running session becomes a question mark at once; a grid of
     /// red would say "twenty things failed", which is false and sends you
     /// debugging instead of purging.
-    Lost,
+    Lost {
+        /// Is the process definitively gone, so the pad can be claimed
+        /// again?
+        ///
+        /// True only for `lost_reason=daemon_restart`. `lost` usually
+        /// means *anchor cannot account for this*, which includes "it may
+        /// still be running" — and spawning a second agent into the same
+        /// repo with one pad to watch both is worse than a refusal. A
+        /// daemon restart is the one reason that cannot mean that, because
+        /// anchord owns the PTYs and took them with it.
+        ///
+        /// **It does not change the colour.** The row is still lost and
+        /// the pad is still dark red: the daemon still cannot account for
+        /// what that session did. What it changes is whether the pad is
+        /// free to claim ([#9](https://github.com/alehatsman/tally/issues/9)).
+        reclaimable: bool,
+    },
 }
 
 /// anchor's view of a session's lifecycle.
@@ -183,6 +199,8 @@ pub struct Session<'a> {
     pub declared_attention: bool,
     /// `None` when no watcher has produced anything yet.
     pub derived: Option<&'a Derived>,
+    /// `lost_reason=daemon_restart` — the one reason `lost` means gone.
+    pub lost_to_restart: bool,
 }
 
 /// The ordered match that is the whole opinion (`docs/04-signals.md`).
@@ -199,7 +217,11 @@ pub fn slot_state(session: Option<Session<'_>>, now: i64) -> SlotState {
     match s.state {
         // Terminal states outrank attention: an agent that rang and then
         // died has nothing left to answer.
-        SessionState::Lost => return SlotState::Lost,
+        SessionState::Lost => {
+            return SlotState::Lost {
+                reclaimable: s.lost_to_restart,
+            }
+        }
         // A clean exit is not shown at all. It needs nothing and its slot
         // is free again, so it stops being tally's business -- the row
         // stays in anchor for `anchor logs`, and the pad goes dark.
@@ -209,7 +231,9 @@ pub fn slot_state(session: Option<Session<'_>>, now: i64) -> SlotState {
                 Some(code) => SlotState::Failed { code },
                 // A terminal row with no code is precisely anchor saying it
                 // cannot account for the ending, which is what Lost means.
-                None => SlotState::Lost,
+                // Not reclaimable: anchord is up and still cannot say, so
+                // this is the case where something may be out there.
+                None => SlotState::Lost { reclaimable: false },
             };
         }
         // Closing is still alive and has no exit code yet, so it falls
@@ -257,6 +281,7 @@ mod tests {
 
     fn live(derived: &Derived) -> Session<'_> {
         Session {
+            lost_to_restart: false,
             state: SessionState::Running,
             exit_code: None,
             muted: false,
@@ -418,7 +443,36 @@ mod tests {
             exit_code: None,
             ..live(&d)
         };
-        assert_eq!(slot_state(Some(s), T0), SlotState::Lost);
+        assert_eq!(
+            slot_state(Some(s), T0),
+            SlotState::Lost { reclaimable: false }
+        );
+    }
+
+    /// `lost` usually means *anchor cannot account for this*, which
+    /// includes "it may still be running". A daemon restart is the one
+    /// reason that cannot mean that (#9).
+    #[test]
+    fn a_daemon_restart_is_the_one_lost_that_means_gone() {
+        let d = Derived::default();
+        let restarted = Session {
+            state: SessionState::Lost,
+            lost_to_restart: true,
+            ..live(&d)
+        };
+        assert_eq!(
+            slot_state(Some(restarted), T0),
+            SlotState::Lost { reclaimable: true }
+        );
+        let unknown = Session {
+            state: SessionState::Lost,
+            lost_to_restart: false,
+            ..live(&d)
+        };
+        assert_eq!(
+            slot_state(Some(unknown), T0),
+            SlotState::Lost { reclaimable: false }
+        );
     }
 
     #[test]
@@ -428,7 +482,10 @@ mod tests {
             state: SessionState::Lost,
             ..live(&d)
         };
-        assert_eq!(slot_state(Some(s), T0), SlotState::Lost);
+        assert_eq!(
+            slot_state(Some(s), T0),
+            SlotState::Lost { reclaimable: false }
+        );
     }
 
     /// Closing is still alive and has no exit code; rendering it as Exited

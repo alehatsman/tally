@@ -96,6 +96,7 @@ pub fn resolve(
             continue; // an older session for the same pad
         }
         let view = crate::signal::Session {
+            lost_to_restart: session.lost_to_restart(),
             state: session.lifecycle(),
             exit_code: session.exit_code,
             muted: session.muted(),
@@ -209,6 +210,22 @@ pub struct Pad {
 }
 
 impl Pad {
+    /// Is this pad free to claim?
+    ///
+    /// Dark, failed, or held only by a row anchord lost to its own
+    /// restart. **One predicate, three readers** — the respawn preview,
+    /// the respawn press, and `tally spawn` from a shell. They did not
+    /// always share one, and a grid that disagrees with the CLI about
+    /// what a pad is, is a grid that lies about what pressing it does
+    /// (`docs/11-cli.md`).
+    #[must_use]
+    pub fn reclaimable(&self) -> bool {
+        matches!(
+            self.state,
+            None | Some(SlotState::Failed { .. } | SlotState::Lost { reclaimable: true })
+        )
+    }
+
     /// Alive: working, quiet, or asking. The three states a kill ends and
     /// a mute is about.
     fn alive(self) -> bool {
@@ -230,16 +247,20 @@ pub fn effect(action: Action, pad: Pad) -> Effect {
     match action {
         Action::Kill if pad.alive() => Effect::Acts,
         // Respawn needs somewhere to put the new session and something to
-        // put there. It deliberately does **not** touch `lost`: a lost
-        // session may still be running and orphaned, and a second agent on
-        // the same address gives you two processes and one pad to watch
-        // them with. Purge first -- the purge is the act of deciding it is
-        // really gone.
-        Action::Respawn
-            if pad.spec && matches!(pad.state, None | Some(SlotState::Failed { .. })) =>
-        {
-            Effect::Acts
-        }
+        // put there. It deliberately does **not** touch a `lost` it cannot
+        // vouch for: that session may still be running and orphaned, and a
+        // second agent on the same address gives you two processes and one
+        // pad to watch them with. Purge first -- the purge is the act of
+        // deciding it is really gone.
+        //
+        // `lost_reason=daemon_restart` is the exception, and the daemon is
+        // the one making the claim: anchord owns the PTYs, so anchord
+        // going away took them with it and there is no orphan to collide
+        // with. It is also the common case -- every anchord restart
+        // produces a full grid of them at once, and making you purge
+        // fifty-six megabytes of readable scrollback to reclaim a pad is
+        // the wrong trade (#9).
+        Action::Respawn if pad.spec && pad.reclaimable() => Effect::Acts,
         // A dark pad can still be purgeable, and that is the point: clean
         // exits pile up behind one invisibly. Holding purge is how you see
         // them.
@@ -568,7 +589,10 @@ mod tests {
                 "{state:?}"
             );
         }
-        for dead in [SlotState::Failed { code: 1 }, SlotState::Lost] {
+        for dead in [
+            SlotState::Failed { code: 1 },
+            SlotState::Lost { reclaimable: false },
+        ] {
             assert_eq!(
                 effect(Action::Kill, pad(Some(dead))),
                 Effect::Skips,
@@ -581,6 +605,61 @@ mod tests {
     /// A lost session may still be running and orphaned, so respawning it
     /// would give you two agents in one repo and one pad to watch them
     /// with. Purge is the act of deciding it is really gone.
+    /// The exception, and the daemon is the one making the claim:
+    /// anchord owns the PTYs, so anchord going away took them with it.
+    /// There is no orphan to collide with, which is the only thing the
+    /// refusal was protecting against (#9).
+    #[test]
+    fn respawn_reclaims_a_pad_anchord_lost_to_its_own_restart() {
+        let with_spec = |state| Pad {
+            state,
+            spec: true,
+            ..Pad::default()
+        };
+        assert_eq!(
+            effect(
+                Action::Respawn,
+                with_spec(Some(SlotState::Lost { reclaimable: true }))
+            ),
+            Effect::Acts,
+            "a restart took the process with it"
+        );
+        assert_eq!(
+            effect(
+                Action::Respawn,
+                with_spec(Some(SlotState::Lost { reclaimable: false }))
+            ),
+            Effect::Skips,
+            "this one may still be out there"
+        );
+    }
+
+    /// One predicate, three readers: the preview, the press, and
+    /// `tally spawn` from a shell.
+    #[test]
+    fn a_pad_is_free_to_claim_when_nothing_live_holds_it() {
+        let pad = |state| Pad {
+            state,
+            ..Pad::default()
+        };
+        assert!(pad(None).reclaimable(), "dark");
+        assert!(pad(Some(SlotState::Failed { code: 1 })).reclaimable());
+        assert!(pad(Some(SlotState::Lost { reclaimable: true })).reclaimable());
+        assert!(!pad(Some(SlotState::Lost { reclaimable: false })).reclaimable());
+        assert!(!pad(Some(SlotState::Working)).reclaimable());
+        assert!(!pad(Some(SlotState::Quiet)).reclaimable());
+    }
+
+    /// Reclaimable changes what a press does, never what the eye sees.
+    /// The daemon still cannot account for what that session did.
+    #[test]
+    fn a_reclaimable_lost_pad_looks_exactly_like_any_other_lost_pad() {
+        assert_eq!(
+            render::slot(SlotState::Lost { reclaimable: true }),
+            render::slot(SlotState::Lost { reclaimable: false })
+        );
+    }
+
     #[test]
     fn respawn_refuses_a_lost_pad_even_with_a_spec() {
         let with_spec = |state| Pad {
@@ -597,7 +676,10 @@ mod tests {
             Effect::Acts
         );
         assert_eq!(
-            effect(Action::Respawn, with_spec(Some(SlotState::Lost))),
+            effect(
+                Action::Respawn,
+                with_spec(Some(SlotState::Lost { reclaimable: false }))
+            ),
             Effect::Skips
         );
         for state in ALIVE {
@@ -751,7 +833,7 @@ mod tests {
             Some(SlotState::Working),
             Some(SlotState::Quiet),
             Some(SlotState::Failed { code: 1 }),
-            Some(SlotState::Lost),
+            Some(SlotState::Lost { reclaimable: false }),
         ];
         for action in [Action::Kill, Action::Respawn, Action::Purge] {
             for state in every_pad {

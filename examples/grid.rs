@@ -23,7 +23,7 @@ fn main() {
         (6, 1, Working),
         (7, 3, Failed { code: 1 }),
         (7, 5, Quiet),
-        (8, 8, Lost),
+        (8, 8, Lost { reclaimable: false }),
     ];
 
     let mut f = Frame::dark();

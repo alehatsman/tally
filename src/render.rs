@@ -37,7 +37,11 @@ pub fn slot(state: SlotState) -> Cell {
         // Dark red wherever the daemon had a problem — the same colour the
         // logo uses for an unreachable anchord. Static, because `lost`
         // arrives in bulk and sixty-four flashing pads is noise, not alarm.
-        SlotState::Lost => Cell::Static(DARK_RED),
+        // Reclaimable or not, the colour is the same: the daemon still
+        // cannot account for what this session did. What changes is
+        // whether the pad can be claimed, which is a question for the
+        // press, not for the eye (`docs/03-model.md`).
+        SlotState::Lost { .. } => Cell::Static(DARK_RED),
     }
 }
 
@@ -175,7 +179,7 @@ mod tests {
             source: Source::Derived,
         },
         SlotState::Failed { code: 1 },
-        SlotState::Lost,
+        SlotState::Lost { reclaimable: false },
     ];
 
     /// Two things move, and both breathe. What separates them is hue, not
@@ -247,7 +251,7 @@ mod tests {
         for dead in [
             SlotState::Empty,
             SlotState::Failed { code: 1 },
-            SlotState::Lost,
+            SlotState::Lost { reclaimable: false },
         ] {
             assert!(!green(dead), "{dead:?} is not alive and must not be green");
         }
@@ -283,9 +287,12 @@ mod tests {
     /// lost, and "twenty things failed" is a lie that sends you debugging.
     #[test]
     fn lost_does_not_look_like_a_failure() {
-        assert_ne!(slot(SlotState::Lost), slot(SlotState::Failed { code: 1 }));
+        assert_ne!(
+            slot(SlotState::Lost { reclaimable: false }),
+            slot(SlotState::Failed { code: 1 })
+        );
         assert!(
-            !animated(slot(SlotState::Lost)),
+            !animated(slot(SlotState::Lost { reclaimable: false })),
             "lost arrives in bulk; it must not flash"
         );
     }
@@ -297,7 +304,7 @@ mod tests {
             anchord_reachable: false,
             offscreen_attention: false,
         });
-        assert_eq!(slot(SlotState::Lost), unreachable);
+        assert_eq!(slot(SlotState::Lost { reclaimable: false }), unreachable);
     }
 
     /// Every state is visually distinct from every other.
@@ -407,7 +414,10 @@ mod tests {
             slot(SlotState::Failed { code: 1 }),
             preview(Action::Kill, Effect::Acts)
         );
-        assert_eq!(slot(SlotState::Lost), preview(Action::Purge, Effect::Acts));
+        assert_eq!(
+            slot(SlotState::Lost { reclaimable: false }),
+            preview(Action::Purge, Effect::Acts)
+        );
     }
 
     /// Three levels, and the middle one is the one that earns its keep.

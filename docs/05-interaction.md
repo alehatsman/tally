@@ -221,7 +221,7 @@ guessing.
 | held | acts on | colour | does not touch |
 |---|---|---|---|
 | `CC19` kill | alive — working, quiet, wants-you | 5 red | anything already ended |
-| `CC29` respawn | a slot with a spec and nothing alive in it | 21 green | running, and **lost** |
+| `CC29` respawn | a slot with a spec and nothing alive in it | 21 green | running, and a **lost** it cannot vouch for |
 | `CC39` purge | ended — failed, or lost | 7 dark red | anything alive; anchord refuses it with `already_exited` |
 | `CC89` mute | any live session | 45 blue to mute, 3 white to un-mute | an empty pad |
 
@@ -229,11 +229,23 @@ Each colour is the colour of the **consequence**, not of the button: kill
 reds the pads that will be red, respawn greens the ones that will be green.
 Two deliberate choices in that table:
 
-- **Respawn does not touch `lost`.** A lost session may still be running and
-  orphaned ([03](03-model.md#lifecycle-of-a-slot)) — spawning a second agent
-  on the same address would give you two processes in one repo and one pad
-  to look at them with. Purge first; the purge is the act of deciding it is
-  really gone.
+- **Respawn does not touch a `lost` it cannot vouch for.** A lost session
+  may still be running and orphaned ([03](03-model.md#lifecycle-of-a-slot))
+  — spawning a second agent on the same address would give you two
+  processes in one repo and one pad to look at them with. Purge first; the
+  purge is the act of deciding it is really gone.
+
+  **`lost_reason=daemon_restart` is the exception**, and the daemon is the
+  one making the claim: anchord owns the PTYs, so anchord going away took
+  them with it and there is no orphan to collide with. It is also the
+  common case — every anchord restart produces a grid full of them at once,
+  and making you purge a session's whole scrollback to reclaim its pad is
+  the wrong trade ([#9](https://github.com/alehatsman/tally/issues/9)).
+
+  **It does not change the colour.** The pad stays dark red, because the
+  daemon still cannot account for what that session did. Hold respawn and
+  the reclaimable ones light green — which is how you find out, without a
+  fifth colour on the grid.
 - **The spec has to still resolve**, not merely be named. A pad is
   respawnable because `slots.toml` binds it, or because the dead session
   carries a `tl.spec` whose `[[spec]]` is *still in the file* — rename that

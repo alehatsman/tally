@@ -164,6 +164,18 @@ impl Session {
         self.labels.contains_key(LABEL_ATTENTION)
     }
 
+    /// Did this row become `lost` because anchord itself restarted?
+    ///
+    /// The distinction matters because `lost` normally means *the process
+    /// may still be out there* — a kill that was never observed
+    /// completing. A daemon restart is the one reason that cannot mean
+    /// that: anchord owns the PTYs, so anchord going away takes them with
+    /// it, and the daemon is the one saying so
+    /// ([#9](https://github.com/alehatsman/tally/issues/9)).
+    pub fn lost_to_restart(&self) -> bool {
+        self.lost_reason.as_deref() == Some("daemon_restart")
+    }
+
     /// Whether tally ended this session on purpose.
     pub fn killed(&self) -> bool {
         self.labels.contains_key(LABEL_KILLED)

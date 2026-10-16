@@ -136,17 +136,40 @@ fn spawn(claim: &Claim, pages: &Pages) -> ExitCode {
         }
     };
 
-    // The same predicate the grid draws with, run without watchers: a pad
-    // showing something refuses, a dark one spawns. If these two ever
-    // disagree, the grid is lying about what pressing it does.
+    // The same predicate the grid previews with, run without watchers: a
+    // pad holding something live refuses, a free one spawns. If these two
+    // ever disagree, the grid is lying about what pressing it does.
     let drawn = model::resolve(&sessions, &BTreeMap::new(), pages, tally::now_ms());
     if let Some(held) = drawn.get(&claim.at) {
+        let free = matches!(
+            held.state,
+            SlotState::Lost { reclaimable: true } | SlotState::Failed { .. }
+        );
+        if !free {
+            eprintln!(
+                "tally: {address} is held by {} ({})",
+                held.session,
+                describe(held.state)
+            );
+            // The message used to name the holder and not the move, and
+            // the documented move -- purge first -- is not reachable from
+            // a shell at all (#9, anchor#14). Say what actually works.
+            eprintln!(
+                "tally: if it is really gone: anchor label {} tl.slot- tl.attention-",
+                held.session
+            );
+            return ExitCode::FAILURE;
+        }
+        // A row anchord lost to its own restart keeps its `tl.slot` and
+        // its scrollback, and the newest session on a pad is the one the
+        // grid draws -- so claiming the pad does not need the old row
+        // removed, and must not destroy a log that is still worth
+        // reading.
         eprintln!(
-            "tally: {address} is held by {} ({})",
+            "tally: {address} was held by {} ({}); reclaiming it",
             held.session,
             describe(held.state)
         );
-        return ExitCode::FAILURE;
     }
 
     let mut labels = BTreeMap::new();
@@ -220,6 +243,7 @@ fn describe(state: SlotState) -> String {
         SlotState::Quiet => "running, idle".to_owned(),
         SlotState::NeedsAnswer { .. } => "waiting for an answer".to_owned(),
         SlotState::Failed { code } => format!("failed, exit {code}"),
-        SlotState::Lost => "lost".to_owned(),
+        SlotState::Lost { reclaimable: true } => "lost to an anchord restart".to_owned(),
+        SlotState::Lost { reclaimable: false } => "lost, and may still be running".to_owned(),
     }
 }
