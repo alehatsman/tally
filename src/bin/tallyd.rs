@@ -92,7 +92,11 @@ fn perform(ctx: &Context<'_>, gesture: Gesture, at: Slot, pages: &Pages, tmux: &
             Ok(None) => {
                 if let Some(r) = ctx.grid.get(&at) {
                     eprintln!("tallyd: jump {}:{row}:{col} -> {}", at.page, r.session);
-                    if let Err(e) = tmux.jump(&r.session) {
+                    // The address names the window. Unnamed pages cannot
+                    // happen for a slot that parsed, but an empty string
+                    // is a legal name and falls back to the old form.
+                    let label = at.label(pages).unwrap_or_default();
+                    if let Err(e) = tmux.jump(&r.session, &label) {
                         eprintln!("tallyd: {e}");
                     }
                 }

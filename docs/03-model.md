@@ -169,6 +169,17 @@ spawn and your first jump was wrapped at 80 columns. That is the replay of
 a few seconds of startup banner, and the alternative is tally guessing at
 the size of a window that does not exist yet.
 
+**"The view window owns the size" is only true at attach time**, and that
+is anchor's gap rather than ours. `anchor attach` resizes once, before the
+replay, and installs no `SIGWINCH` handler — so resizing the pane
+afterwards never reaches the PTY and the agent keeps rendering at the size
+it had when you attached (anchor#15; `window_size` is documented for a
+caller that was never written, `anchor/src/tty.rs:170`). Until that is
+fixed the workaround is to close the view window and press the pad again:
+the next jump recreates it, which re-runs the one-shot resize at the new
+size. Tally still does not call `resize` — a surface that resized a
+session under whoever holds the lease is the inverse of the problem.
+
 ## Pages
 
 Eight pages, selected by the top row (`CC91`–`CC98`). 512 addressable slots,

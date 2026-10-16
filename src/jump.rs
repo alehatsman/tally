@@ -61,9 +61,14 @@ impl std::error::Error for Error {}
 pub trait Jump {
     /// Focus the view for `session`, creating it if it is gone.
     ///
+    /// `at` is the slot address the pad carries — `page:row:col` — and is
+    /// used only to name the window. It is passed rather than derived
+    /// because this module knows about tmux and nothing else; a slot is
+    /// `crate::slot`'s idea and a session id is anchor's.
+    ///
     /// # Errors
     /// Whatever stopped it.
-    fn jump(&self, session: &str) -> Result<(), Error>;
+    fn jump(&self, session: &str, at: &str) -> Result<(), Error>;
 }
 
 // ── command construction, separated so the arguments are testable ──────────
@@ -79,7 +84,7 @@ fn list_windows_args() -> Vec<String> {
 }
 
 /// Args creating the view window for `session`, detached, in [`VIEW_SESSION`].
-fn new_window_args(session: &str, anchor_bin: &str) -> Vec<String> {
+fn new_window_args(session: &str, at: &str, anchor_bin: &str) -> Vec<String> {
     vec![
         "new-window".into(),
         "-d".into(),
@@ -89,7 +94,7 @@ fn new_window_args(session: &str, anchor_bin: &str) -> Vec<String> {
         "-t".into(),
         format!("{VIEW_SESSION}:"),
         "-n".into(),
-        window_name(session),
+        window_name(session, at),
         format!("{anchor_bin} attach {session}"),
     ]
 }
@@ -118,7 +123,7 @@ fn set_option_args(window: &str, session: &str) -> Vec<String> {
 /// `new-session -d -s tally` on its own leaves a stray shell window that
 /// nothing asked for and nothing cleans up. Creating the session around the
 /// first view means one is never made.
-fn new_session_args(session: &str, anchor_bin: &str) -> Vec<String> {
+fn new_session_args(session: &str, at: &str, anchor_bin: &str) -> Vec<String> {
     vec![
         "new-session".into(),
         "-d".into(),
@@ -128,7 +133,7 @@ fn new_session_args(session: &str, anchor_bin: &str) -> Vec<String> {
         "-F".into(),
         "#{window_id}".into(),
         "-n".into(),
-        window_name(session),
+        window_name(session, at),
         format!("{anchor_bin} attach {session}"),
     ]
 }
@@ -144,9 +149,22 @@ fn switch_args(client: &str, window: &str) -> Vec<String> {
     ]
 }
 
-/// A short, human-readable window name. Cosmetic only — [`WINDOW_OPTION`]
-/// is the identity, so a program renaming this breaks nothing.
-fn window_name(session: &str) -> String {
+/// A window name you can read: the pad it belongs to, then a short tail
+/// of the session id.
+///
+/// `1:4:4-Z8YN` rather than `tl-Z8YN`. The address is the part you
+/// actually know — it is where your finger goes, and it is what the
+/// `tl.slot` label says — whereas four characters of a ULID identify the
+/// session to nobody. The tail stays because a slot outlives the sessions
+/// in it: run something on `1:4:4` twice and the old window may still be
+/// open, and two windows called `1:4:4` is a list you cannot read.
+///
+/// **The colon is safe.** tmux splits a target on its *first* colon only,
+/// so `tally:1:4:4-Z8YN` resolves to the window of that name — verified
+/// against a real server. Nothing here depends on it either way:
+/// [`WINDOW_OPTION`] is the identity and this is cosmetic, which is why a
+/// program renaming the window breaks nothing.
+fn window_name(session: &str, at: &str) -> String {
     let tail: String = session
         .chars()
         .rev()
@@ -155,7 +173,10 @@ fn window_name(session: &str) -> String {
         .into_iter()
         .rev()
         .collect();
-    format!("tl-{tail}")
+    if at.is_empty() {
+        return format!("tl-{tail}");
+    }
+    format!("{at}-{tail}")
 }
 
 /// Find the window viewing `session` in `list-windows` output.
@@ -252,7 +273,7 @@ impl Tmux {
     /// the session is fine. Pressing the pad then **recreates it**, rather
     /// than reporting an error: the pad means "put this in front of me",
     /// and whether that needs a new window is an implementation detail.
-    fn view_window(&self, session: &str) -> Result<String, Error> {
+    fn view_window(&self, session: &str, at: &str) -> Result<String, Error> {
         let listing = Self::stdout("list-windows", &list_windows_args()).unwrap_or_default();
         if let Some(window) = window_for(&listing, session) {
             return Ok(window.to_owned());
@@ -262,9 +283,9 @@ impl Tmux {
         // from appearing. `new-session -d` on a dead server also starts one,
         // which is why a missing tmux is not a startup failure.
         let (what, args) = if Self::view_session_exists() {
-            ("new-window", new_window_args(session, &self.anchor_bin))
+            ("new-window", new_window_args(session, at, &self.anchor_bin))
         } else {
-            ("new-session", new_session_args(session, &self.anchor_bin))
+            ("new-session", new_session_args(session, at, &self.anchor_bin))
         };
         let window = Self::stdout(what, &args)?.trim().to_owned();
         Self::run("set-option", &set_option_args(&window, session))?;
@@ -287,8 +308,8 @@ fn terminal_app() -> Option<String> {
 }
 
 impl Jump for Tmux {
-    fn jump(&self, session: &str) -> Result<(), Error> {
-        let window = self.view_window(session)?;
+    fn jump(&self, session: &str, at: &str) -> Result<(), Error> {
+        let window = self.view_window(session, at)?;
         let listing = Tmux::stdout(
             "list-clients",
             &["list-clients", "-F", "#{client_name}"].map(str::to_owned),
@@ -318,10 +339,12 @@ mod tests {
     use super::*;
 
     const SESSION: &str = "01M52GEKED8ZEJPMT2KCJ35ZWT";
+    /// The slot the pad lives on, as `page:row:col`.
+    const AT: &str = "1:4:4";
 
     #[test]
     fn view_windows_go_to_a_dedicated_session() {
-        let args = new_window_args(SESSION, "anchor");
+        let args = new_window_args(SESSION, AT, "anchor");
         assert!(
             args.contains(&"-d".to_owned()),
             "detached: do not steal focus to create it"
@@ -342,7 +365,7 @@ mod tests {
     fn no_command_relies_on_a_current_session_or_client() {
         let all = [
             list_windows_args(),
-            new_window_args(SESSION, "anchor"),
+            new_window_args(SESSION, AT, "anchor"),
             set_option_args("@7", SESSION),
             switch_args("/dev/ttys000", "@7"),
         ];
@@ -352,7 +375,7 @@ mod tests {
         }
         // switch-client names its client; new-window names its session.
         assert!(switch_args("/dev/ttys000", "@7").contains(&"-c".to_owned()));
-        assert!(new_window_args(SESSION, "anchor").contains(&"-t".to_owned()));
+        assert!(new_window_args(SESSION, AT, "anchor").contains(&"-t".to_owned()));
     }
 
     #[test]
@@ -388,12 +411,33 @@ mod tests {
         assert!(clients("\n\n").is_empty());
     }
 
+    /// The address leads, because that is the part you know: it is where
+    /// your finger goes and what the `tl.slot` label says. Four characters
+    /// of a ULID identify the session to nobody.
     #[test]
-    fn window_names_are_short_and_cosmetic() {
-        assert_eq!(window_name(SESSION), "tl-5ZWT");
-        // Never panics on a short or empty id.
-        assert_eq!(window_name("ab"), "tl-ab");
-        assert_eq!(window_name(""), "tl-");
+    fn a_window_is_named_after_the_pad_it_belongs_to() {
+        assert_eq!(window_name(SESSION, AT), "1:4:4-5ZWT");
+        assert_eq!(window_name(SESSION, "work:3:5"), "work:3:5-5ZWT");
+    }
+
+    /// A slot outlives the sessions in it. Run something on the same pad
+    /// twice while the old window is open and two windows share a name,
+    /// which is a list you cannot read — so the tail stays.
+    #[test]
+    fn two_sessions_on_one_pad_get_different_names() {
+        let first = window_name("01M52GEKED8ZEJPMT2KCJ35ZWT", AT);
+        let second = window_name("01M52MXB4WQTA79K5FTHMXZ8YN", AT);
+        assert_ne!(first, second);
+        assert!(first.starts_with(AT) && second.starts_with(AT));
+    }
+
+    /// Never panics on a short or empty id, and an address-less jump
+    /// falls back to the old form rather than to a name starting with `-`.
+    #[test]
+    fn a_nameless_pad_still_produces_a_usable_name() {
+        assert_eq!(window_name("ab", ""), "tl-ab");
+        assert_eq!(window_name("", ""), "tl-");
+        assert_eq!(window_name("", AT), "1:4:4-");
     }
 
     /// The bug this caught: without `-w`, `set-option` tags the whole
@@ -410,7 +454,7 @@ mod tests {
     /// Creating the view session must not leave a shell window behind.
     #[test]
     fn the_view_session_is_created_around_its_first_view() {
-        let args = new_session_args(SESSION, "anchor");
+        let args = new_session_args(SESSION, AT, "anchor");
         assert!(args.contains(&"-d".to_owned()));
         let at = args.iter().position(|a| a == "-s").expect("-s");
         assert_eq!(args.get(at + 1).map(String::as_str), Some(VIEW_SESSION));
