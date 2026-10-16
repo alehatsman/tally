@@ -158,7 +158,6 @@ kills a running agent, that matters more than the keystroke saving.
 | tap unbound slot | spawn its spec |
 | tap bound slot | jump ([06-jump.md](06-jump.md)) |
 | tap page button (top row) | switch page |
-| **hold** a slot (>400ms) | scroll its title |
 | hold `CC19` + tap slot | **kill** |
 | hold `CC29` + tap slot | respawn / resume |
 | hold `CC39` + tap slot | purge (exited only) |
@@ -228,10 +227,11 @@ between them they decide whether a fat finger kills an agent.
    deliberate by construction (you are holding something with your other
    hand), so there is nothing left for a release to confirm, and firing on
    release would mean sliding off the pad silently cancels.
-3. **The 400ms hold-to-scroll does not apply while a modifier is held.** A
-   held slot under a held modifier is a kill that you are being slow about,
-   not a title request. One gesture per press, decided at press-down by
-   whether a modifier is down.
+3. **How long you hold a slot means nothing.** This rule used to carve out
+   the 400ms hold-to-scroll; [that feature is gone](#the-title-scroll--tried-and-abandoned)
+   and the rule got simpler rather than disappearing. A slow press and a
+   fast one do the same thing, so there is no way to be holding a pad
+   "wrong", and a kill you are being slow about is still just a kill.
 4. **Releasing an action button without tapping is a no-op. Always.** This
    is the escape hatch that justifies hold-then-tap over a prefix in the
    first place: you can change your mind with the hand that is already
@@ -274,41 +274,56 @@ Two consequences, both deliberate:
   an agent *because* it went wrong and want to read why — and the purge
   chord is still how you clear them.
 
-### The title scroll
+### The title scroll — tried, and abandoned
 
-Hold a pad; its title scrolls across the grid in the slot's own colour.
-Release; the grid comes back.
+**Built, run on hardware, and deleted the same hour.** The reasoning that
+led to it was sound and the result was unusable, which is worth more
+written down than the feature was.
 
-The hardware makes this nearly free: the scroll **overlays** the lighting
-without destroying it, and it does not cover the top row or logo, so pages
-and health stay visible while it runs
-([02-surface.md](02-surface.md#text-scrolling)). Stop it by sending the
-empty text message.
+The idea: a pad cannot show what an agent needs — 64 pads are 64 pixels —
+but a *held* pad could scroll `edit tests/pty.rs?` across the grid at 7
+pads/second, enough to decide whether to jump now or later. The hardware
+supports it generously: the scroll overlays the lighting without
+destroying it, leaves the top row and logo alone, and runs on the
+device's own clock ([02](02-surface.md#text-scrolling)).
 
-This is the entire answer to "can the button show what it needs". It cannot
-— 64 pads are 64 pixels — but a held pad can spell out `edit tests/pty.rs?`
-at 7 pads/second, and that is enough to decide whether to jump now or later.
+**The grid is eight pads wide.** At the device's character cell that is
+about **two legible characters at a time**, and a title read through a
+two-character window moving past you is not reading, it is guessing. The
+verdict after one hold on real hardware: *"it is impossible to read
+anything."*
 
-**The device takes ASCII and a title is UTF-8.** So the title is sanitised
-on the way out, in the surface layer, by one rule: printable ASCII
-(`0x20`–`0x7E`) passes, everything else becomes a space, runs of spaces
-collapse, and the result is truncated to 64 characters — about nine seconds
-of scrolling, which is already longer than anyone holds a pad. Dropping the
-em-dashes and box-drawing characters an agent puts in its title is a better
-outcome than refusing to scroll, and a far better one than sending a byte
-above `0x7F` inside a SysEx, where the device will read it as `F7` and end
-the message early.
+This is the same class of finding as the
+[three greens](#why-it-is-one-sentence) and the
+[hard amber flash](#nothing-blinks), and it is the third time the project
+has learned it: **a surface fact only shows up on the surface.** The byte
+budget was fine, the sanitiser was correct, the tests were green, and the
+feature was worthless. Nothing short of holding it down would have said
+so.
 
-A slot with no title scrolls nothing and the hold is a no-op — not an error,
-not a placeholder. The title is a signal that is allowed to be absent
-([04](04-signals.md#3-osc-title--what-it-is-doing)).
+There is no smaller version that works. Slower scrolling shows the same
+two characters for longer; a shorter title still arrives two characters
+at a time. The constraint is the width of the grid, and the grid is the
+product.
+
+So the honest answer to *"can the button show what it needs?"* is
+**no**, and tally does not pretend otherwise. The pad says *that*
+something wants you — which is the one bit it can carry from across the
+room, and the bit the whole design is built on. *What* it wants is in the
+window, one press away, rendered by a terminal that has eighty columns
+and a font.
+
+What survives: a hold is **not** a gesture. There is no timing on the
+grid at all now, which makes the rules simpler than they were — one tap,
+one action, decided at press-down.
 
 ## What a press does *not* do
 
-**No key repeat, no double-tap, no long-press-to-activate.** One tap, one
-action. The only timing in the whole surface is the 400ms hold that starts
-a title scroll, and that one is forgiving in the right direction: a slow tap
-scrolls a title, which is harmless, rather than spawning something.
+**No key repeat, no double-tap, no long-press-to-activate, and no timing of
+any kind.** One tap, one action, resolved at press-down. The surface had
+exactly one threshold — the 400ms hold that started a title scroll — and
+removing that feature removed the last clock from the input path. A press
+is a press however long you lean on it.
 
 **No input.** You cannot answer the agent from the grid. The grid tells you
 which window to look at; the window is where you type

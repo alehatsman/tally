@@ -283,6 +283,22 @@ ends), and it **does not cover the top row or the logo**. So the page
 indicators and the health light stay readable while a title scrolls across
 the grid.
 
+> ⚠️ **tally does not use this, and the reason is the grid, not the
+> protocol.** Everything above is accurate and was implemented correctly —
+> the message, the speed, the ASCII sanitising. It was then held down once
+> on real hardware and deleted: **eight pads wide is about two legible
+> characters at a time**, and a title read through a two-character moving
+> window is guessing, not reading.
+>
+> There is no smaller version that works — slower shows the same two
+> characters for longer. Kept documented because the device does do this
+> and the next person will want to try it; the finding that it is
+> unreadable is the part worth not re-deriving
+> ([05](05-interaction.md#the-title-scroll--tried-and-abandoned)).
+>
+> `STOP_SCROLL` stays in the code regardless: it is how a device left
+> mid-scroll by anything else is put back.
+
 ### Other messages worth knowing
 
 ```text

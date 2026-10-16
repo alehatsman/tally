@@ -18,9 +18,7 @@
 use crate::chord::Action;
 use crate::model::Effect;
 use crate::signal::SlotState;
-use crate::surface::palette::{
-    Entry, AMBER, BLUE, DARK_GREY, DARK_RED, GREEN, RED, TURQUOISE, WHITE,
-};
+use crate::surface::palette::{AMBER, BLUE, DARK_GREY, DARK_RED, GREEN, RED, TURQUOISE, WHITE};
 use crate::surface::Cell;
 
 /// How one slot is lit.
@@ -40,20 +38,6 @@ pub fn slot(state: SlotState) -> Cell {
         // logo uses for an unreachable anchord. Static, because `lost`
         // arrives in bulk and sixty-four flashing pads is noise, not alarm.
         SlotState::Lost => Cell::Static(DARK_RED),
-    }
-}
-
-/// The colour a held pad's title scrolls in.
-///
-/// The slot's **own** colour, so the text that appears is visibly coming
-/// from the pad under your finger rather than from the surface in
-/// general. A dark pad has no title to scroll, but the fallback is green
-/// rather than off: text in colour 0 is text you cannot see, and a
-/// request that silently produces nothing reads as a broken button.
-pub fn scroll_colour(state: SlotState) -> Entry {
-    match slot(state) {
-        Cell::Static(c) | Cell::Pulse(c) | Cell::Flash { b: c, .. } => c,
-        Cell::Off => GREEN,
     }
 }
 
@@ -440,35 +424,6 @@ mod tests {
         assert_eq!(action(None, true), Cell::Off);
         assert_eq!(action(Some(Action::Kill), false), Cell::Static(BLUE));
         assert_eq!(action(Some(Action::Kill), true), Cell::Static(WHITE));
-    }
-
-    /// Text in colour 0 is text you cannot see, and a hold that silently
-    /// produces nothing reads as a broken button.
-    #[test]
-    fn a_scroll_is_never_invisible() {
-        for state in ALL {
-            assert_ne!(
-                scroll_colour(state),
-                crate::surface::palette::OFF,
-                "{state:?}"
-            );
-        }
-    }
-
-    /// The pad's own colour, so the text is visibly coming from the thing
-    /// under your finger.
-    #[test]
-    fn a_title_scrolls_in_its_slots_colour() {
-        assert_eq!(scroll_colour(SlotState::Working), GREEN);
-        assert_eq!(scroll_colour(SlotState::Quiet), GREEN);
-        assert_eq!(
-            scroll_colour(SlotState::NeedsAnswer {
-                source: Source::Derived
-            }),
-            AMBER
-        );
-        assert_eq!(scroll_colour(SlotState::Failed { code: 1 }), RED);
-        assert_eq!(scroll_colour(SlotState::Lost), DARK_RED);
     }
 
     /// Controls must not be mistakable for any slot state at a glance.

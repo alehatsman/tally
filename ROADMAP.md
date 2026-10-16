@@ -158,13 +158,28 @@ Exit:
 
 ---
 
-## M4 — Pages and the title scroll
+## M4 — Pages
 
-Scope: top-row pages; cross-page attention on the logo; hold-to-scroll a
-title.
+Scope: top-row pages; cross-page attention on the logo.
 
 Exit: eight pages of work, and you can tell from the logo that something
 off-screen wants you.
+
+> **The title scroll was cut**, after being built and run. Eight pads is
+> about two legible characters at a time, so a scrolling title is a
+> two-character window you guess through. The verdict after one hold:
+> *"impossible to read anything."*
+>
+> Third time this project has learned the same lesson — after the three
+> greens and the hard amber flash — and the one worth stating plainly:
+> **a surface fact only shows up on the surface.** The byte budget was
+> fine, the sanitiser was correct, the tests were green, the feature was
+> worthless. The build was not wasted; it bought the measurement, which
+> is the only thing that could have settled it.
+>
+> So the pad says *that* something wants you, and never *what*. The what
+> is one press away in a window with eighty columns and a font
+> ([05](docs/05-interaction.md#the-title-scroll--tried-and-abandoned)).
 
 ---
 
@@ -186,5 +201,5 @@ M0  prove the manual  ← is the hardware what the PDF says
 M1  the grid tells    ← the only real risk: is the signal trustworthy
 M2  jump              ← the payoff gesture
 M3  spawn + chords    ← the launcher half
-M4  pages + text      ← ergonomics
+M4  pages             ← ergonomics
 ```
