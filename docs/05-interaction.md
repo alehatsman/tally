@@ -171,10 +171,49 @@ the session it was set on, which is right: it was that agent you stopped
 believing, not that pad.
 
 While an action button is held, the grid **recolours to show what the
-gesture would do**: holding kill dims every pad that is not killable and
-reds the ones that are. The surface answers "what happens if I press this"
+gesture would do**. The surface answers "what happens if I press this"
 before you press it, which is the only honest way to put a destructive
 action on a button with no label.
+
+### The held preview
+
+Three levels, and the middle one is the one that earns its keep:
+
+| pad | shows |
+|---|---|
+| the gesture would act on it | the gesture's colour, static |
+| holds a session the gesture would **not** touch | 1 dark grey — dim |
+| nothing there | off |
+
+Dim rather than off, because "that session exists and this gesture will not
+touch it" is the answer to the question you are actually asking. Hold purge
+and the running agents go dim while the dead ones light: you learn *why* a
+pad is not a target, instead of watching two thirds of the grid vanish and
+guessing.
+
+| held | acts on | colour | does not touch |
+|---|---|---|---|
+| `CC19` kill | alive — working, quiet, wants-you | 5 red | anything already ended |
+| `CC29` respawn | a slot with a spec and nothing alive in it | 21 green | running, and **lost** |
+| `CC39` purge | ended — failed, or lost | 7 dark red | anything alive; anchord refuses it with `already_exited` |
+| `CC89` mute | any live session | 45 blue to mute, 3 white to un-mute | an empty pad |
+
+Each colour is the colour of the **consequence**, not of the button: kill
+reds the pads that will be red, respawn greens the ones that will be green.
+Two deliberate choices in that table:
+
+- **Respawn does not touch `lost`.** A lost session may still be running and
+  orphaned ([03](03-model.md#lifecycle-of-a-slot)) — spawning a second agent
+  on the same address would give you two processes in one repo and one pad
+  to look at them with. Purge first; the purge is the act of deciding it is
+  really gone.
+- **Mute is the only two-colour preview**, because it is the only toggle.
+  Blue and white are the control colours, not slot colours: you are about
+  to change how tally treats the pad, not what is running on it.
+
+The top row and the logo **do not** take part. Pages and health keep
+meaning what they always mean — a preview is a question about the grid, and
+the health light is not allowed to answer a different one.
 
 ### The exact rules of a chord
 
