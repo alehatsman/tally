@@ -41,39 +41,50 @@ pub fn slot(state: SlotState) -> Cell {
     }
 }
 
-/// What a page button in the top row shows.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Page {
-    /// The page currently on the grid.
-    pub current: bool,
-    /// Holds at least one session.
-    pub occupied: bool,
-    /// Something on this page wants you, and you are not looking at it.
-    pub attention: bool,
+/// How `▲` and `▼` are lit.
+///
+/// Dim when you can move that way, dark at the ends. **Dark does
+/// nothing** — that is the rule the whole top row is built on now, and it
+/// is why these report *movement*, not *occupancy*: you navigate to an
+/// empty page on purpose, to spawn into it.
+pub fn arrow(movable: bool) -> Cell {
+    if movable {
+        Cell::Static(DARK_GREY)
+    } else {
+        Cell::Off
+    }
 }
 
-/// How a page button in the top row is lit.
+/// How `◄` is lit: white when there is somewhere to go back to.
 ///
-/// **Exactly one bright thing, and it is always where you are.** An
-/// earlier version lit the current page white and occupied pages
-/// turquoise, which failed the same way the three greens did: both were
-/// perfectly legible and neither said *which is which*. Asked what was
-/// selected, the answer from the desk was "I am confused which one is
-/// selected, the white one or the turquoise one".
-///
-/// Brightness answers "where am I" before hue answers anything, so the
-/// row is read in one glance instead of recalled from a table. Hue is
-/// spent on the one thing that is urgent rather than on a distinction
-/// that brightness already makes.
-pub fn page(p: Page) -> Cell {
-    if p.current {
-        // You are looking at it, so there is no off-screen attention to
-        // report: walking onto a page is how you stop being told about it.
+/// One of the two control colours, and the same white the right column
+/// uses while a modifier is held — it says *this button is live right
+/// now*, which is exactly what it means here.
+pub fn back(available: bool) -> Cell {
+    if available {
         Cell::Static(WHITE)
-    } else if p.attention {
+    } else {
+        Cell::Off
+    }
+}
+
+/// How `►` is lit: the reserved amber, pulsing, when something is waiting.
+///
+/// Amber and only amber, because amber means one thing on this surface and
+/// `►` means that thing: *look at me*. It needs no colour of its own and
+/// must not get one.
+///
+/// **This row used to say which page wanted you.** The rule it replaced
+/// was paid for in real confusion — *"I am confused which one is selected,
+/// the white one or the turquoise one"* — and said: exactly one page
+/// button is bright, and it is always the one you are on. It is gone, with
+/// the per-page amber, because `►` crosses pages. You no longer navigate
+/// *to* attention; attention navigates to you. The defence is one number,
+/// pages used 70 : 2, and it is written down in `docs/16-the-queue.md` so
+/// it can be revisited if pages ever become load-bearing.
+pub fn next(waiting: bool) -> Cell {
+    if waiting {
         Cell::Pulse(AMBER)
-    } else if p.occupied {
-        Cell::Static(DARK_GREY)
     } else {
         Cell::Off
     }
@@ -197,11 +208,9 @@ mod tests {
                 anchord_reachable: true,
                 offscreen_attention: true,
             }),
-            page(Page {
-                occupied: true,
-                attention: true,
-                ..Page::default()
-            }),
+            next(true),
+            back(true),
+            arrow(true),
             action(Some(Action::Kill), true),
             action(Some(Action::Kill), false),
         ] {
@@ -334,32 +343,31 @@ mod tests {
         assert!(animated(logo(h)));
     }
 
+    /// Every top-row button is self-describing: dark does nothing, lit
+    /// does exactly one thing. There is no state to remember and no mode
+    /// to be in (`docs/16-the-queue.md`).
     #[test]
-    fn the_current_page_does_not_report_attention_to_itself() {
-        let here = Page {
-            current: true,
-            occupied: true,
-            attention: true,
-        };
-        assert_eq!(page(here), Cell::Static(WHITE));
+    fn a_dark_top_row_button_does_nothing() {
+        assert_eq!(arrow(false), Cell::Off);
+        assert_eq!(back(false), Cell::Off);
+        assert_eq!(next(false), Cell::Off);
     }
 
+    /// `►` is the only one that moves, and it moves in the one colour
+    /// this surface reserves.
     #[test]
-    fn page_buttons_escalate() {
-        assert_eq!(page(Page::default()), Cell::Off);
-        assert_eq!(
-            page(Page {
-                occupied: true,
-                ..Page::default()
-            }),
-            Cell::Static(DARK_GREY)
-        );
-        let wants = Page {
-            occupied: true,
-            attention: true,
-            ..Page::default()
-        };
-        assert!(animated(page(wants)));
+    fn only_next_is_amber_and_only_next_animates() {
+        assert!(animated(next(true)));
+        assert!(!animated(back(true)));
+        assert!(!animated(arrow(true)));
+        assert_eq!(next(true), Cell::Pulse(AMBER));
+    }
+
+    /// Back is a control, not a slot state, so it takes a control colour.
+    #[test]
+    fn back_is_white_and_arrows_are_dim() {
+        assert_eq!(back(true), Cell::Static(WHITE));
+        assert_eq!(arrow(true), Cell::Static(DARK_GREY));
     }
 
     const EFFECTS: [Effect; 4] = [Effect::Acts, Effect::Unmutes, Effect::Skips, Effect::None];
@@ -438,42 +446,29 @@ mod tests {
         assert_eq!(action(Some(Action::Kill), true), Cell::Static(WHITE));
     }
 
-    /// The failure this guards is the one that was hit: white for "you
-    /// are here" and turquoise for "has sessions" were equally bright,
-    /// and the row could not be read without recalling which was which.
+    /// The rule this replaces was *exactly one page button is bright and
+    /// it is the one you are on*, learned when white for "you are here"
+    /// and turquoise for "has sessions" proved equally bright and
+    /// unreadable. The row no longer says where you are — but the thing
+    /// that made the old row fail is still forbidden: **at most one bright
+    /// button, and the bright one is not competing with another.**
     #[test]
-    fn exactly_one_page_button_is_bright() {
-        let bright = |c: Cell| matches!(c, Cell::Static(e) if e != crate::surface::palette::OFF && e != DARK_GREY);
-        let here = page(Page {
-            current: true,
-            occupied: true,
-            attention: false,
-        });
-        assert!(bright(here));
-        // Every other resting state is dim or dark.
-        for elsewhere in [
-            Page::default(),
-            Page {
-                occupied: true,
-                ..Page::default()
-            },
-        ] {
-            assert!(!bright(page(elsewhere)), "{elsewhere:?}");
-        }
+    fn at_most_one_top_row_button_is_bright() {
+        let bright = |c: Cell| {
+            matches!(c, Cell::Static(e) | Cell::Pulse(e)
+                if e != crate::surface::palette::OFF && e != DARK_GREY)
+        };
+        let lit = [arrow(true), arrow(true), back(true), next(true)];
+        let count = lit.into_iter().filter(|&c| bright(c)).count();
+        assert_eq!(count, 2, "back and next; the arrows stay dim");
+        assert_ne!(back(true), next(true), "and they are not the same colour");
     }
 
-    /// Dim is not dark: a page holding work still has to be visible as
-    /// different from an empty one, or the row answers only half a
-    /// question.
+    /// Dim is not dark: an arrow you can press has to look different from
+    /// one you cannot, or the row answers only half a question.
     #[test]
-    fn a_page_holding_work_is_not_the_same_as_an_empty_one() {
-        assert_ne!(
-            page(Page {
-                occupied: true,
-                ..Page::default()
-            }),
-            page(Page::default())
-        );
+    fn an_arrow_you_can_press_is_not_the_same_as_one_you_cannot() {
+        assert_ne!(arrow(true), arrow(false));
     }
 
     /// Controls must not be mistakable for any slot state at a glance.

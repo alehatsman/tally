@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::anchor::Session;
 use crate::chord::Action;
 use crate::config::{Config, Launch};
-use crate::render::{self, Health, Page};
+use crate::render::{self, Health};
 use crate::signal::{slot_state, Derived, SessionState, SlotState};
 use crate::slot::{self, Pages, Slot};
 use crate::surface::{Button, Frame};
@@ -29,6 +29,14 @@ pub struct View<'a> {
     pub anchord_reachable: bool,
     /// Milliseconds since the epoch.
     pub now: i64,
+    /// Is there anywhere for `◄` to go? Read from
+    /// [`crate::jump::Jump::can_go_back`] — the same predicate the press
+    /// asks, so the button never lights up and then does nothing.
+    pub can_go_back: bool,
+    /// How many slots `►` would offer — [`crate::queue::depth`]. Zero is
+    /// what makes `►` dark, and it is the same count the journal records
+    /// as `queued`.
+    pub queued: usize,
     /// The modifier being held, if exactly one is
     /// (`crate::chord::Chords::modifier`). The grid recolours to show
     /// what it would do.
@@ -370,16 +378,17 @@ pub fn frame_from(pads: &Pads<'_>, view: &View<'_>) -> Frame {
         }
     }
 
-    for index in 1..=slot::PAGES {
-        let at = usize::from(index - 1);
-        frame.set(
-            Button::Page(index),
-            render::page(Page {
-                current: index == view.current,
-                occupied: occupied.get(at).copied().unwrap_or(false),
-                attention: wants_you.get(at).copied().unwrap_or(false),
-            }),
-        );
+    // The top row: `▲ ▼ ◄ ► · · · ·` (`docs/16-the-queue.md`). Every
+    // button here is self-describing — dark does nothing, lit does exactly
+    // one thing — so there is no state to remember and no mode to be in.
+    frame.set(Button::Top(1), render::arrow(view.current > 1));
+    frame.set(Button::Top(2), render::arrow(view.current < slot::PAGES));
+    frame.set(Button::Top(3), render::back(view.can_go_back));
+    frame.set(Button::Top(4), render::next(view.queued > 0));
+    for index in 5..=slot::PAGES {
+        // Carries nothing, and stays dark. An unassigned button is better
+        // than a strained one.
+        frame.set(Button::Top(index), crate::surface::Cell::Off);
     }
 
     for row in 1..=8 {
@@ -455,6 +464,8 @@ mod tests {
             current: 1,
             anchord_reachable: true,
             now: NOW,
+            can_go_back: false,
+            queued: 0,
             held: None,
             pressed: &NO_BUTTONS,
         }
@@ -764,8 +775,8 @@ mod tests {
         assert_eq!(resting.get(Button::Logo), held.get(Button::Logo));
         for page in 1..=slot::PAGES {
             assert_eq!(
-                resting.get(Button::Page(page)),
-                held.get(Button::Page(page)),
+                resting.get(Button::Top(page)),
+                held.get(Button::Top(page)),
                 "page {page}"
             );
         }
@@ -785,6 +796,8 @@ mod tests {
             &BTreeMap::new(),
             &NO_SPECS,
             &View {
+                can_go_back: false,
+                queued: 0,
                 held: None, // what `Chords::modifier` reports for two
                 pressed: &pressed,
                 ..view(&pages)
@@ -890,16 +903,34 @@ mod tests {
             Cell::Off,
             "page 2 is not showing"
         );
+        // The top row no longer says which page you are on, or which
+        // page holds work. `▲` is dark because page 1 is the first, `▼`
+        // is dim because there is somewhere to go (`docs/16-the-queue.md`).
+        assert_eq!(f.get(Button::Top(1)), Cell::Off, "no page above page 1");
         assert_eq!(
-            f.get(Button::Page(2)),
+            f.get(Button::Top(2)),
             Cell::Static(DARK_GREY),
-            "but its button says it holds work"
+            "and somewhere to go below it"
         );
-        assert_eq!(
-            f.get(Button::Page(1)),
-            Cell::Static(WHITE),
-            "and page 1 is where you are"
-        );
+    }
+
+    /// The four buttons that carry nothing stay dark, in every state. A
+    /// lit button that does nothing is one you press twice.
+    #[test]
+    fn the_unassigned_half_of_the_top_row_is_always_dark() {
+        let pages = Pages::default();
+        let sessions = [session("a", "running", Some("1:3:5"))];
+        let v = View {
+            can_go_back: true,
+            queued: 3,
+            ..view(&pages)
+        };
+        let f = frame(&sessions, &BTreeMap::new(), &NO_SPECS, &v);
+        for index in 5..=slot::PAGES {
+            assert_eq!(f.get(Button::Top(index)), Cell::Off, "Top({index})");
+        }
+        assert_eq!(f.get(Button::Top(3)), Cell::Static(WHITE), "back is live");
+        assert_eq!(f.get(Button::Top(4)), Cell::Pulse(AMBER), "next is waiting");
     }
 
     #[test]
@@ -917,11 +948,10 @@ mod tests {
         };
         let f = frame(&sessions, &derived, &NO_SPECS, &v);
 
+        // The logo still reports it. The top row no longer says *which*
+        // page — `►` crosses pages, so you do not navigate to attention
+        // any more (`docs/16-the-queue.md`).
         assert_eq!(f.get(Button::Logo), Cell::Pulse(AMBER), "logo must say so");
-        assert!(
-            matches!(f.get(Button::Page(4)), Cell::Pulse(AMBER)),
-            "and which page"
-        );
     }
 
     #[test]

@@ -101,8 +101,8 @@ colours so the grid never has to be read for them:
 
 | button | resting | held / active |
 |---|---|---|
-| `▲` `▼` page, nothing that way | off | — |
-| `▲` `▼` page, something that way | 1 dark grey, static | — |
+| `▲` `▼` page, no page that way | off | — |
+| `▲` `▼` page, somewhere to go | 1 dark grey, static | — |
 | `◄` back, no origin | off | — |
 | `◄` back, origin recorded | 3 white, static | — |
 | `►` next, queue empty | off | — |

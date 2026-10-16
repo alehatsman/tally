@@ -88,8 +88,34 @@ pub enum Gesture {
         /// Col 1-8, 1 is the left.
         col: u8,
     },
-    /// A top-row button was tapped.
-    Page(u8),
+    /// Go to the previous page (`▲`).
+    PageUp,
+    /// Go to the next page (`▼`).
+    PageDown,
+    /// Put me back where I was standing (`◄`).
+    Back,
+    /// Take me to the longest-waiting amber (`►`).
+    Next,
+}
+
+/// What a top-row button does.
+///
+/// Four of the eight carry nothing and return `None`, which is the same
+/// answer `Action::of` gives for `CC49`-`CC79` and for the same reason: an
+/// inert button that lights up like a live one is an invitation to press
+/// it (`docs/16-the-queue.md`).
+///
+/// None of these is a chord. `◄` and `►` commit nothing — they move you —
+/// so there is nothing for a hold to protect, which is exactly why
+/// `docs/13`'s *answer from the grid* needed one and this does not.
+fn top(n: u8) -> Option<Gesture> {
+    match n {
+        1 => Some(Gesture::PageUp),
+        2 => Some(Gesture::PageDown),
+        3 => Some(Gesture::Back),
+        4 => Some(Gesture::Next),
+        _ => None,
+    }
 }
 
 /// Which modifiers are down.
@@ -140,7 +166,7 @@ impl Chords {
             },
             // Switching page under a held modifier is allowed, and useful:
             // it is how you kill something that is not on the grid.
-            Button::Page(n) => Some(Gesture::Page(n)),
+            Button::Top(n) => top(n),
             Button::Action(_) | Button::Logo => None,
         }
     }
@@ -345,7 +371,7 @@ mod tests {
     fn a_page_button_still_works_under_a_modifier() {
         let mut c = Chords::default();
         let _held = c.feed(KILL, true);
-        assert_eq!(c.feed(Button::Page(4), true), Some(Gesture::Page(4)));
+        assert_eq!(c.feed(Button::Top(4), true), Some(Gesture::Next));
         assert_eq!(c.modifier(), Some(Action::Kill), "still held");
     }
 

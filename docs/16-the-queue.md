@@ -116,13 +116,16 @@ buttons on the device.
 
 | button | dark when | lit | press |
 |---|---|---|---|
-| `▲` `▼` | no page that way holds anything | 1 dark grey, static | change page |
+| `▲` `▼` | there is no page that way | 1 dark grey, static | change page |
 | `◄` back | no origin recorded | 3 white, static | return to where you were standing |
 | `►` next | the queue is empty | **9 amber, pulsing** | jump to the longest-waiting |
 | 4 others | always | — | nothing |
 
 Every button here is **self-describing**: dark does nothing, lit does
-exactly one thing, and there is no state to remember. `next` reuses the
+exactly one thing, and there is no state to remember. The arrows report
+*movement*, not *occupancy* — you navigate to an empty page on purpose, to
+spawn into it, so a dark `▼` has to mean "there is no page below this one"
+and nothing else. `next` reuses the
 reserved amber and means what amber means everywhere else on the surface —
 *look at me* — which is why it does not need a fifth colour.
 

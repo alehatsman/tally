@@ -106,6 +106,15 @@ pub trait Jump {
     /// # Errors
     /// Whatever stopped it.
     fn close(&self, session: &str) -> Result<(), Error>;
+
+    /// The sessions currently in front of an attached client.
+    ///
+    /// The queue excludes these: `►` must not offer you the thing already
+    /// filling your terminal (`docs/16-the-queue.md`). Returns empty when
+    /// tmux cannot be asked, which degrades to offering you everything —
+    /// the safe direction, since the worst case is a press that lands you
+    /// where you already are.
+    fn viewing(&self) -> Vec<String>;
 }
 
 // ── command construction, separated so the arguments are testable ──────────
@@ -474,6 +483,17 @@ impl Tmux {
     }
 }
 
+/// The session a pane views, if it is a view at all.
+fn session_of(listing: &str, pane: &str) -> Option<String> {
+    listing.lines().find_map(|line| {
+        let mut f = line.split_whitespace();
+        (f.next() == Some(pane))
+            .then(|| f.nth(2))
+            .flatten()
+            .map(ToOwned::to_owned)
+    })
+}
+
 /// Is `pane` a view — that is, does it carry a non-empty tag?
 fn is_view(listing: &str, pane: &str) -> bool {
     listing.lines().any(|line| {
@@ -555,6 +575,14 @@ impl Jump for Tmux {
 
     fn can_go_back(&self) -> bool {
         self.origin.lock().is_ok_and(|o| !o.is_empty())
+    }
+
+    fn viewing(&self) -> Vec<String> {
+        let panes = Tmux::panes();
+        Tmux::client_panes()
+            .into_iter()
+            .filter_map(|(_, pane)| session_of(&panes, &pane))
+            .collect()
     }
 
     fn close(&self, session: &str) -> Result<(), Error> {

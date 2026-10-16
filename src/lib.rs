@@ -17,6 +17,7 @@ pub mod jump;
 pub mod lock;
 pub mod model;
 pub mod osc;
+pub mod queue;
 pub mod render;
 pub mod signal;
 pub mod slot;
