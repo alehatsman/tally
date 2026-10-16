@@ -109,8 +109,8 @@ The silkscreen stops being decoration. `13`'s own scorecard calls `◄ ►`
 buttons on the device.
 
 ```text
-  ▲      ▼      ◄      ►   │  ·    ·    ·    ·  │  ◈
- row    row    back   next │      unassigned    │ health
+  ▲      ▼      ◄      ►   │  ⌂    ·    ·    ·  │  ◈
+ row    row    back   next │ home   unassigned  │ health
   up    down               │
 ```
 
@@ -130,7 +130,16 @@ anything.
 | `▲` `▼` | there is no row that way | 1 dark grey, static | scroll one row |
 | `◄` back | no origin recorded | 3 white, static | return to where you were standing |
 | `►` next | the queue is empty | **9 amber, pulsing** | jump to the longest-waiting |
-| 4 others | always | — | nothing |
+| `⌂` home | already at the top | 1 dark grey, static | scroll back to row 1 |
+| 3 others | always | — | nothing |
+
+**`⌂` is the `Session` button, doing what its silkscreen says** — *return
+to the overview*. It is the one move `▲▼` make tedious: sixteen presses
+back from the bottom of the row space, for the place you are most often
+going. One press, and it is dark exactly when you are already there.
+
+It is a tap, not a hold: like `◄` and `►` it commits nothing, it only
+moves you.
 
 Every button here is **self-describing**: dark does nothing, lit does
 exactly one thing, and there is no state to remember. The arrows report
@@ -315,6 +324,7 @@ lies. The CC mapping is untouched — `Top(1)` is still `CC91`.
 - a pad and an address round-trip through the window at every offset
 - scrolling crosses a page boundary with nothing special happening
 - `►` scrolls the least it can to show where it landed
+- `⌂` is dark exactly at offset 0, and lands at offset 0 from anywhere
 - an empty queue is `None`, not an error
 - `►` is dark exactly when `head` is `None` — one predicate, read by the
   renderer and by the press, the rule `src/act.rs` already holds for chords

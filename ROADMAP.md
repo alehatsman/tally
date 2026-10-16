@@ -409,6 +409,55 @@ Exit:
 
 ---
 
+## M9 — The tempo says how long
+
+Forty-nine answered waits in `attention.jsonl` span two orders of
+magnitude — p50 **187 s**, p90 **1,076 s**, max **2,403 s** — and the pad
+looks identical at both ends. The grid says *something wants you* and has
+never said *and it has been waiting eighteen minutes*, which is the thing
+that decides whether you get up.
+
+[M8](#m8--the-top-row-is-a-queue) answered it for the press: `►` goes to
+the oldest. This answers it for the glance
+([docs/17](docs/17-the-tempo.md)).
+
+Scope: MIDI clock at 24 PPQN, 60 bpm when nothing is ageing and 140 bpm at
+fifteen minutes, linear and clamped between. Plus `⌂` — the `Session`
+button doing what its silkscreen says, scrolling back to row 1, which is
+the one move `▲▼` make tedious.
+
+Exit:
+- ⬜ **the device honours MIDI clock on the port we already open.** If it
+  does not, stop and re-decide — `tally` opens `LPMiniMK3 MIDI`, not the
+  DAW port, and the manual implies rather than states
+- ⬜ 60 bpm reads as calm and not as broken; 140 as *this is getting old*
+  and not as *alarm*
+- ⬜ a day beside the quickening without it becoming tiring — the
+  measurement the hard amber flash failed
+- ⬜ a wedged `tallyd` is visibly frozen rather than quietly stale
+
+> **It trades "set once and forget" for one byte, forever.** `docs/02`
+> sells the palette animations on *no timer, no repaint loop, no drift*,
+> and a clock gives one third of that back. The important third stays: the
+> **ramp** still runs on the device, so a pulse is smooth under load and
+> never stutters. Only the beat boundary becomes ours, and one byte at
+> tens of hertz is cheaper than anything else on this surface.
+
+> **Frozen breath is the point, not the risk.** A wedged `tallyd` today
+> leaves a perfectly normal-looking grid showing a stale snapshot — the
+> worst failure a status display can have, because it is indistinguishable
+> from "nothing changed". With a clock it stops breathing mid-ramp and is
+> visibly wrong from six metres. That is why the floor is 60 bpm and not
+> 30: a very slow breath and a stopped one have to be tellable apart.
+
+> **The range is narrow on purpose.** The device's own unsynced 120 bpm
+> sits inside it. The failure this project has already paid for once is a
+> surface that is correct and *exhausting* — the hard amber flash read as
+> urgent on hardware and as stressful after a few hours. A tempo that
+> sprints is that mistake with a different knob.
+
+---
+
 ## Later, unscheduled
 
 - ~~the `settings.json` line for the `Notification` hook~~ — **M6**. It was
@@ -431,6 +480,7 @@ M5  tally spawn       ← the folder comes from a shell, not a file
 M6  the amber exists  ← M1's risk, answered: the signal was absent
 M7  where views live  ← a view is a pane; #1 #2 #3
 M8  the top row queue ← 61% of the time there is no *the* amber pad
+M9  the tempo         ← p50 187s, p90 1076s, and the pad looks the same
 ```
 
 M6 is out of order on purpose. It is M1's work, and it is here rather than

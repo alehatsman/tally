@@ -107,7 +107,9 @@ colours so the grid never has to be read for them:
 | `◄` back, origin recorded | 3 white, static | — |
 | `►` next, queue empty | off | — |
 | `►` next, something waiting | 9 amber, **pulsing** | — |
-| the other four top-row buttons | off | — |
+| `⌂` home, already at row 1 | off | — |
+| `⌂` home, scrolled down | 1 dark grey, static | — |
+| the other three top-row buttons | off | — |
 | action button (right column) | 45 blue, static | 3 white while held |
 
 ⚠️ **This table was rewritten by [16](16-the-queue.md).** The top row used
@@ -146,6 +148,12 @@ Both animations are the device's own
 not just an optimisation: a host-driven blink drifts, stutters under load,
 and keeps blinking for one frame after the state changed. The hardware's
 does not.
+
+**How fast they breathe is a signal of its own** — the age of the oldest
+thing waiting, carried by MIDI clock ([17](17-the-tempo.md)). The ramp
+stays on the device, so none of the above is given back; only the beat
+boundary becomes the host's. Hue says *what*, motion says *something is
+happening*, and tempo says *how long it has been*.
 
 ### The logo is the health light
 
@@ -186,6 +194,7 @@ kills a running agent, that matters more than the keystroke saving.
 | tap `▲` `▼` (top row) | scroll the grid one row |
 | tap `◄` (top row) | **back** — return to where you were standing |
 | tap `►` (top row) | **next** — jump to the longest-waiting amber |
+| tap `⌂` (top row) | **home** — scroll back to row 1 |
 | hold `CC19` + tap slot | **kill** |
 | hold `CC29` + tap slot | respawn / resume |
 | hold `CC39` + tap slot | purge (exited only) |
