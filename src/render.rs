@@ -18,7 +18,7 @@
 use crate::chord::Action;
 use crate::model::Effect;
 use crate::signal::SlotState;
-use crate::surface::palette::{AMBER, BLUE, DARK_GREY, DARK_RED, GREEN, RED, WHITE};
+use crate::surface::palette::{AMBER, DARK_GREY, DARK_RED, GREEN, RED, WHITE};
 use crate::surface::Cell;
 
 /// How one slot is lit.
@@ -123,8 +123,9 @@ pub fn next(waiting: bool) -> Cell {
     }
 }
 
-/// A right-column action button. White while held, which is the only
-/// feedback that the modifier is actually down.
+/// A right-column action button. Red at rest — the colour of what it
+/// does, on the corner the silkscreen labels *Stop*. White while held,
+/// which is the only feedback that the modifier is actually down.
 ///
 /// `CC49`-`CC79` carry no gesture and are dark: a button lit like a live
 /// one that does nothing when you press it is worse than an unlit button,
@@ -133,7 +134,7 @@ pub fn action(button: Option<Action>, held: bool) -> Cell {
     match (button, held) {
         (None, _) => Cell::Off,
         (Some(_), true) => Cell::Static(WHITE),
-        (Some(_), false) => Cell::Static(BLUE),
+        (Some(_), false) => Cell::Static(RED),
     }
 }
 
@@ -447,7 +448,7 @@ mod tests {
     fn an_action_button_with_no_gesture_is_dark() {
         assert_eq!(action(None, false), Cell::Off);
         assert_eq!(action(None, true), Cell::Off);
-        assert_eq!(action(Some(Action::Kill), false), Cell::Static(BLUE));
+        assert_eq!(action(Some(Action::Kill), false), Cell::Static(RED));
         assert_eq!(action(Some(Action::Kill), true), Cell::Static(WHITE));
     }
 
@@ -477,10 +478,17 @@ mod tests {
     }
 
     /// Controls must not be mistakable for any slot state at a glance.
+    ///
+    /// The kill button is the one exemption, and it is deliberate: it
+    /// rests on [`RED`], the colour of its own consequence and the
+    /// colour a failed slot wears. It gets away with it because it is
+    /// not on the grid — it is the bottom of the right column, where the
+    /// silkscreen says *Stop*. Position disambiguates before hue has to.
+    /// Every other control still has to be unique.
     #[test]
     fn control_colours_are_disjoint_from_slot_colours() {
         let slot_entries: Vec<Cell> = ALL.into_iter().map(slot).collect();
-        for control in [action(Some(Action::Kill), false), Cell::Static(DARK_GREY)] {
+        for control in [Cell::Static(DARK_GREY), back(true)] {
             assert!(
                 !slot_entries.contains(&control),
                 "{control:?} collides with a slot colour"

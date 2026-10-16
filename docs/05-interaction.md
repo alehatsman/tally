@@ -112,7 +112,7 @@ colours so the grid never has to be read for them:
 | the other three top-row buttons | off | — |
 | `>` launcher, row has nothing to inherit or nowhere to put it | off | — |
 | `>` launcher, ready | 1 dark grey, static | — |
-| `CC19` kill | 45 blue, static | 3 white while held |
+| `CC19` kill | 5 red, static | 3 white while held |
 
 ⚠️ **This table was rewritten by [16](16-the-queue.md).** The top row used
 to be eight page buttons, and the rule below — *exactly one page button is
@@ -136,8 +136,11 @@ bright thing, some dim things, and the dim ones say "there is work over
 there". Hue on this row is then spent only on the thing that is urgent —
 amber, the same amber as everywhere else, meaning the same thing.
 
-Action buttons stay blue because they must not be mistakable for *any*
-slot state at a glance, and nothing in the slot palette is near it.
+The kill button is **red**: the colour of what it does, and the colour
+the pads it will touch are about to be. It shares red with a failed slot,
+and that is survivable because it is not on the grid — it is the bottom
+corner of the right column, where the silkscreen says *Stop*. Position
+disambiguates before hue has to.
 
 An amber `►` says **that something wants you**; the logo says **that it is
 off this page**. Both, deliberately: the logo is visible from further away

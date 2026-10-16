@@ -34,7 +34,10 @@ pub const DARK_GREY: Entry = 1;
 /// last shares [`BLUE`]'s job of saying you are about to change how tally
 /// treats a pad rather than what is running on it.
 pub const WHITE: Entry = 3;
-/// Red. A session that exited non-zero.
+/// Red. A session that exited non-zero, and the kill button at rest —
+/// the colour of what that button does. The two never confuse because
+/// one is on the grid and the other is the right-column corner the
+/// silkscreen labels *Stop*.
 pub const RED: Entry = 5;
 /// A deeper red, clearly distinct from [`RED`].
 ///
@@ -62,5 +65,6 @@ pub const DARK_GREEN: Entry = 23;
 /// only in the encoder fixtures (`src/surface/frame.rs`), which need a
 /// second colour and do not care which.
 pub const TURQUOISE: Entry = 37;
-/// Blue. An action button at rest.
+/// Blue. Unused: it *was* the action button at rest, until the kill
+/// button took the colour of its own consequence.
 pub const BLUE: Entry = 45;

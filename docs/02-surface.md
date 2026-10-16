@@ -144,14 +144,14 @@ Palette entries this design actually uses:
 | 0 | off | unbound slot | unlit — see the note below |
 | 1 | dark grey | bound, not running | a dim glow, cooler than "grey" suggests |
 | 3 | white | the page you are on; an action button while held | white |
-| 5 | red | exited non-zero | red |
+| 5 | red | exited non-zero; the kill button, resting | red |
 | 7 | dark red | anchord unreachable (logo) | a deeper red, clearly distinct from 5 |
 | 9 | **amber** | **needs an answer** | orange |
 | 13 | yellow | starting | yellow with a green cast |
 | 21 | **green** | **running** | green |
 | 23 | dark green | exited clean | green — close to 21, but distinguishable |
 | 37 | turquoise | *was* the page button holding sessions — unused since [16](16-the-queue.md) | cyan |
-| 45 | blue | action buttons, resting | blue |
+| 45 | blue | *was* action buttons, resting — unused since the kill button went red | blue |
 
 Three of these took a judgment a photograph could not make, and all three
 were checked by looking, which is the only way they *can* be checked
