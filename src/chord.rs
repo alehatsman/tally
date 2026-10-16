@@ -96,11 +96,13 @@ pub enum Gesture {
     Back,
     /// Take me to the longest-waiting amber (`►`).
     Next,
+    /// Scroll back to row 1 (`⌂`, the `Session` button).
+    Home,
 }
 
 /// What a top-row button does.
 ///
-/// Four of the eight carry nothing and return `None`, which is the same
+/// Three of the eight carry nothing and return `None`, which is the same
 /// answer `Action::of` gives for `CC49`-`CC79` and for the same reason: an
 /// inert button that lights up like a live one is an invitation to press
 /// it (`docs/16-the-queue.md`).
@@ -114,6 +116,7 @@ fn top(n: u8) -> Option<Gesture> {
         2 => Some(Gesture::PageDown),
         3 => Some(Gesture::Back),
         4 => Some(Gesture::Next),
+        5 => Some(Gesture::Home),
         _ => None,
     }
 }
@@ -372,6 +375,14 @@ mod tests {
         let mut c = Chords::default();
         let _held = c.feed(KILL, true);
         assert_eq!(c.feed(Button::Top(4), true), Some(Gesture::Next));
+        assert_eq!(c.feed(Button::Top(5), true), Some(Gesture::Home));
+        for n in 6..=8 {
+            assert_eq!(
+                c.feed(Button::Top(n), true),
+                None,
+                "Top({n}) carries nothing"
+            );
+        }
         assert_eq!(c.modifier(), Some(Action::Kill), "still held");
     }
 

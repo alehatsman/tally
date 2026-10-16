@@ -89,6 +89,29 @@ pub fn depth(
         .count()
 }
 
+/// When the oldest thing still asking started asking.
+///
+/// **Not the queue's head.** The head excludes the slot in front of you,
+/// because `►` must not offer you where you already are. The tempo does
+/// not exclude it: a request you are sitting in front of and have not
+/// answered is still a request that has been waiting, and the grid is
+/// read by the room rather than by your current focus
+/// (`docs/17-the-tempo.md`).
+///
+/// Muted slots are excluded by both, for the same reason: mute means
+/// *stop raising this*, and the beat is raising it.
+#[must_use]
+pub fn oldest(waiting: &BTreeMap<Slot, (String, i64)>, pads: &Pads<'_>) -> Option<i64> {
+    waiting
+        .iter()
+        .filter(|(at, _)| {
+            let pad = pads.at(**at);
+            matches!(pad.state, Some(SlotState::NeedsAnswer { .. })) && !pad.muted
+        })
+        .map(|(_, (_, since))| *since)
+        .min()
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
@@ -226,6 +249,35 @@ mod tests {
             let head = head(&w, &f.pads(), &BTreeSet::new()).expect("a head");
             assert_eq!(head.at, at(1, 2, 1), "lower address wins, every time");
         }
+    }
+
+    /// The tempo asks the room, not your terminal: a request you are
+    /// looking at and have not answered has still been waiting.
+    #[test]
+    fn the_oldest_wait_counts_the_slot_you_are_looking_at() {
+        let f = Fixture::new(&[asking("A", "1:1:1", false), asking("B", "1:2:1", false)]);
+        let w = waiting(&[(at(1, 1, 1), "A", 1_000), (at(1, 2, 1), "B", 5_000)]);
+        let viewing: BTreeSet<Slot> = [at(1, 1, 1)].into_iter().collect();
+        assert_eq!(
+            head(&w, &f.pads(), &viewing).expect("head").at,
+            at(1, 2, 1),
+            "the head skips it"
+        );
+        assert_eq!(oldest(&w, &f.pads()), Some(1_000), "the tempo does not");
+    }
+
+    /// Mute means stop raising this, and the beat is raising it.
+    #[test]
+    fn a_muted_slot_does_not_set_the_tempo() {
+        let f = Fixture::new(&[asking("A", "1:1:1", true), asking("B", "1:2:1", false)]);
+        let w = waiting(&[(at(1, 1, 1), "A", 1_000), (at(1, 2, 1), "B", 5_000)]);
+        assert_eq!(oldest(&w, &f.pads()), Some(5_000));
+    }
+
+    #[test]
+    fn nothing_asking_has_no_oldest() {
+        let f = Fixture::new(&[]);
+        assert_eq!(oldest(&BTreeMap::new(), &f.pads()), None);
     }
 
     #[test]

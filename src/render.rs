@@ -59,6 +59,20 @@ pub fn arrow(movable: bool) -> Cell {
     }
 }
 
+/// How `⌂` is lit: dim when you are scrolled away from the top.
+///
+/// The `Session` button doing what its silkscreen says — *return to the
+/// overview*. Dark exactly when you are already there, which is the rule
+/// the whole top row is built on: a lit button does one thing, a dark one
+/// does nothing.
+pub fn home(scrolled: bool) -> Cell {
+    if scrolled {
+        Cell::Static(DARK_GREY)
+    } else {
+        Cell::Off
+    }
+}
+
 /// How `◄` is lit: white when there is somewhere to go back to.
 ///
 /// One of the two control colours, and the same white the right column
@@ -358,6 +372,7 @@ mod tests {
         assert_eq!(arrow(false), Cell::Off);
         assert_eq!(back(false), Cell::Off);
         assert_eq!(next(false), Cell::Off);
+        assert_eq!(home(false), Cell::Off, "already at the top");
     }
 
     /// `►` is the only one that moves, and it moves in the one colour
@@ -367,6 +382,7 @@ mod tests {
         assert!(animated(next(true)));
         assert!(!animated(back(true)));
         assert!(!animated(arrow(true)));
+        assert!(!animated(home(true)));
         assert_eq!(next(true), Cell::Pulse(AMBER));
     }
 

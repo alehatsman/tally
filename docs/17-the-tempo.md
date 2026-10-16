@@ -150,22 +150,37 @@ pub fn tick(bpm: u16) -> Duration;
 from `Journal::waiting()` — the same map [16](16-the-queue.md) reads, so
 again no new state.
 
-## ⚠️ The thing that has to be tried before any of this is real
+## ✅ The thing that had to be tried first
 
 **Does the Launchpad Mini MK3 sync its LED animations to MIDI clock on the
-port `tally` opens?**
+port `tally` opens?** The manual implies it, does not say it, and `tally`
+opens `LPMiniMK3 MIDI` ([`src/device.rs`](../src/device.rs)) rather than
+the DAW port.
 
-The manual's sentence implies it. It does not say it, and `tally` opens
-`LPMiniMK3 MIDI` ([`src/device.rs:32`](../src/device.rs)) — the second
-port, not the DAW port. It is entirely possible that clock is only honoured
-on the DAW port, in which case this costs a second connection and the
-design has to say whether that is worth it.
+**Yes.** Measured with [`examples/clock.rs`](../examples/clock.rs) against
+a live grid — five phases, a silent baseline either side so "it changed"
+was a comparison and not a memory:
 
-This is the fourth time the project has needed this paragraph, after the
-three greens, the hard amber, and the title scroll: **a surface fact only
-shows up on the surface** ([09](09-testing.md#what-a-green-suite-does-not-prove)).
-Nothing below the hardware checklist is worth building until the first item
-on it passes.
+```text
+1/5   15s   no clock          the device's own 120
+2/5   20s   clock  60 bpm     breathed slower
+3/5   20s   clock 150 bpm     breathed faster
+4/5   20s   clock  60 bpm     slower again
+5/5   15s   STOP              back to 120
+```
+
+Reported from the desk: *"it breathes slower and faster, it works."*
+
+Three things that fell out of it and did not need a second connection: the
+probe opened its own output while `tallyd` held the port, CoreMIDI allowed
+both, and the pads it was read against were the ones `tallyd` was already
+pulsing — so the measurement was taken on the real surface in its real
+state, not on a painted one.
+
+This was the fourth time the project has needed this paragraph, after the
+three greens, the hard amber, and the title scroll
+([09](09-testing.md#what-a-green-suite-does-not-prove)). It is the first
+time the hardware said **yes**.
 
 ## Edge cases
 
@@ -196,8 +211,8 @@ on it passes.
 
 **Only the hardware says:**
 
-- [ ] **the device honours MIDI clock on the port we already open** — if it
-      does not, stop and re-decide
+- [x] **the device honours MIDI clock on the port we already open** —
+      confirmed, see above
 - [ ] 60 bpm reads as calm and not as broken
 - [ ] 140 bpm reads as *something is getting old* and not as *alarm*
 - [ ] a day beside it without the quickening becoming tiring — the

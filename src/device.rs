@@ -293,6 +293,46 @@ impl Device {
             .is_some_and(|programmer| !programmer)
     }
 
+    /// One MIDI clock pulse. Twenty-four of these make a quarter note,
+    /// and the device's two-beat pulse ramp follows them
+    /// (`docs/17-the-tempo.md`).
+    ///
+    /// ✅ Confirmed on hardware that the Mini MK3 honours clock on this
+    /// port — `LPMiniMK3 MIDI`, not the DAW port — which was the one
+    /// sentence the tempo rested on.
+    ///
+    /// # Errors
+    /// Whatever the MIDI stack said.
+    pub fn clock(&mut self) -> Result<(), Error> {
+        self.send(&[0xF8])
+    }
+
+    /// Begin owning the beat.
+    ///
+    /// Sent once before the stream because some devices only follow clock
+    /// while they believe something is playing. Harmless where it is not
+    /// needed.
+    ///
+    /// # Errors
+    /// Whatever the MIDI stack said.
+    pub fn clock_start(&mut self) -> Result<(), Error> {
+        self.send(&[0xFA])
+    }
+
+    /// Hand the beat back to the device's own 120 bpm.
+    ///
+    /// Sent on a clean shutdown so the grid is left breathing normally
+    /// rather than holding our last tempo. **Not** sent when `tallyd` is
+    /// killed — then the breathing stops mid-ramp, which is the point:
+    /// a wedged daemon used to leave a perfectly normal-looking grid
+    /// showing a stale snapshot.
+    ///
+    /// # Errors
+    /// Whatever the MIDI stack said.
+    pub fn clock_stop(&mut self) -> Result<(), Error> {
+        self.send(&[0xFC])
+    }
+
     fn send(&mut self, bytes: &[u8]) -> Result<(), Error> {
         self.out.send(bytes).map_err(|e| Error::Midi(e.to_string()))
     }

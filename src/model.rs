@@ -455,7 +455,8 @@ pub fn frame_from(pads: &Pads<'_>, view: &View<'_>) -> Frame {
     );
     frame.set(Button::Top(3), render::back(view.can_go_back));
     frame.set(Button::Top(4), render::next(view.queued > 0));
-    for index in 5..=crate::surface::TOP_BUTTONS {
+    frame.set(Button::Top(5), render::home(view.offset > 0));
+    for index in 6..=crate::surface::TOP_BUTTONS {
         // Carries nothing, and stays dark. An unassigned button is better
         // than a strained one.
         frame.set(Button::Top(index), crate::surface::Cell::Off);
@@ -1173,7 +1174,7 @@ mod tests {
         assert_eq!(bottom.get(Button::Top(2)), Cell::Off, "nothing below");
     }
 
-    /// The four buttons that carry nothing stay dark, in every state. A
+    /// The three buttons that carry nothing stay dark, in every state. A
     /// lit button that does nothing is one you press twice.
     #[test]
     fn the_unassigned_half_of_the_top_row_is_always_dark() {
@@ -1185,7 +1186,7 @@ mod tests {
             ..view(&pages)
         };
         let f = frame(&sessions, &BTreeMap::new(), &NO_SPECS, &v);
-        for index in 5..=crate::surface::TOP_BUTTONS {
+        for index in 6..=crate::surface::TOP_BUTTONS {
             assert_eq!(f.get(Button::Top(index)), Cell::Off, "Top({index})");
         }
         assert_eq!(f.get(Button::Top(3)), Cell::Static(WHITE), "back is live");

@@ -24,6 +24,7 @@ use tally::lock::Lock;
 use tally::model::{self, View};
 use tally::queue;
 use tally::slot::{self, Pages, Slot};
+use tally::tempo;
 use tally::watch::Watchers;
 
 /// Set by the signal handler, read by the main loop. `0` means no signal.
@@ -134,7 +135,7 @@ fn perform(ctx: &Context<'_>, gesture: Gesture, at: Slot, pages: &Pages, tmux: &
         }
         // Handled in the loop: they change where you are, not what the
         // grid holds, and two of them need the queue the loop computes.
-        Gesture::PageUp | Gesture::PageDown | Gesture::Back | Gesture::Next => {}
+        Gesture::PageUp | Gesture::PageDown | Gesture::Back | Gesture::Next | Gesture::Home => {}
     }
 }
 
@@ -153,6 +154,104 @@ fn log_nav(
     if let Err(e) = write(sink).and_then(|()| sink.flush()) {
         eprintln!("tallyd: attention journal: {e}");
         *out = None;
+    }
+}
+
+/// Send the beat the surface breathes to.
+///
+/// One byte, up to fifty-six times a second. Due pulses are sent and
+/// missed ones are **dropped, not caught up**: a burst after a stall would
+/// visibly sprint the breathing, and a skipped beat is the honest report
+/// of a loop that was busy (`docs/17-the-tempo.md`).
+fn beat(
+    device: Option<&mut Device>,
+    elapsed: Duration,
+    bpm: u64,
+    started: &mut bool,
+    next: &mut Duration,
+) {
+    let Some(d) = device else {
+        // Unplugged. Start again when it comes back.
+        *started = false;
+        return;
+    };
+    if !*started {
+        *started = d.clock_start().is_ok();
+        *next = elapsed;
+    }
+    if elapsed < *next {
+        return;
+    }
+    if let Err(e) = d.clock() {
+        eprintln!("tallyd: clock: {e}");
+    }
+    *next = elapsed + tempo::gap(bpm);
+}
+
+/// The four top-row gestures: move the window, or move you.
+///
+/// Lifted out of `main` because none of them touches anchord and all of
+/// them act on the queue the last tick computed -- `head` and `queued` are
+/// deliberately **stale**, because they are what the finger was looking at
+/// when it landed. Recomputing here would act on a grid the eye never saw.
+fn navigate(
+    gesture: Gesture,
+    offset: &mut u8,
+    head: Option<&queue::Head>,
+    queued: usize,
+    pages: &Pages,
+    tmux: &impl Jump,
+    journal_out: &mut Option<std::fs::File>,
+) {
+    match gesture {
+        // One row, not one page. A page boundary is not a thing you can
+        // feel; a row is.
+        Gesture::PageUp | Gesture::PageDown => {
+            let n = if gesture == Gesture::PageUp {
+                offset.saturating_sub(1)
+            } else {
+                offset.saturating_add(1).min(slot::MAX_OFFSET)
+            };
+            if n != *offset {
+                *offset = n;
+                eprintln!("tallyd: rows {}-{}", n + 1, n + 8);
+            }
+        }
+        Gesture::Home => {
+            if *offset != 0 {
+                *offset = 0;
+                eprintln!("tallyd: home");
+            }
+        }
+        Gesture::Next => {
+            let Some(h) = head else {
+                return;
+            };
+            let at = h.at.label(pages).unwrap_or_default();
+            eprintln!("tallyd: next -> {at} ({queued} waiting)");
+            if let Err(e) = tmux.jump(&h.session, &at) {
+                eprintln!("tallyd: {e}");
+            }
+            // Follow the jump with the eyes, by the smallest scroll that
+            // shows where it landed.
+            *offset = View::offset_showing(h.at, *offset);
+            let now = tally::now_ms();
+            log_nav(journal_out, |out| {
+                journal::nav_next(out, now, &at, now.saturating_sub(h.since), queued)
+            });
+        }
+        Gesture::Back => match tmux.back() {
+            Ok(moved) => {
+                eprintln!(
+                    "tallyd: back{}",
+                    if moved { "" } else { " (nowhere to go)" }
+                );
+                let now = tally::now_ms();
+                log_nav(journal_out, |out| journal::nav_back(out, now, moved));
+            }
+            Err(e) => eprintln!("tallyd: {e}"),
+        },
+        Gesture::Tap { .. } | Gesture::Chord { .. } => {}
     }
 }
 
@@ -232,6 +331,11 @@ fn main() -> ExitCode {
     // never saw.
     let mut head: Option<queue::Head> = None;
     let mut queued = 0usize;
+    // The beat. `bpm` is recomputed each reconcile from the oldest thing
+    // waiting; `next_clock` is when the next `0xF8` is due.
+    let mut bpm = tempo::FLOOR_BPM;
+    let mut next_clock = Duration::ZERO;
+    let mut clock_started = false;
     let mut last_reconcile = Duration::ZERO;
     let mut repaint = true;
     let mut last_reply = Duration::ZERO;
@@ -290,59 +394,19 @@ fn main() -> ExitCode {
                             continue;
                         };
                         match gesture {
-                            Gesture::PageUp | Gesture::PageDown => {
-                                // One row, not one page. A page boundary
-                                // is not a thing you can feel; a row is.
-                                let n = if gesture == Gesture::PageUp {
-                                    offset.saturating_sub(1)
-                                } else {
-                                    offset.saturating_add(1).min(slot::MAX_OFFSET)
-                                };
-                                if n != offset {
-                                    offset = n;
-                                    eprintln!("tallyd: rows {}-{}", n + 1, n + 8);
-                                }
-                            }
-                            Gesture::Next => {
-                                // The head was computed on the last tick,
-                                // from the grid the finger was looking at.
-                                // Acting on a fresher one would act on a
-                                // pad that was not lit when it was pressed.
-                                if let Some(h) = head.clone() {
-                                    let at = h.at.label(&pages).unwrap_or_default();
-                                    eprintln!("tallyd: next -> {at} ({queued} waiting)");
-                                    if let Err(e) = tmux.jump(&h.session, &at) {
-                                        eprintln!("tallyd: {e}");
-                                    }
-                                    // Follow the jump with the eyes: the
-                                    // grid must show the page you are now
-                                    // standing on.
-                                    offset = View::offset_showing(h.at, offset);
-                                    let now = tally::now_ms();
-                                    log_nav(&mut journal_out, |out| {
-                                        journal::nav_next(
-                                            out,
-                                            now,
-                                            &at,
-                                            now.saturating_sub(h.since),
-                                            queued,
-                                        )
-                                    });
-                                }
-                            }
-                            Gesture::Back => match tmux.back() {
-                                Ok(moved) => {
-                                    eprintln!(
-                                        "tallyd: back{}",
-                                        if moved { "" } else { " (nowhere to go)" }
-                                    );
-                                    let now = tally::now_ms();
-                                    log_nav(&mut journal_out, |out| {
-                                        journal::nav_back(out, now, moved)
-                                    });
-                                }
-                                Err(e) => eprintln!("tallyd: {e}"),
-                            },
+                            Gesture::PageUp
+                            | Gesture::PageDown
+                            | Gesture::Home
+                            | Gesture::Next
+                            | Gesture::Back => navigate(
+                                gesture,
+                                &mut offset,
+                                head.as_ref(),
+                                queued,
+                                &pages,
+                                &tmux,
+                                &mut journal_out,
+                            ),
                             Gesture::Tap { row, col } | Gesture::Chord { row, col, .. } => {
                                 // The window turns a pad into an address.
                                 // Past the end of the address space there
@@ -459,6 +523,14 @@ fn main() -> ExitCode {
             .collect();
         head = queue::head(journal.waiting(), &pads, &viewing);
         queued = queue::depth(journal.waiting(), &pads, &viewing);
+        // How fast the surface breathes: the age of the oldest thing
+        // waiting (`docs/17-the-tempo.md`). The ramp still runs on the
+        // device -- only the beat is ours.
+        let was = bpm;
+        bpm = tempo::bpm(queue::oldest(journal.waiting(), &pads).map(|since| now - since));
+        if bpm != was {
+            eprintln!("tallyd: tempo {bpm} bpm");
+        }
 
         let view = View {
             pages: &pages,
@@ -494,10 +566,28 @@ fn main() -> ExitCode {
             }
         }
 
+        beat(
+            device.as_mut(),
+            elapsed,
+            bpm,
+            &mut clock_started,
+            &mut next_clock,
+        );
+
         std::thread::sleep(TICK);
     };
 
     eprintln!("tallyd: signal {signum}, restoring");
+    // Hand the beat back before letting go of the device, so a grid left
+    // behind breathes at its own 120 rather than holding our last tempo.
+    // Only on a *clean* exit: a `tallyd` that is killed stops the clock
+    // dead, and the frozen breathing is the point
+    // (`docs/17-the-tempo.md`).
+    if let Some(d) = device.as_mut() {
+        if let Err(e) = d.clock_stop() {
+            eprintln!("tallyd: clock stop: {e}");
+        }
+    }
     drop(device); // Drop restores Live mode and verifies it by readback.
     reraise(signum);
 }

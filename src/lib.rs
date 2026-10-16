@@ -22,6 +22,7 @@ pub mod render;
 pub mod signal;
 pub mod slot;
 pub mod surface;
+pub mod tempo;
 pub mod watch;
 
 /// An environment variable, treating empty as unset.

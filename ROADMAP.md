@@ -427,9 +427,10 @@ button doing what its silkscreen says, scrolling back to row 1, which is
 the one move `▲▼` make tedious.
 
 Exit:
-- ⬜ **the device honours MIDI clock on the port we already open.** If it
-  does not, stop and re-decide — `tally` opens `LPMiniMK3 MIDI`, not the
-  DAW port, and the manual implies rather than states
+- ✅ **the device honours MIDI clock on the port we already open** —
+  measured with `examples/clock.rs` against a live grid, 60/150/60 bpm
+  between two silent baselines. *"It breathes slower and faster, it
+  works."* The first time one of these perceptual gates has come back yes
 - ⬜ 60 bpm reads as calm and not as broken; 140 as *this is getting old*
   and not as *alarm*
 - ⬜ a day beside the quickening without it becoming tiring — the
