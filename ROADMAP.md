@@ -134,8 +134,27 @@ unbound slot; hold-then-tap modifiers per
 purge / mute, the last written to `tl.mute`; the highlight-while-held
 feedback.
 
-Exit: a full day driven from the grid without opening the config file. No
-accidental kills.
+Exit:
+- ✅ every gesture lands on hardware, through a real `slots.toml`: spawn
+  from a dark pad, kill, respawn, and all four previews. Zero errors in
+  the daemon log across the session
+- ✅ **the preview reveals what the colour language cannot.** Holding
+  purge lights a pad that renders as nothing, because clean exits keep
+  their `tl.slot` behind a dark pad. Confirmed: dim, dark-red, dark-red
+  across a running, a finished and a failed slot
+- ✅ a fumble is inert *and* visible. Two modifiers down disarms the
+  chord, and the preview disappearing is what tells you so
+- ⬜ a full day driven from the grid without opening the config file. No
+  accidental kills.
+
+> The one bug worth keeping, and a green suite could not have found it.
+> anchord records a terminate as an ordinary non-zero exit — there is no
+> field naming who asked, and there should not be — so the pad you just
+> deliberately killed rendered identically to an agent that crashed. Red
+> stops meaning *go and look* the moment you can cause it on purpose.
+> Fixed with `tl.killed`, written before the terminate so the pad never
+> flashes red on its way to dark. Found by running the new verbs against
+> a live anchord rather than against a reply captured by hand.
 
 ---
 

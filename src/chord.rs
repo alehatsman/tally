@@ -150,10 +150,15 @@ impl Chords {
     /// **Two modifiers down means none.** Nothing in the hardware stops
     /// you brushing kill while holding purge, and the alternatives are
     /// both worse: picking the newest makes a fumble destructive, and
-    /// picking the oldest makes it destructive and surprising. Doing
-    /// nothing is safe, and — because the held preview is driven by this
-    /// same function — it is *visible*: two buttons down and the grid
-    /// shows no targets at all, before you press anything.
+    /// picking the oldest makes it destructive and surprising.
+    ///
+    /// Doing nothing is safe, and — because the held preview is driven by
+    /// this same function — it is *visible*. The second button down makes
+    /// the preview **disappear**: the red pads you were aiming at revert
+    /// to their resting colours while both buttons stay white. Confirmed
+    /// on hardware, and it reads as unmistakably disarmed, because the
+    /// grid you are now looking at is the one you see when nothing is
+    /// held at all.
     pub fn modifier(&self) -> Option<Action> {
         match self.held.as_slice() {
             [only] => Some(*only),

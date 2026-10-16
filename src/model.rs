@@ -687,8 +687,10 @@ mod tests {
         }
     }
 
-    /// Two buttons down lights both white and previews neither, so the
-    /// fumble is visible instead of merely inert.
+    /// Two buttons down lights both white and previews neither. The grid
+    /// reverts to its resting colours, which is what makes the fumble
+    /// visible rather than merely inert: you are suddenly looking at the
+    /// surface you see when nothing is held.
     #[test]
     fn two_pressed_buttons_light_without_a_preview() {
         let pages = Pages::default();
