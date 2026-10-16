@@ -10,8 +10,12 @@ use std::process::ExitCode;
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::time::Duration;
 
+use std::fs::OpenOptions;
+use std::io::BufWriter;
+
 use tally::anchor::Client;
 use tally::device::{Device, Event};
+use tally::journal::{self, Journal};
 use tally::lock::Lock;
 use tally::model::{self, View};
 use tally::slot::Pages;
@@ -94,6 +98,27 @@ fn main() -> ExitCode {
 
     let pages = Pages::default();
     let watchers = Watchers::new(anchor.clone());
+    let mut journal = Journal::default();
+    // Best effort: a grid that lights up matters more than a log nothing
+    // reads back. If it cannot be opened, say so once and carry on.
+    let journal_path = journal::default_path();
+    let mut journal_out = journal_path
+        .parent()
+        .map_or(Ok(()), std::fs::create_dir_all)
+        .and_then(|()| {
+            OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&journal_path)
+        })
+        .map(BufWriter::new)
+        .map_err(|e| {
+            eprintln!(
+                "tallyd: no attention journal at {}: {e}",
+                journal_path.display()
+            );
+        })
+        .ok();
     let mut sessions = Vec::new();
     let mut reachable = false;
     let mut current = 1u8;
@@ -148,7 +173,14 @@ fn main() -> ExitCode {
             anchord_reachable: reachable,
             now: tally::now_ms(),
         };
-        let frame = model::frame(&sessions, &watchers.snapshot(), &view);
+        let resolved = model::resolve(&sessions, &watchers.snapshot(), &pages, view.now);
+        if let Some(out) = journal_out.as_mut() {
+            if let Err(e) = journal.record(&resolved, &pages, view.now, out) {
+                eprintln!("tallyd: attention journal: {e}");
+                journal_out = None;
+            }
+        }
+        let frame = model::frame_from(&resolved, &view);
         if let Err(e) = device.render(&frame) {
             eprintln!("tallyd: {e}");
             break libc::SIGTERM;

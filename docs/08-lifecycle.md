@@ -163,36 +163,42 @@ things that appear without telling us.
 | Launchpad unplugged | nothing (it is unplugged) | keeps reconciling, repaints on return |
 | port held by another app | grid flickers between two opinions | nothing — CoreMIDI reports no conflict, so there is nothing to detect. Notice and quit the other app |
 | a second `tallyd` started | it exits immediately | the `flock` is held; the running instance is undisturbed |
-| anchord down | logo dark red, grid frozen | retries; grid is **not** cleared ✅ |
-| anchord restarted | slots go dark red (`lost`) | truthful — anchor lost track of them ✅ |
+| anchord down | logo dark red, grid frozen | retries; grid is **not** cleared (unit-tested, not yet seen) |
+| anchord restarted | slots go dark red (`lost`) | truthful — anchor lost track of them ✅ seen |
 | tmux server gone | jump recreates it | spawn a view window on demand |
 | a watcher dropped | nothing | supervisor restarts it from `scanned_to` |
 | tallyd itself dies | lights freeze, then stale | next start repaints from anchor's labels |
 
 | config file edited | changes appear next tick | re-reads `slots.toml`; a file that fails to parse is logged and the **previous** config is kept |
 
-✅ **Both anchord rows observed on hardware, 2026-10-16.** A rebuild of
-anchord left it down for **21 seconds** — a bootstrap that failed and had
-to be retried, so a genuinely extended outage rather than the sub-second
-blink anyone would have designed a test around. For all 21 seconds the
-logo was dark red and the three live pads **held their previous colours**;
-then the logo cleared and the pads turned dark red as `lost`.
+### What a real anchord restart showed, and what it did not
 
-Two things that were arguments became observations:
+A rebuild of anchord on 2026-10-16 bounced it. Measured from a polling
+loop: the socket refused connections for **21 seconds** — a bootstrap that
+failed and had to be retried — after which every running session came back
+`lost`, reason `daemon_restart`.
 
-- **The grid never blanked.** Sixty-four dark pads would have said "nothing
-  is running" at the exact moment the truthful answer was "I cannot tell".
-- **No pad moved before the logo did** — even though `tallyd` knew its
-  watchers had died the instant anchord went, because every observer hit
-  EOF at once. It sat on information it had for 21 seconds, because that
-  information was not what the pads are about. That is the design holding,
-  not the timing getting lucky.
-
-And the colour choice settled empirically. Three *bright* red pads would
-have read as three failures and sent someone to debug three agents that
-never failed. anchord knows it lost them; it does not know they failed; the
-pad says only what anchord can support
+✅ **Confirmed by eye: the `lost` rendering.** Three live pads became three
+**dark red** pads. That settles the colour empirically — three *bright* red
+pads would have read as three failures and sent someone to debug agents
+that never failed. anchord knows it lost them; it does not know they
+failed; the pad says only what anchord can support
 ([05](05-interaction.md#only-one-thing-flashes)).
+
+⬜ **Not confirmed: the frozen grid during the outage.** The claim worth
+testing is that for those 21 seconds the logo was dark red while the pads
+*held their previous colours* — that `tallyd` sat on information it had,
+because that information was not what the pads are about. Nobody was
+watching the device continuously across the window; only the end state was
+seen. **The logic is unit-tested** (`model::tests::an_unreachable_anchord_lights_the_logo`
+asserts the grid is not cleared), so this is an unobserved end-to-end
+behaviour rather than an untested one — but the row below still says
+"what tallyd does", not "what tallyd was seen doing".
+
+Worth keeping the distinction sharp, because this is the same discipline
+the surface itself is built on: an unverified claim and a verified one are
+different facts, and writing the first as the second is the documentation
+equivalent of rendering an empty list for an unreachable daemon.
 
 The row that matters is the last one. **tallyd holds no state that cannot be
 rebuilt from `anchor list` plus a config file**

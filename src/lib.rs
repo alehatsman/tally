@@ -7,6 +7,7 @@
 
 pub mod anchor;
 pub mod device;
+pub mod journal;
 pub mod lock;
 pub mod model;
 pub mod render;
