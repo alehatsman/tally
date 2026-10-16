@@ -30,10 +30,14 @@ pub struct View<'a> {
 }
 
 /// What a session resolved to, once.
-#[derive(Debug, Clone, Copy)]
-struct Resolved {
-    slot: Slot,
-    state: SlotState,
+#[derive(Debug, Clone)]
+pub struct Resolved {
+    /// Which pad it holds.
+    pub slot: Slot,
+    /// The session in it.
+    pub session: String,
+    /// What that pad renders.
+    pub state: SlotState,
 }
 
 /// Resolve every session to a slot, newest wins, invalid ignored.
@@ -41,7 +45,7 @@ struct Resolved {
 /// anchor lists newest-first, so "first one seen owns the slot" *is*
 /// newest-wins, and it costs nothing. Two sessions on one pad is a pad you
 /// cannot read; the older one is simply not rendered.
-fn resolve(
+pub fn resolve(
     sessions: &[Session],
     derived: &BTreeMap<String, Derived>,
     pages: &Pages,
@@ -72,15 +76,26 @@ fn resolve(
             // onto the same pad, which is exactly what pressing it does.
             continue;
         }
-        let _previous = taken.insert(slot, Resolved { slot, state });
+        let _previous = taken.insert(
+            slot,
+            Resolved {
+                slot,
+                session: session.id.clone(),
+                state,
+            },
+        );
     }
     taken
 }
 
 /// Build the frame.
 pub fn frame(sessions: &[Session], derived: &BTreeMap<String, Derived>, view: &View<'_>) -> Frame {
-    let resolved = resolve(sessions, derived, view.pages, view.now);
+    frame_from(&resolve(sessions, derived, view.pages, view.now), view)
+}
 
+/// Build the frame from an already-resolved grid, so a caller that needs
+/// the states as well as the picture does not resolve twice.
+pub fn frame_from(resolved: &BTreeMap<Slot, Resolved>, view: &View<'_>) -> Frame {
     let mut frame = Frame::dark();
     let mut occupied = [false; slot::PAGES as usize];
     let mut wants_you = [false; slot::PAGES as usize];

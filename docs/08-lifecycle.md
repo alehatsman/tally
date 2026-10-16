@@ -163,13 +163,36 @@ things that appear without telling us.
 | Launchpad unplugged | nothing (it is unplugged) | keeps reconciling, repaints on return |
 | port held by another app | grid flickers between two opinions | nothing — CoreMIDI reports no conflict, so there is nothing to detect. Notice and quit the other app |
 | a second `tallyd` started | it exits immediately | the `flock` is held; the running instance is undisturbed |
-| anchord down | logo dark red, grid frozen | retries; grid is **not** cleared |
-| anchord restarted | slots go red-flashing (`lost`) | truthful — the sessions really are lost |
+| anchord down | logo dark red, grid frozen | retries; grid is **not** cleared ✅ |
+| anchord restarted | slots go dark red (`lost`) | truthful — anchor lost track of them ✅ |
 | tmux server gone | jump recreates it | spawn a view window on demand |
 | a watcher dropped | nothing | supervisor restarts it from `scanned_to` |
 | tallyd itself dies | lights freeze, then stale | next start repaints from anchor's labels |
 
 | config file edited | changes appear next tick | re-reads `slots.toml`; a file that fails to parse is logged and the **previous** config is kept |
+
+✅ **Both anchord rows observed on hardware, 2026-10-16.** A rebuild of
+anchord left it down for **21 seconds** — a bootstrap that failed and had
+to be retried, so a genuinely extended outage rather than the sub-second
+blink anyone would have designed a test around. For all 21 seconds the
+logo was dark red and the three live pads **held their previous colours**;
+then the logo cleared and the pads turned dark red as `lost`.
+
+Two things that were arguments became observations:
+
+- **The grid never blanked.** Sixty-four dark pads would have said "nothing
+  is running" at the exact moment the truthful answer was "I cannot tell".
+- **No pad moved before the logo did** — even though `tallyd` knew its
+  watchers had died the instant anchord went, because every observer hit
+  EOF at once. It sat on information it had for 21 seconds, because that
+  information was not what the pads are about. That is the design holding,
+  not the timing getting lucky.
+
+And the colour choice settled empirically. Three *bright* red pads would
+have read as three failures and sent someone to debug three agents that
+never failed. anchord knows it lost them; it does not know they failed; the
+pad says only what anchord can support
+([05](05-interaction.md#only-one-thing-flashes)).
 
 The row that matters is the last one. **tallyd holds no state that cannot be
 rebuilt from `anchor list` plus a config file**
