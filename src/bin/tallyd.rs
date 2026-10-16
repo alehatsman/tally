@@ -16,6 +16,7 @@ use std::io::Write;
 use tally::anchor::Client;
 use tally::device::{Device, Error, Event};
 use tally::journal::{self, Journal};
+use tally::jump::{Jump, Tmux};
 use tally::lock::Lock;
 use tally::model::{self, View};
 use tally::slot::Pages;
@@ -123,6 +124,16 @@ fn main() -> ExitCode {
     let mut last_reconcile = Duration::ZERO;
     let mut repaint = true;
     let mut last_reply = Duration::ZERO;
+    let tmux = Tmux::default();
+    if !tmux.server_running() {
+        // Said plainly, not fatal. A missing server is the normal state at
+        // login; the grid is still truthful without one, and the jump
+        // starts a server when it has to.
+        eprintln!("tallyd: no tmux server yet; a jump will start one");
+    }
+    // What was on the grid last tick, so a press knows what it hit.
+    let mut grid: std::collections::BTreeMap<tally::slot::Slot, model::Resolved> =
+        std::collections::BTreeMap::new();
     let started = std::time::Instant::now();
 
     let signum = loop {
@@ -164,6 +175,25 @@ fn main() -> ExitCode {
                     } => {
                         current = n;
                         eprintln!("tallyd: page {n}");
+                    }
+                    // A bound slot jumps. An unbound one does nothing yet:
+                    // spawning is M3, and a press that silently starts a
+                    // process would be worse than one that does nothing.
+                    Event::Press {
+                        button: Button::Grid { row, col },
+                        down: true,
+                    } => {
+                        let at = tally::slot::Slot {
+                            page: current,
+                            row,
+                            col,
+                        };
+                        if let Some(r) = grid.get(&at) {
+                            eprintln!("tallyd: jump {}:{row}:{col} -> {}", current, r.session);
+                            if let Err(e) = tmux.jump(&r.session) {
+                                eprintln!("tallyd: {e}");
+                            }
+                        }
                     }
                     Event::Press { .. } => {}
                     Event::Reply(r) => {
@@ -231,6 +261,7 @@ fn main() -> ExitCode {
             now: tally::now_ms(),
         };
         let resolved = model::resolve(&sessions, &watchers.snapshot(), &pages, view.now);
+        grid.clone_from(&resolved);
         if let Some(out) = journal_out.as_mut() {
             // Unbuffered on purpose. This is a few lines a day, and a
             // buffer would hold them until a flush that SIGKILL never

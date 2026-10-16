@@ -8,6 +8,7 @@
 pub mod anchor;
 pub mod device;
 pub mod journal;
+pub mod jump;
 pub mod lock;
 pub mod model;
 pub mod osc;
