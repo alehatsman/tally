@@ -12,7 +12,7 @@ things that proved wrong were both ours.
 | # | question | outcome |
 |---:|---|---|
 | 1 | CoreMIDI port name on macOS | ✅ exactly as the manual names them. `LPMiniMK3 MIDI` matches under both `kMIDIPropertyName` and `kMIDIPropertyDisplayName` |
-| 2 | which palette entry is which | ◐ **9 = amber** and **21 = green** confirmed; eight entries still unchecked |
+| 2 | which palette entry is which | ✅ all ten confirmed, manual accurate. 21 vs 23 and 1 vs 0 checked by eye and legible |
 | 3 | does flashing-against-0 read as "blink" | ✅ reads as urgent, by eye |
 | 4 | SysEx throughput | ✅ a full-surface frame arrives and renders in one message; no chunking, no desync after 100 worst-case frames |
 | 5 | latency of a press | ✅ ~1.9 ms round trip — 5× margin on the 10 ms the chording needs |
@@ -29,17 +29,23 @@ rather than in the manual:
 - **SysEx overhead is 8 bytes, not 7.** A full 81-LED frame is 251 B static
   / 332 B all-flashing, not 250 / 331.
 
+✅ #6 closed too: five taps and a three-pad chord under a held `CC89`
+produced exactly one release per press, the modifier never stuck, and a
+five-second hold sent no key repeat — which also confirms
+[05](05-interaction.md#what-a-press-does-not-do)'s "no key repeat" claim.
+
+Shutdown was verified end to end on SIGTERM, Setup menu included, with and
+without the clear step; both work
+([08](08-lifecycle.md#shutdown-is-not-optional)).
+
 ### Still open
 
-- **Note-off on release** (#6 above). The dangerous one: a modifier stuck
-  down turns the next ordinary tap into a kill.
-- **Eight palette entries** — 1, 3, 5, 7, 13, 23, 37, 45.
-- **Whether dropping the clear fixes the Live-mode handover.** Restoring
-  used to clear all 81 LEDs before sending Live mode, and that left the
-  device looking wrong ("it restored, kind of"). The clear has been removed
-  on the theory that Live mode does not repaint what we blanked; the
-  replacement has not been looked at yet.
-  [08](08-lifecycle.md#shutdown-is-not-optional).
+- **Whether note-off arrives as `8n` or `9n`.** The M0 logger accepted both
+  and did not record which. [02](02-surface.md#addressing) says handle both,
+  which is correct either way, so this is a curiosity rather than a risk.
+- **Whether 21 and 23 stay legible under other lighting.** They photograph
+  almost identically and were confirmed by eye once, in one room. They carry
+  *running* versus *done*, so a second look in daylight is cheap insurance.
 
 ## Decisions still open
 

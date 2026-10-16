@@ -137,25 +137,37 @@ Palette entries this design actually uses:
 
 | entry | colour | used for |
 |---:|---|---|
-| entry | colour | used for | verified |
-|---:|---|---|---|
-| 0 | off | unbound slot | ✅ |
-| 1 | dark grey | bound, not running | ⚠️ |
-| 3 | white | the page you are on; an action button while held | ⚠️ |
-| 5 | red | exited non-zero | ⚠️ |
-| 7 | dark red | anchord unreachable (logo) | ⚠️ |
-| 9 | **amber** | **needs an answer** | ✅ reads as orange/amber |
-| 13 | yellow | starting | ⚠️ |
-| 21 | **green** | **running** | ✅ |
-| 23 | dark green | exited clean | ⚠️ |
-| 37 | turquoise | page button holding sessions | ⚠️ |
-| 45 | blue | action buttons, resting | ⚠️ |
+✅ **All ten verified on hardware.** The manual's palette is accurate.
 
-The two that carry the most weight are the two that are confirmed. **Amber
-flashing against 0 reads as urgent from across the room** — checked by
-looking, which is the only way it can be checked
-([09-testing.md](09-testing.md#what-a-green-suite-does-not-prove)) — and
-that is the single perceptual claim the whole attention design rests on.
+| entry | colour | used for | on the device |
+|---:|---|---|---|
+| 0 | off | unbound slot | unlit — see the note below |
+| 1 | dark grey | bound, not running | a dim glow, cooler than "grey" suggests |
+| 3 | white | the page you are on; an action button while held | white |
+| 5 | red | exited non-zero | red |
+| 7 | dark red | anchord unreachable (logo) | a deeper red, clearly distinct from 5 |
+| 9 | **amber** | **needs an answer** | orange |
+| 13 | yellow | starting | yellow with a green cast |
+| 21 | **green** | **running** | green |
+| 23 | dark green | exited clean | green — close to 21, but distinguishable |
+| 37 | turquoise | page button holding sessions | cyan |
+| 45 | blue | action buttons, resting | blue |
+
+Three of these took a judgment a photograph could not make, and all three
+were checked by looking, which is the only way they *can* be checked
+([09-testing.md](09-testing.md#what-a-green-suite-does-not-prove)):
+
+- **Amber flashing against 0 reads as urgent from across the room.** The
+  single perceptual claim the whole attention design rests on.
+- **21 and 23 are tellable apart at a glance.** They photograph almost
+  identically, and they carry the two most common meanings on the grid —
+  *it is alive* versus *it is done*. Confirmed legible in place; worth
+  re-checking under different light before trusting it forever.
+- **1 is visibly lit against 0.** Less obvious than it sounds, because the
+  pads are **physically white silicone** — an *unlit* pad still looks white
+  in a lit room, so "off" never reads as black. 1 shows a hotspot that an
+  unlit pad does not. That the dark state is white, not black, is worth
+  knowing before designing anything around "dark means nothing there".
 
 Every one of these is used by [05-interaction.md](05-interaction.md); there
 are no reserved-but-unused entries, because an entry nothing renders is an

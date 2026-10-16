@@ -37,9 +37,12 @@ inquiry and all three worked examples came back exactly as written, a
 press round-trips in ~1.9 ms, and a full-surface repaint arrives in one
 SysEx. The two claims that were wrong were ours, not Novation's — the port
 is **not** exclusive on macOS, and the byte budget was off by one per
-frame. What is still unproven is listed in
-[docs/10](docs/10-open-questions.md#verified-against-hardware-2026-10-16);
-it is now a short list rather than the whole document.
+frame. Every [M0](ROADMAP.md#m0--prove-the-manual) exit criterion is met; what
+little residue remains is in
+[docs/10](docs/10-open-questions.md#verified-against-hardware-2026-10-16)
+and none of it blocks M1.
+
+**M1 is the next milestone, and it writes code.**
 
 The design is in [docs/](docs/). The sequencing is in
 [ROADMAP.md](ROADMAP.md). M0 is the first milestone that writes code.

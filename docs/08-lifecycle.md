@@ -68,25 +68,31 @@ that has lost a feature with no obvious way to get it back.
 So shutdown must:
 
 1. stop any running text scroll
-2. send Live mode — `F0 00 20 29 02 0D 0E 00 F7`
-3. **read the mode back** — `F0 00 20 29 02 0D 0E F7` — and log loudly if
+2. clear the surface — **all 81 LEDs, the logo included**
+3. send Live mode — `F0 00 20 29 02 0D 0E 00 F7`
+4. **read the mode back** — `F0 00 20 29 02 0D 0E F7` — and log loudly if
    the reply is not `00`
-4. flush, then close the port
+5. flush, then close the port
 
-**Do not clear the surface on the way out.** An earlier draft had a clear
-between steps 1 and 2, and it is suspected of being actively harmful:
-returning to Live mode does not make the device repaint everything it owns,
-so blanking all 81 LEDs first can leave Live mode looking wrong — dark
-where the device's own mode buttons should be. Live mode's lighting is the
-device's business; the correct handover is to stop touching it. *(Observed
-once as "it restored, kind of"; the clear has been removed and the
-replacement is pending a confirming look.)*
+✅ Verified on hardware, on SIGTERM, including the Setup menu working again
+afterwards. Tested both with and without step 2, and **both leave the device
+correct** — the device repaints its own Live-mode lighting either way, so
+the handover is not fragile. Step 2 stays because it is the explicit option:
+it leaves the surface in a state we chose rather than whatever our last
+frame happened to be.
 
-Step 3 is the one that is easy to skip and worth keeping. The restore is a
+Step 2 says *81* for a reason. An implementation that clears the 8×8 grid
+and the control rows but skips index 99 leaves the health light burning —
+and a lit logo means **anchord unreachable**
+([05](05-interaction.md#the-logo-is-the-health-light)). Exiting while
+asserting a fault that is not happening is worse than exiting messily. This
+is not hypothetical; the M0 harness had exactly that bug.
+
+Step 4 is the one that is easy to skip and worth keeping. The restore is a
 write with no acknowledgement, so a clean exit proves nothing about whether
 the device received it; the readback costs ~1.9 ms
 ([02](02-surface.md#other-messages-worth-knowing)) and turns "we sent it"
-into "it happened".
+into "it happened". It is how the restore above was confirmed at all.
 
 and it must happen on **SIGTERM and SIGHUP**, not only on a clean exit —
 then re-raise, so the process still looks killed to whatever was waiting on

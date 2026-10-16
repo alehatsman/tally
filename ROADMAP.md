@@ -36,18 +36,22 @@ because that list is what this milestone exists to delete:
   a chord — a stuck modifier on `CC19` turns the next tap into a kill
 - the device returns to Live mode and its Setup menu works
 
-> Run 2026-10-16 against the real device. **The manual is accurate** — port
-> names, addressing, inquiry and the worked examples all came back as
-> written. Round trip ~1.9 ms; a full-surface SysEx arrives and renders in
-> one message; amber-flashing-against-0 reads as urgent; Live-mode restore
-> on SIGTERM verified by readback rather than assumed.
+> ✅ **Done, 2026-10-16.** Every exit criterion met against the real device.
 >
-> Two of our own claims were wrong: the port is **not** exclusive on macOS
-> (CoreMIDI multiplexes — `tallyd` needs its own lock), and the SysEx byte
-> budget was off by one per frame.
+> **The manual is accurate.** Port names, addressing, device inquiry, all
+> three worked examples and the full palette came back exactly as written.
+> Round trip **~1.9 ms**; a full-surface SysEx arrives and renders in one
+> message; amber-flashing-against-0 reads as urgent; every press gives
+> exactly one release, including under a held chord, with no key repeat;
+> Live mode and the Setup menu restored on SIGTERM, verified by readback
+> rather than assumed.
 >
-> Open: note-off-on-release under a chord, eight palette entries, and
-> whether dropping the clear fixes the Live-mode handover.
+> **Two of our own claims were wrong**, and neither was Novation's fault:
+> the port is **not** exclusive on macOS — CoreMIDI multiplexes, so
+> `tallyd` needs its own single-instance lock — and the SysEx byte budget
+> was off by one per frame.
+>
+> Residue, both harmless:
 > [docs/10](docs/10-open-questions.md#verified-against-hardware-2026-10-16).
 
 Risk retired: that any of this document is fiction. It is not.
