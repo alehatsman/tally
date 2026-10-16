@@ -163,7 +163,7 @@ things that appear without telling us.
 | Launchpad unplugged | nothing (it is unplugged) | keeps reconciling, repaints on return |
 | port held by another app | grid flickers between two opinions | nothing — CoreMIDI reports no conflict, so there is nothing to detect. Notice and quit the other app |
 | a second `tallyd` started | it exits immediately | the `flock` is held; the running instance is undisturbed |
-| anchord down | logo dark red, grid frozen | retries; grid is **not** cleared (unit-tested, not yet seen) |
+| anchord down | logo dark red, grid frozen | retries; grid is **not** cleared ✅ seen |
 | anchord restarted | slots go dark red (`lost`) | truthful — anchor lost track of them ✅ seen |
 | tmux server gone | jump recreates it | spawn a view window on demand |
 | a watcher dropped | nothing | supervisor restarts it from `scanned_to` |
@@ -185,20 +185,38 @@ that never failed. anchord knows it lost them; it does not know they
 failed; the pad says only what anchord can support
 ([05](05-interaction.md#only-one-thing-flashes)).
 
-⬜ **Not confirmed: the frozen grid during the outage.** The claim worth
-testing is that for those 21 seconds the logo was dark red while the pads
-*held their previous colours* — that `tallyd` sat on information it had,
-because that information was not what the pads are about. Nobody was
-watching the device continuously across the window; only the end state was
-seen. **The logic is unit-tested** (`model::tests::an_unreachable_anchord_lights_the_logo`
-asserts the grid is not cleared), so this is an unobserved end-to-end
-behaviour rather than an untested one — but the row below still says
-"what tallyd does", not "what tallyd was seen doing".
+✅ **The frozen grid, confirmed separately.** The restart above only ever
+showed its *end state* to a human — nobody watched the device across the
+outage, and an earlier revision of this file wrote the frozen grid up as
+observed when it was inferred. So it was re-run under control: a **private
+anchord** on its own socket (`XDG_DATA_HOME` pointed at a scratch
+directory, the shared daemon untouched), killed deliberately and **held
+dead for as long as it took to look**.
 
-Worth keeping the distinction sharp, because this is the same discipline
-the surface itself is built on: an unverified claim and a verified one are
-different facts, and writing the first as the second is the documentation
-equivalent of rendering an empty list for an unreachable daemon.
+All three states were seen, in order:
+
+| anchord | logo | pads | says |
+|---|---|---|---|
+| healthy | dark | **green** | these are alive |
+| **killed** | **dark red** | **still green** | I cannot tell |
+| restarted | dark | **dark red** | the daemon lost these |
+
+The middle row is the one worth the trouble. `tallyd` knew its watchers had
+died and its session list was stale, and it kept showing the last truth it
+had — because a blank grid means *"nothing is running"* and the honest
+answer was *"I cannot tell"*. Both halves matter and were checked
+separately: green pads alone would prove only that it does not lie by
+clearing; the dark red logo is what says the staleness is known.
+
+Reproducing this needs no outage of anything shared:
+
+```sh
+export XDG_DATA_HOME=/tmp/tl-test     # short: a socket path is capped at 103 bytes
+anchord &                             # a private daemon on its own socket
+tallyd &                              # finds it by the same XDG rule
+anchor create --label tl.slot=1:2:2 -- sleep 3600
+kill -9 %1                            # and leave it dead
+```
 
 The row that matters is the last one. **tallyd holds no state that cannot be
 rebuilt from `anchor list` plus a config file**

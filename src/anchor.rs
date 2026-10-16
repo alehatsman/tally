@@ -210,17 +210,14 @@ impl Client {
     /// `$XDG_RUNTIME_DIR/anchor.sock`, else
     /// `$XDG_DATA_HOME/anchor/anchor.sock`, else `~/.local/share/...`.
     pub fn default_path() -> PathBuf {
-        if let Some(run) = std::env::var_os("XDG_RUNTIME_DIR") {
-            return PathBuf::from(run).join("anchor.sock");
+        if let Some(run) = crate::env_path("XDG_RUNTIME_DIR") {
+            return run.join("anchor.sock");
         }
-        let data = std::env::var_os("XDG_DATA_HOME").map_or_else(
-            || {
-                std::env::var_os("HOME")
-                    .map_or_else(|| PathBuf::from("."), PathBuf::from)
-                    .join(".local/share")
-            },
-            PathBuf::from,
-        );
+        let data = crate::env_path("XDG_DATA_HOME").unwrap_or_else(|| {
+            crate::env_path("HOME")
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join(".local/share")
+        });
         data.join("anchor/anchor.sock")
     }
 
@@ -410,5 +407,22 @@ mod tests {
         for label in [LABEL_SLOT, LABEL_SPEC, LABEL_MUTE, LABEL_ATTENTION] {
             assert!(label.starts_with(PREFIX), "{label} is outside {PREFIX}");
         }
+    }
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::Client;
+
+    /// `VAR=` is not `VAR=/path`. Taking an empty value literally turns an
+    /// absolute path into a relative one, and the symptom is "anchord
+    /// unreachable" with no clue why.
+    #[test]
+    fn an_empty_env_var_is_not_a_path() {
+        assert!(
+            Client::default_path().is_absolute(),
+            "default socket path must be absolute"
+        );
+        assert!(crate::env_path("TALLY_DEFINITELY_UNSET_VAR").is_none());
     }
 }

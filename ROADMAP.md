@@ -80,10 +80,12 @@ Exit:
   answered. Both directions confirmed on hardware, including the two cases
   that break the predicate: output in the bell's own chunk must not go
   amber, and a newline after the bell must not cancel it
-- ◐ unplug / replug, kill `tallyd`, stop `anchord`: every row of
-  [08-lifecycle.md](docs/08-lifecycle.md#failure-modes-and-what-each-looks-like)
-  behaves as written. `lost` seen on a real anchord restart; the frozen
-  grid during an outage is unit-tested but has not been watched
+- ✅ stop `anchord`: logo dark red, grid **frozen**, then dark red `lost`
+  pads when it returns — all three states watched on hardware against a
+  private daemon held down deliberately
+  ([08](docs/08-lifecycle.md#failure-modes-and-what-each-looks-like))
+- ⬜ unplug / replug the device, and kill `tallyd` mid-run: the remaining
+  rows of that table
 - ⬜ **a week of real use, and a number out of `attention.jsonl`** — how
   many ambers sent you to a session that did not want anything. Counted,
   not remembered ([09](docs/09-testing.md#what-a-green-suite-does-not-prove)).

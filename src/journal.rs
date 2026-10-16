@@ -27,14 +27,11 @@ pub struct Journal {
 
 /// `~/.local/state/tally/attention.jsonl`.
 pub fn default_path() -> PathBuf {
-    let state = std::env::var_os("XDG_STATE_HOME").map_or_else(
-        || {
-            std::env::var_os("HOME")
-                .map_or_else(|| PathBuf::from("."), PathBuf::from)
-                .join(".local/state")
-        },
-        PathBuf::from,
-    );
+    let state = crate::env_path("XDG_STATE_HOME").unwrap_or_else(|| {
+        crate::env_path("HOME")
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join(".local/state")
+    });
     state.join("tally/attention.jsonl")
 }
 

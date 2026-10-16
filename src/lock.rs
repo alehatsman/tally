@@ -57,8 +57,8 @@ impl Lock {
     /// The conventional location: `$XDG_RUNTIME_DIR/tally.lock`, falling
     /// back to the temp dir, which is where macOS leaves us.
     pub fn default_path() -> PathBuf {
-        std::env::var_os("XDG_RUNTIME_DIR")
-            .map_or_else(std::env::temp_dir, PathBuf::from)
+        crate::env_path("XDG_RUNTIME_DIR")
+            .unwrap_or_else(std::env::temp_dir)
             .join("tally.lock")
     }
 }

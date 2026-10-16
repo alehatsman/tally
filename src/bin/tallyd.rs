@@ -88,7 +88,6 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    eprintln!("tallyd: Launchpad ready; anchord is not wired yet, so the logo is red");
 
     let anchor = Client::new(Client::default_path());
     eprintln!(

@@ -16,6 +16,19 @@ pub mod slot;
 pub mod surface;
 pub mod watch;
 
+/// An environment variable, treating empty as unset.
+///
+/// `VAR=` is not `VAR=/some/path`, and `var_os` reports both as `Some`.
+/// Taking an empty value literally turns an absolute path into a relative
+/// one — which is how `tallyd` once looked for anchord's socket at
+/// `anchor.sock` in its own working directory and reported the daemon
+/// unreachable. anchor's own `paths.rs` filters empties; this is that.
+pub fn env_path(key: &str) -> Option<std::path::PathBuf> {
+    std::env::var_os(key)
+        .filter(|v| !v.is_empty())
+        .map(std::path::PathBuf::from)
+}
+
 /// Milliseconds since the unix epoch.
 ///
 /// One clock for the whole program: signals compare timestamps across
