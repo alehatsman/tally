@@ -27,12 +27,16 @@ pub const OFF: Entry = 0;
 /// hue answers anything, which is why this took the page-button role
 /// from [`TURQUOISE`].
 pub const DARK_GREY: Entry = 1;
-/// White. The brightest thing on the surface, spent on three roles that
-/// all mean *this is where you are, or what you are doing*: the page you
-/// are on ([`crate::render::page`]), an action button while held, and the
-/// pad a held mute would **un**mute ([`crate::render::preview`]). The
-/// last shares [`BLUE`]'s job of saying you are about to change how tally
-/// treats a pad rather than what is running on it.
+/// White. The brightest thing on the surface, spent on roles that all
+/// mean *this button is live right now*: `◄` when there is somewhere to
+/// go back to ([`crate::render::back`]), a modifier while it is held
+/// ([`crate::render::action`]), and `Session` while the overview is up
+/// ([`crate::render::overview_button`]).
+///
+/// It used to light *the page you are on* as well. That went with the
+/// page buttons themselves when the top row became a queue
+/// (`docs/16-the-queue.md`), and the roles left are the ones that answer
+/// **what is my hand doing** rather than **where am I**.
 pub const WHITE: Entry = 3;
 /// Red. A session that exited non-zero, and the kill button at rest —
 /// the colour of what that button does. The two never confuse because

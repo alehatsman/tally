@@ -74,17 +74,42 @@ pub fn launch(ready: bool) -> Cell {
     }
 }
 
-/// How `⌂` is lit: dim when you are scrolled away from the top.
+/// How `Session` is lit: dim always, white while held.
 ///
-/// The `Session` button doing what its silkscreen says — *return to the
-/// overview*. Dark exactly when you are already there, which is the rule
-/// the whole top row is built on: a lit button does one thing, a dark one
-/// does nothing.
-pub fn home(scrolled: bool) -> Cell {
-    if scrolled {
-        Cell::Static(DARK_GREY)
+/// Always lit because there is always an overview to show — the one
+/// button on this row whose availability does not depend on where you
+/// are standing. It rests on the same dark grey as `▲▼` and the `>`
+/// launchers, meaning the same thing on all of them: *available, not
+/// urgent*. The top row is five navigation buttons and should look like
+/// it. What separates this one is that it is held rather than pressed,
+/// and that is learned from the grid changing under a thumb, not from a
+/// hue (`docs/20-the-overview.md`).
+pub fn overview_button(held: bool) -> Cell {
+    if held {
+        Cell::Static(WHITE)
     } else {
-        Cell::Off
+        Cell::Static(DARK_GREY)
+    }
+}
+
+/// How one overview pad is lit: the worst thing in that row, and whether
+/// the eight-row window covers it.
+///
+/// Same five colours as [`slot`], same meanings — there is no second
+/// language to learn, because one pad here is just the loudest of the
+/// eight pads it stands for.
+///
+/// The window is marked by the only thing that costs nothing: a pad
+/// inside it that would be dark glows dark grey instead. A pad inside it
+/// that has content keeps its true colour, because **state outranks
+/// position**. The failure mode is stated rather than hidden: a window
+/// whose eight rows are all occupied shows no marker at all
+/// (`docs/20-the-overview.md`).
+pub fn overview(summary: Option<SlotState>, in_window: bool) -> Cell {
+    match (summary, in_window) {
+        (Some(state), _) => slot(state),
+        (None, true) => Cell::Static(DARK_GREY),
+        (None, false) => Cell::Off,
     }
 }
 
@@ -383,7 +408,37 @@ mod tests {
         assert_eq!(arrow(false), Cell::Off);
         assert_eq!(back(false), Cell::Off);
         assert_eq!(next(false), Cell::Off);
-        assert_eq!(home(false), Cell::Off, "already at the top");
+    }
+
+    /// `Session` is the exception to the rule above, and the exception is
+    /// the point: it is never dark, because there is always an overview
+    /// to show. Holding it is what changes, and it says so in white.
+    #[test]
+    fn the_overview_button_is_always_lit() {
+        assert_eq!(overview_button(false), Cell::Static(DARK_GREY));
+        assert_eq!(overview_button(true), Cell::Static(WHITE));
+    }
+
+    /// An overview pad says the loudest thing in its row, in the same
+    /// colours a slot uses — there is no second language.
+    #[test]
+    fn an_overview_pad_speaks_the_slot_palette() {
+        for state in ALL {
+            assert_eq!(overview(Some(state), false), slot(state));
+            assert_eq!(
+                overview(Some(state), true),
+                slot(state),
+                "state outranks position"
+            );
+        }
+    }
+
+    /// The window marker: dim grey on the pads inside it that would
+    /// otherwise be dark, and nothing anywhere else.
+    #[test]
+    fn the_window_is_marked_only_where_the_map_is_empty() {
+        assert_eq!(overview(None, true), Cell::Static(DARK_GREY));
+        assert_eq!(overview(None, false), Cell::Off);
     }
 
     /// `►` is the only one that moves, and it moves in the one colour
@@ -393,7 +448,7 @@ mod tests {
         assert!(animated(next(true)));
         assert!(!animated(back(true)));
         assert!(!animated(arrow(true)));
-        assert!(!animated(home(true)));
+        assert!(!animated(overview_button(true)));
         assert_eq!(next(true), Cell::Pulse(AMBER));
     }
 

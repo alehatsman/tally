@@ -51,6 +51,11 @@ pub struct View<'a> {
     /// (`crate::chord::Chords::modifier`). The grid recolours to show
     /// what it would do.
     pub held: Option<Action>,
+    /// `Session` is held, so the grid is the whole 64-row address space
+    /// rather than the eight-row window onto it
+    /// (`docs/20-the-overview.md`). Outranks [`Self::held`], which is
+    /// `None` for the same press.
+    pub overview: bool,
     /// Every action button physically down — which is **not** the same as
     /// [`Self::held`]: two buttons down lights both white and previews
     /// neither, so a fumble is visible rather than merely inert
@@ -368,7 +373,50 @@ impl<'a> Pads<'a> {
     }
 }
 
+/// The worst state in absolute row `abs`, or `None` if the row is empty.
+///
+/// One pad of the overview stands for eight slots, so seven-eighths of
+/// the information is thrown away and what survives is the thing most
+/// worth walking over to. The order is the order of that sentence:
+/// something is asking, something is producing, something is alive,
+/// something failed, something is lost.
+///
+/// Mute needs no rule here. A muted slot never resolves to
+/// [`SlotState::NeedsAnswer`] at all ([`crate::signal::slot_state`]) — it
+/// falls through to the state underneath — so it cannot put amber in a
+/// row, for free and for the same reason it cannot reach the queue.
+#[must_use]
+pub fn row_summary(resolved: &BTreeMap<Slot, Resolved>, abs: u8) -> Option<SlotState> {
+    fn rank(state: SlotState) -> u8 {
+        match state {
+            SlotState::NeedsAnswer { .. } => 5,
+            SlotState::Working => 4,
+            SlotState::Quiet => 3,
+            SlotState::Failed { .. } => 2,
+            SlotState::Lost { .. } => 1,
+            // `resolve` never keeps one, but the match must be total and
+            // "nothing" must not outrank anything.
+            SlotState::Empty => 0,
+        }
+    }
+    resolved
+        .values()
+        .filter(|r| r.slot.absolute_row() == abs)
+        .map(|r| r.state)
+        .max_by_key(|s| rank(*s))
+}
+
 impl View<'_> {
+    /// The absolute row an overview pad addresses: reading order, one pad
+    /// per row, no compression and no scrolling.
+    ///
+    /// Sixty-four pads onto sixty-four rows, so every pad is a real
+    /// destination and there are no dead ones.
+    #[must_use]
+    pub fn overview_row(row: u8, col: u8) -> u8 {
+        (row - 1) * 8 + col
+    }
+
     /// Which grid row shows `at`, or `None` if it is scrolled off.
     ///
     /// The one place the window is turned into a position, so the renderer
@@ -425,6 +473,22 @@ pub fn frame_from(pads: &Pads<'_>, view: &View<'_>) -> Frame {
     let mut frame = Frame::dark();
     let mut offscreen = false;
 
+    // The overview outranks both the grid and the held preview: holding
+    // `Session` replaces what the pads *address*, not what they would do
+    // to what they address.
+    if view.overview {
+        for row in 1..=8 {
+            for col in 1..=8 {
+                let abs = View::overview_row(row, col);
+                let in_window = abs > view.offset && abs <= view.offset + 8;
+                frame.set(
+                    Button::Grid { row, col },
+                    render::overview(row_summary(resolved, abs), in_window),
+                );
+            }
+        }
+    }
+
     for r in resolved.values() {
         let Some(row) = view.display_row(r.slot) else {
             // Off the window. It still counts for the logo, which is the
@@ -432,7 +496,7 @@ pub fn frame_from(pads: &Pads<'_>, view: &View<'_>) -> Frame {
             offscreen |= matches!(r.state, SlotState::NeedsAnswer { .. });
             continue;
         };
-        if view.held.is_none() {
+        if view.held.is_none() && !view.overview {
             frame.set(
                 Button::Grid {
                     row,
@@ -472,7 +536,7 @@ pub fn frame_from(pads: &Pads<'_>, view: &View<'_>) -> Frame {
     );
     frame.set(Button::Top(3), render::back(view.can_go_back));
     frame.set(Button::Top(4), render::next(view.queued > 0));
-    frame.set(Button::Top(5), render::home(view.offset > 0));
+    frame.set(Button::Top(5), render::overview_button(view.overview));
     for index in 6..=crate::surface::TOP_BUTTONS {
         // Carries nothing, and stays dark. An unassigned button is better
         // than a strained one.
@@ -480,11 +544,14 @@ pub fn frame_from(pads: &Pads<'_>, view: &View<'_>) -> Frame {
     }
 
     // The right column: seven `>` launchers and the kill modifier at the
-    // bottom (`docs/18-the-launch-column.md`).
+    // bottom (`docs/18-the-launch-column.md`). The launchers go dark
+    // under the overview because the rows they name are not the rows on
+    // the grid, and a button that would fire into a row the eye is not
+    // looking at must not look live.
     for row in 1..=7u8 {
         frame.set(
             Button::Action(row),
-            render::launch(view.launchable.contains(&row)),
+            render::launch(!view.overview && view.launchable.contains(&row)),
         );
     }
     frame.set(
@@ -561,6 +628,7 @@ mod tests {
             can_go_back: false,
             queued: 0,
             held: None,
+            overview: false,
             pressed: &NO_BUTTONS,
         }
     }
@@ -910,13 +978,127 @@ mod tests {
         for bad in ["1:9:1", "nope:1:1", "garbage"] {
             let sessions = [session("x", "running", Some(bad))];
             let f = frame(&sessions, &BTreeMap::new(), &NO_SPECS, &view(&pages));
-            let lit = Button::all().filter(|&b| f.get(b) != Cell::Off).count();
-            // Only the controls, and there are two: `▼` (there is somewhere
-            // to scroll) and `CC19` (kill, blue at rest). Every `>` is dark
-            // because an unparseable label puts nothing in any row, and the
-            // rest of the top row has nowhere to go and nothing to offer.
-            assert_eq!(lit, 2, "{bad:?} lit a pad");
+            // Only the controls. Named rather than counted, so a button
+            // that starts lighting up says which one it is instead of
+            // moving a number: `▼` (there is somewhere to scroll),
+            // `Session` (always lit, there is always an overview) and
+            // `CC19` (kill, at rest). Every `>` is dark because an
+            // unparseable label puts nothing in any row, and the rest of
+            // the top row has nowhere to go and nothing to offer.
+            let lit: Vec<Button> = Button::all().filter(|&b| f.get(b) != Cell::Off).collect();
+            assert_eq!(
+                lit,
+                vec![Button::Action(8), Button::Top(2), Button::Top(5)],
+                "{bad:?} lit a pad"
+            );
         }
+    }
+
+    /// A session wearing `tl.attention`: the declared half of the signal,
+    /// which needs no derived state to be true.
+    fn asking(id: &str, slot: &str) -> Session {
+        let mut s = session(id, "running", Some(slot));
+        let _declared = s
+            .labels
+            .insert(crate::anchor::LABEL_ATTENTION.to_owned(), "1".to_owned());
+        s
+    }
+
+    /// Reading order, one pad per row, sixty-four onto sixty-four. Every
+    /// pad is a real destination and there are no dead ones.
+    #[test]
+    fn the_overview_maps_every_pad_to_a_row() {
+        let seen: Vec<u8> = (1..=8)
+            .flat_map(|r| (1..=8).map(move |c| View::overview_row(r, c)))
+            .collect();
+        assert_eq!(seen, (1..=slot::ROWS).collect::<Vec<u8>>());
+    }
+
+    /// One pad stands for eight slots, and what survives the compression
+    /// is the thing most worth walking over to.
+    #[test]
+    fn a_row_summarises_to_its_loudest_slot() {
+        let pages = Pages::default();
+        // Row 1: a working session and one that is asking. Amber wins.
+        let sessions = [
+            session("quiet", "running", Some("1:1:1")),
+            asking("asks", "1:1:4"),
+        ];
+        let resolved = resolve(&sessions, &BTreeMap::new(), &pages, NOW);
+        assert!(matches!(
+            row_summary(&resolved, 1),
+            Some(SlotState::NeedsAnswer { .. })
+        ));
+        assert_eq!(row_summary(&resolved, 2), None, "an empty row says nothing");
+    }
+
+    /// Holding `Session` replaces what the pads address. The window is
+    /// marked by dim grey on its empty pads, and `>` goes dark because
+    /// the rows it names are not the rows on the grid.
+    #[test]
+    fn the_overview_replaces_the_grid() {
+        let pages = Pages::default();
+        // Absolute row 13 — page 2, row 5 — is overview pad (2, 5).
+        let sessions = [session("far", "running", Some("2:5:5"))];
+        let v = View {
+            overview: true,
+            ..view(&pages)
+        };
+        let f = frame(&sessions, &BTreeMap::new(), &NO_SPECS, &v);
+
+        assert_eq!(
+            f.get(Button::Grid { row: 2, col: 5 }),
+            Cell::Static(GREEN),
+            "row 13 is alive and says so on its own pad"
+        );
+        // The window is rows 1-8 at offset 0: pads (1,1)..(1,8). Row 1
+        // holds nothing here, so every one of them carries the marker.
+        for col in 1..=8 {
+            assert_eq!(
+                f.get(Button::Grid { row: 1, col }),
+                Cell::Static(DARK_GREY),
+                "the window is marked at col {col}"
+            );
+        }
+        assert_eq!(
+            f.get(Button::Grid { row: 3, col: 1 }),
+            Cell::Off,
+            "row 17 is empty and outside the window"
+        );
+        for row in 1..=7 {
+            assert_eq!(f.get(Button::Action(row)), Cell::Off, "`>` {row} is dark");
+        }
+        assert_eq!(f.get(Button::Top(5)), Cell::Static(WHITE), "held");
+    }
+
+    /// State outranks position: a pad inside the window that has content
+    /// keeps its own colour, and the marker is only ever a fallback.
+    #[test]
+    fn the_window_marker_never_hides_a_row() {
+        let pages = Pages::default();
+        let sessions = [session("near", "running", Some("1:1:1"))];
+        let v = View {
+            overview: true,
+            ..view(&pages)
+        };
+        let f = frame(&sessions, &BTreeMap::new(), &NO_SPECS, &v);
+        assert_eq!(f.get(Button::Grid { row: 1, col: 1 }), Cell::Static(GREEN));
+    }
+
+    /// Two modifiers means none, and `Session` counts as one: the grid
+    /// reverts to itself rather than showing a map or a preview.
+    #[test]
+    fn a_disarmed_overview_shows_the_plain_grid() {
+        let pages = Pages::default();
+        let sessions = [session("a", "running", Some("1:1:1"))];
+        let v = View {
+            overview: false,
+            held: None,
+            ..view(&pages)
+        };
+        let f = frame(&sessions, &BTreeMap::new(), &NO_SPECS, &v);
+        assert_eq!(f.get(Button::Grid { row: 1, col: 1 }), Cell::Static(GREEN));
+        assert_eq!(f.get(Button::Top(5)), Cell::Static(DARK_GREY), "not held");
     }
 
     /// anchor lists newest-first, so the first one seen owns the pad.

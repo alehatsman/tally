@@ -24,6 +24,7 @@ use tally::lock::Lock;
 use tally::model::{self, View};
 use tally::queue;
 use tally::slot::{self, Pages, Slot};
+use tally::surface::Button;
 use tally::tempo;
 use tally::watch::Watchers;
 
@@ -41,6 +42,20 @@ const TICK: Duration = Duration::from_millis(16);
 /// Generous against the ~2ms warm round trip, because the cost of being
 /// wrong is a needless reconnect, and three missed probes is not a blip.
 const DEVICE_SILENCE: Duration = Duration::from_secs(7);
+
+/// How long `▲` must be held before it means *all the way up*.
+///
+/// `⌂` lost its own button when `Session` became the overview modifier,
+/// and it landed here rather than being folded into the overview because
+/// the one jump the journal describes — the deep row back to row 1 — is
+/// worth a single press (`docs/20-the-overview.md`).
+///
+/// There is no tap-versus-hold ambiguity to resolve: the press scrolls
+/// one row immediately and keeping the finger down does more, so nothing
+/// is withheld waiting to find out which it was. 500 ms is short enough
+/// not to feel like waiting and long enough that a lazy tap cannot reach
+/// it — a hardware question, which is why it is a named constant.
+const HOME_HOLD: Duration = Duration::from_millis(500);
 
 /// Async-signal-safe: a relaxed store and nothing else.
 ///
@@ -122,6 +137,7 @@ fn perform(ctx: &Context<'_>, gesture: Gesture, at: Slot, pages: &Pages, tmux: &
         | Gesture::Back
         | Gesture::Next
         | Gesture::Home
+        | Gesture::Goto { .. }
         | Gesture::Launch { .. } => {}
     }
 }
@@ -189,6 +205,73 @@ fn beat(
     *next = elapsed + tempo::gap(bpm);
 }
 
+/// Spawn into a grid row from its `>` button. Reports whether the surface
+/// needs repainting.
+///
+/// Lifted out of `main` to keep it inside its complexity budget. `grid`
+/// is **last tick's** resolution — the same one that lit the button, so
+/// the press and the preview cannot disagree about what the row holds.
+/// The preview said so first: `None` is a dark button, and a dark button
+/// does nothing.
+fn launch(
+    abs: u8,
+    sessions: &[tally::anchor::Session],
+    pages: &Pages,
+    grid: &std::collections::BTreeMap<Slot, model::Resolved>,
+    anchor: &Client,
+) -> bool {
+    let Some(l) = model::row_launch(sessions, pages, grid, abs) else {
+        return false;
+    };
+    match anchor.create(&tally::anchor::Spawn {
+        command: &l.command,
+        args: &[],
+        cwd: Some(std::path::Path::new(&l.cwd)),
+        env: &std::collections::BTreeMap::new(),
+        login_shell: l.login_shell,
+        labels: &launch_labels(l.at, pages),
+    }) {
+        Ok(id) => eprintln!(
+            "tallyd: launch {} -> {id} in {}",
+            l.at.label(pages).unwrap_or_default(),
+            l.cwd
+        ),
+        Err(e) => eprintln!("tallyd: launch: {e}"),
+    }
+    true
+}
+
+/// Put the window where an overview pad points.
+///
+/// Lifted out of `main` for the same reason `navigate` was: it touches
+/// nothing but the offset and the journal, and `main` has a complexity
+/// budget that this pushed over.
+///
+/// `grid` is **last tick's** resolution — the map the finger was looking
+/// at when it landed, which is the only honest thing to count `lit` from.
+fn goto(
+    row: u8,
+    col: u8,
+    offset: &mut u8,
+    grid: &std::collections::BTreeMap<Slot, model::Resolved>,
+    journal_out: &mut Option<std::fs::File>,
+) {
+    let to = View::overview_row(row, col);
+    let from = *offset;
+    // Clamped, so the deep rows land somewhere real rather than hanging
+    // the window off the end. Row 60 arrives fifth, which is honest
+    // (`docs/20-the-overview.md`).
+    *offset = to.saturating_sub(1).min(slot::MAX_OFFSET);
+    let lit = (1..=slot::ROWS)
+        .filter(|abs| model::row_summary(grid, *abs).is_some())
+        .count();
+    eprintln!("tallyd: goto row {to} ({lit} rows lit)");
+    let now = tally::now_ms();
+    log_nav(journal_out, |out| {
+        journal::nav_goto(out, now, to, from, lit)
+    });
+}
+
 /// The four top-row gestures: move the window, or move you.
 ///
 /// Lifted out of `main` because none of them touches anchord and all of
@@ -252,7 +335,10 @@ fn navigate(
             }
             Err(e) => eprintln!("tallyd: {e}"),
         },
-        Gesture::Tap { .. } | Gesture::Chord { .. } | Gesture::Launch { .. } => {}
+        Gesture::Tap { .. }
+        | Gesture::Chord { .. }
+        | Gesture::Launch { .. }
+        | Gesture::Goto { .. } => {}
     }
 }
 
@@ -327,6 +413,8 @@ fn main() -> ExitCode {
     let mut sessions = Vec::new();
     let mut reachable = false;
     let mut offset = 0u8;
+    // Set while `▲` is down, taken when the hold fires.
+    let mut home_press: Option<Duration> = None;
     // The queue, as of the last tick: what the finger was looking at when
     // it landed. Recomputing on the press would act on a grid the eye
     // never saw.
@@ -391,42 +479,29 @@ fn main() -> ExitCode {
             for event in d.poll().collect::<Vec<_>>() {
                 match event {
                     Event::Press { button, down } => {
+                        // Captured before `feed`, which answers `None` for
+                        // plenty of presses and would skip this with the
+                        // `continue` below. The clock deliberately lives
+                        // here and not in `chord.rs`: that module is pure
+                        // and has no `now` (`docs/20-the-overview.md`).
+                        if button == Button::Top(1) {
+                            home_press = down.then_some(elapsed);
+                        }
                         let Some(gesture) = chords.feed(button, down) else {
                             continue;
                         };
                         match gesture {
                             Gesture::Launch { row } => {
-                                // The same resolution that lit the button,
-                                // from the session list the frame was
-                                // drawn from.
-                                // The preview said so first: `None` is a
-                                // dark button, and a dark button does
-                                // nothing.
-                                if let Some(l) = model::row_launch(
+                                repaint |= launch(
+                                    offset.saturating_add(row),
                                     &sessions,
                                     &pages,
                                     &grid,
-                                    offset.saturating_add(row),
-                                ) {
-                                    {
-                                        match anchor.create(&tally::anchor::Spawn {
-                                            command: &l.command,
-                                            args: &[],
-                                            cwd: Some(std::path::Path::new(&l.cwd)),
-                                            env: &std::collections::BTreeMap::new(),
-                                            login_shell: l.login_shell,
-                                            labels: &launch_labels(l.at, &pages),
-                                        }) {
-                                            Ok(id) => eprintln!(
-                                                "tallyd: launch {} -> {id} in {}",
-                                                l.at.label(&pages).unwrap_or_default(),
-                                                l.cwd
-                                            ),
-                                            Err(e) => eprintln!("tallyd: launch: {e}"),
-                                        }
-                                        repaint = true;
-                                    }
-                                }
+                                    &anchor,
+                                );
+                            }
+                            Gesture::Goto { row, col } => {
+                                goto(row, col, &mut offset, &grid, &mut journal_out);
                             }
                             Gesture::PageUp
                             | Gesture::PageDown
@@ -567,6 +642,23 @@ fn main() -> ExitCode {
         }
 
         // Which `>` would act, from the same resolution the press uses.
+        // `▲` held past the threshold means *all the way up*. Taking the
+        // press out of `home_press` latches it: one `⌂` per press, no
+        // autorepeat, and nothing more until the finger lifts and lands
+        // again.
+        if home_press.is_some_and(|since| elapsed.saturating_sub(since) >= HOME_HOLD) {
+            home_press = None;
+            navigate(
+                Gesture::Home,
+                &mut offset,
+                head.as_ref(),
+                queued,
+                &pages,
+                &tmux,
+                &mut journal_out,
+            );
+        }
+
         let launchable: std::collections::BTreeSet<u8> = (1..=7u8)
             .filter(|row| {
                 model::row_launch(&sessions, &pages, &resolved, offset.saturating_add(*row))
@@ -583,6 +675,7 @@ fn main() -> ExitCode {
             can_go_back: tmux.can_go_back(),
             queued,
             held: chords.modifier(),
+            overview: chords.overview(),
             pressed: &pressed,
         };
         let frame = model::frame_from(&pads, &view);

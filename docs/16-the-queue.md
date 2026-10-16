@@ -109,10 +109,17 @@ The silkscreen stops being decoration. `13`'s own scorecard calls `◄ ►`
 buttons on the device.
 
 ```text
-  ▲      ▼      ◄      ►   │  ⌂    ·    ·    ·  │  ◈
- row    row    back   next │ home   unassigned  │ health
+  ▲      ▼      ◄      ►   │ ▣     ·    ·    ·  │  ◈
+ row    row    back   next │ map    unassigned  │ health
   up    down               │
 ```
+
+⚠️ **`Top(5)` was amended by [20](20-the-overview.md).** It is the
+`Session` button either way, but it is now *held* rather than pressed:
+holding it turns the grid into a map of the whole 64-row space. `⌂` moved
+to **hold-`▲`** — the press still scrolls one row, and keeping the finger
+down past 500 ms goes all the way up. The row below is the table as this
+document wrote it; the `⌂` line is the one that changed.
 
 **`▲▼` scroll by one row, not by one page.** The grid is an eight-row
 window onto a sixty-four-row space, and it slides. A page boundary is not
@@ -130,13 +137,22 @@ anything.
 | `▲` `▼` | there is no row that way | 1 dark grey, static | scroll one row |
 | `◄` back | no origin recorded | 3 white, static | return to where you were standing |
 | `►` next | the queue is empty | **9 amber, pulsing** | jump to the longest-waiting |
-| `⌂` home | already at the top | 1 dark grey, static | scroll back to row 1 |
+| ~~`⌂` home~~ | ~~already at the top~~ | ~~1 dark grey, static~~ | **now hold-`▲`** |
+| `▣` map | never — it is always available | 1 dark grey, static | **hold**: the grid becomes all 64 rows |
 | 3 others | always | — | nothing |
 
-**`⌂` is the `Session` button, doing what its silkscreen says** — *return
+**`⌂` was the `Session` button, doing what its silkscreen says** — *return
 to the overview*. It is the one move `▲▼` make tedious: sixteen presses
 back from the bottom of the row space, for the place you are most often
-going. One press, and it is dark exactly when you are already there.
+going.
+
+It turned out the silkscreen was promising more than a scroll. `Session`
+now shows the overview *literally* — the whole address space at once —
+and going to the top, which is a special case of going anywhere, moved to
+holding the arrow that already goes that way
+([20](20-the-overview.md#home-moves-to-hold-)). Being always lit makes it
+the one exception to *dark does nothing*, and the exception is the point:
+there is always a map to show.
 
 It is a tap, not a hold: like `◄` and `►` it commits nothing, it only
 moves you.
@@ -324,7 +340,9 @@ lies. The CC mapping is untouched — `Top(1)` is still `CC91`.
 - a pad and an address round-trip through the window at every offset
 - scrolling crosses a page boundary with nothing special happening
 - `►` scrolls the least it can to show where it landed
-- `⌂` is dark exactly at offset 0, and lands at offset 0 from anywhere
+- ~~`⌂` is dark exactly at offset 0~~ — amended by [20](20-the-overview.md):
+  `Session` is always lit, and `⌂` is hold-`▲`, which is dark at offset 0
+  for the same reason the scroll is
 - an empty queue is `None`, not an error
 - `►` is dark exactly when `head` is `None` — one predicate, read by the
   renderer and by the press, the rule `src/act.rs` already holds for chords

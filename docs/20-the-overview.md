@@ -123,9 +123,22 @@ breaks that rule.
 It also means `Session` earns its silkscreen. Ableton's Session view is
 the zoomed-out one.
 
-`Session` rests `BLUE`, the colour the kill modifier rests. That makes an
-emergent rule true for the first time: **blue means hold me.** It is lit
-always, because there is always an overview to show.
+`Session` rests `DARK_GREY`, lit always, because there is always an
+overview to show. White while held, like every modifier.
+
+> **An earlier draft gave it `BLUE`, and that draft was wrong before the
+> ink dried.** It reasoned that blue was the resting colour of the kill
+> modifier and that `Session` joining it would make *blue means hold me*
+> true. The kill button moved to red the same evening — *the colour of its
+> consequence* — which retired blue and took the rule with it.
+>
+> Dark grey is the better answer anyway. It is what `▲▼` and the `>`
+> launchers rest on, and it means the same thing on all of them:
+> **available, not urgent**. The top row is five navigation buttons and
+> they should look like five navigation buttons; what separates `Session`
+> from its neighbours is that it is held rather than pressed, and that is
+> a thing you learn from the grid changing under your thumb, not from a
+> hue. Blue stays retired.
 
 ### What the rest of the surface does while it is held
 

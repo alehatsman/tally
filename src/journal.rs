@@ -235,6 +235,29 @@ pub fn nav_back(out: &mut impl Write, now: i64, ok: bool) -> io::Result<()> {
     )
 }
 
+/// Record a press of an overview pad: where it went, where it was, and
+/// how much of the address space was occupied at the time.
+///
+/// `lit` is the instrument the design is a bet on. If it sits at seven
+/// for a month, the honest follow-up is not a better map but a smaller
+/// address space (`docs/20-the-overview.md`).
+///
+/// # Errors
+/// Whatever the sink returns.
+pub fn nav_goto(out: &mut impl Write, now: i64, to: u8, from: u8, lit: usize) -> io::Result<()> {
+    write_line(
+        out,
+        &Goto {
+            ms: now,
+            kind: "nav",
+            via: "overview",
+            to,
+            from,
+            lit,
+        },
+    )
+}
+
 /// A press of a navigation button.
 ///
 /// `kind` is what separates these from state lines, and it is written on
@@ -253,6 +276,23 @@ struct Nav<'a> {
     queued: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     ok: Option<bool>,
+}
+
+/// A press of an overview pad.
+///
+/// A shape of its own rather than more `Option`s on [`Nav`]: none of its
+/// three numbers is ever absent, and a row is not a slot address.
+#[derive(Debug, Serialize)]
+struct Goto {
+    ms: i64,
+    kind: &'static str,
+    via: &'static str,
+    /// Absolute row 1-64, the one that becomes the top of the window.
+    to: u8,
+    /// The offset the window had before the press.
+    from: u8,
+    /// Non-empty rows at that moment, 0-64.
+    lit: usize,
 }
 
 /// A slot that just started asking.

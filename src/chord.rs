@@ -93,8 +93,23 @@ pub enum Gesture {
     Back,
     /// Take me to the longest-waiting amber (`►`).
     Next,
-    /// Scroll back to row 1 (`⌂`, the `Session` button).
+    /// Scroll back to row 1 (`⌂`).
+    ///
+    /// **This module never emits it.** It is a *held* gesture now —
+    /// `▲` held past a threshold — and a threshold needs a clock, which
+    /// this module deliberately does not have. `tallyd` produces it from
+    /// the loop that already owns the time (`docs/20-the-overview.md`).
     Home,
+    /// A pad tapped while the overview is up: put the window here.
+    ///
+    /// Row and col address the *overview*, not the grid — pad `(r, c)` is
+    /// absolute row `(r - 1) * 8 + c` (`docs/20-the-overview.md`).
+    Goto {
+        /// Overview row 1-8, 1 is the top.
+        row: u8,
+        /// Overview col 1-8, 1 is the left.
+        col: u8,
+    },
     /// `>` beside a grid row: spawn into it (`docs/18-the-launch-column.md`).
     Launch {
         /// Grid row 1-7, 1 is the top. There is no `>` beside row 8.
@@ -118,10 +133,15 @@ fn top(n: u8) -> Option<Gesture> {
         2 => Some(Gesture::PageDown),
         3 => Some(Gesture::Back),
         4 => Some(Gesture::Next),
-        5 => Some(Gesture::Home),
+        // 5 is `Session`, and it is a modifier rather than a press: it is
+        // handled before this function is reached, and it emits nothing
+        // of its own.
         _ => None,
     }
 }
+
+/// The top-row button that holds the overview up: `Session`, `CC95`.
+const OVERVIEW: Button = Button::Top(5);
 
 /// Which modifiers are down.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -129,6 +149,14 @@ pub struct Chords {
     /// In press order. At most four, so a `Vec` is the right amount of
     /// machinery — a press that is already down is not pushed twice.
     held: Vec<Action>,
+    /// `Session` is down, so the grid is the whole address space.
+    ///
+    /// Kept apart from [`Self::held`] rather than folded into it: those
+    /// are right-column buttons that preview a *consequence* on the pads
+    /// they will touch, and this one replaces what the pads mean. Sharing
+    /// the list would make every `Action` match answer a question about a
+    /// button that is not an `Action`.
+    overview: bool,
 }
 
 impl Chords {
@@ -148,6 +176,14 @@ impl Chords {
     ///   releases emit nothing at all. That is the escape hatch that
     ///   justifies hold-then-tap over a prefix.
     pub fn feed(&mut self, button: Button, down: bool) -> Option<Gesture> {
+        // `Session` is the only top-row button whose *release* matters, so
+        // it is answered before the blanket "a release fires nothing"
+        // below. It fires nothing on press either: holding it changes what
+        // the grid means, and that is the whole gesture.
+        if button == OVERVIEW {
+            self.overview = down;
+            return None;
+        }
         if let Some(action) = Action::of(button) {
             if down {
                 if !self.held.contains(&action) {
@@ -162,6 +198,14 @@ impl Chords {
             return None;
         }
         match button {
+            // While the overview is up the pads address rows, not slots,
+            // so a press means *go there* and nothing else. With a
+            // right-column button also down the surface is ambiguous and
+            // nothing fires -- the same answer two modifiers get, for the
+            // same reason.
+            Button::Grid { row, col } if self.overview => {
+                self.held.is_empty().then_some(Gesture::Goto { row, col })
+            }
             Button::Grid { row, col } => match self.modifier() {
                 Some(action) => Some(Gesture::Chord { action, row, col }),
                 // Either nothing is held, or more than one is -- and an
@@ -175,8 +219,12 @@ impl Chords {
             // `>` fires on press-down like everything else here. It is a
             // tap and not a chord, so a held modifier owns the surface and
             // suppresses it: you are mid-kill, not mid-launch.
+            // Suppressed under the overview as well, and for a sharper
+            // reason than the kill modifier's: grid row 3 means *page 3*
+            // right now, so a launcher that fired would spawn into a row
+            // the eye is not looking at.
             Button::Action(row) if row <= 7 => {
-                self.held.is_empty().then_some(Gesture::Launch { row })
+                (self.held.is_empty() && !self.overview).then_some(Gesture::Launch { row })
             }
             Button::Action(_) | Button::Logo => None,
         }
@@ -197,6 +245,12 @@ impl Chords {
     /// grid you are now looking at is the one you see when nothing is
     /// held at all.
     pub fn modifier(&self) -> Option<Action> {
+        // `Session` counts as a modifier for this purpose even though it
+        // is not an `Action`: two modifiers down means none, and holding
+        // the overview and the kill button together is two.
+        if self.overview {
+            return None;
+        }
         match self.held.as_slice() {
             [only] => Some(*only),
             _ => None,
@@ -208,6 +262,17 @@ impl Chords {
         self.held.contains(&action)
     }
 
+    /// Is the overview on the grid?
+    ///
+    /// Not simply *is `Session` down*: with a right-column button also
+    /// held the surface is disarmed, and a disarmed surface shows the
+    /// plain grid — not the overview, and not a preview either
+    /// ([`Self::modifier`] returns `None` for the same press).
+    #[must_use]
+    pub fn overview(&self) -> bool {
+        self.overview && self.held.is_empty()
+    }
+
     /// Forget every held button.
     ///
     /// Called when the device goes away. A modifier that was down when the
@@ -217,6 +282,7 @@ impl Chords {
     /// for us to introduce in software instead.
     pub fn clear(&mut self) {
         self.held.clear();
+        self.overview = false;
     }
 }
 
@@ -247,6 +313,93 @@ mod tests {
         assert_eq!(MUTE.index(), 89);
         for action in Action::all() {
             assert_eq!(Action::of(action.button()), Some(action));
+        }
+    }
+
+    /// Holding `Session` changes what the pads *address*: a press is
+    /// "put the window here" and nothing else.
+    #[test]
+    fn a_pad_under_the_overview_is_a_destination() {
+        let mut c = Chords::default();
+        assert_eq!(
+            c.feed(OVERVIEW, true),
+            None,
+            "the hold itself fires nothing"
+        );
+        assert!(c.overview());
+        assert_eq!(c.feed(PAD, true), Some(Gesture::Goto { row: 3, col: 5 }));
+        assert_eq!(
+            c.feed(OVERVIEW, false),
+            None,
+            "and the release fires nothing"
+        );
+        assert!(!c.overview());
+        assert_eq!(c.feed(PAD, true), Some(Gesture::Tap { row: 3, col: 5 }));
+    }
+
+    /// `Session` and a right-column button together is two modifiers, and
+    /// two modifiers means none — the same disarm, so the grid you are
+    /// looking at is the one you see when nothing is held at all.
+    #[test]
+    fn the_overview_and_a_modifier_together_disarm() {
+        for (first, second) in [(OVERVIEW, KILL), (KILL, OVERVIEW)] {
+            let mut c = Chords::default();
+            let _a = c.feed(first, true);
+            let _b = c.feed(second, true);
+            assert!(!c.overview(), "no overview");
+            assert_eq!(c.modifier(), None, "and no preview");
+            assert_eq!(c.feed(PAD, true), None, "and nothing fires");
+            assert!(
+                c.is_held(Action::Kill),
+                "but the button still reads as down"
+            );
+        }
+    }
+
+    /// Grid row 3 means *page 3* while the overview is up, so a launcher
+    /// would spawn into a row the eye is not looking at.
+    #[test]
+    fn the_launchers_are_suppressed_under_the_overview() {
+        let mut c = Chords::default();
+        assert_eq!(
+            c.feed(Button::Action(3), true),
+            Some(Gesture::Launch { row: 3 })
+        );
+        let _held = c.feed(OVERVIEW, true);
+        assert_eq!(c.feed(Button::Action(3), true), None);
+    }
+
+    /// `▲▼◄►` stay live under the overview: scrolling slides the window
+    /// marker across the map, which is what the marker is for.
+    #[test]
+    fn the_arrows_stay_live_under_the_overview() {
+        let mut c = Chords::default();
+        let _held = c.feed(OVERVIEW, true);
+        assert_eq!(c.feed(Button::Top(1), true), Some(Gesture::PageUp));
+        assert_eq!(c.feed(Button::Top(2), true), Some(Gesture::PageDown));
+    }
+
+    /// A modifier stuck down across a replug would make the next tap a
+    /// kill; a `Session` stuck down would make it a jump to somewhere
+    /// nobody chose. Both are cleared.
+    #[test]
+    fn a_replug_forgets_the_overview_too() {
+        let mut c = Chords::default();
+        let _held = c.feed(OVERVIEW, true);
+        c.clear();
+        assert!(!c.overview());
+        assert_eq!(c.feed(PAD, true), Some(Gesture::Tap { row: 3, col: 5 }));
+    }
+
+    /// `⌂` is the one gesture this module does not produce. It needs a
+    /// clock, and this module does not have one.
+    #[test]
+    fn home_is_never_emitted_here() {
+        let mut c = Chords::default();
+        for n in 1..=crate::surface::TOP_BUTTONS {
+            for down in [true, false] {
+                assert_ne!(c.feed(Button::Top(n), down), Some(Gesture::Home));
+            }
         }
     }
 
@@ -349,7 +502,6 @@ mod tests {
         let mut c = Chords::default();
         let _held = c.feed(KILL, true);
         assert_eq!(c.feed(Button::Top(4), true), Some(Gesture::Next));
-        assert_eq!(c.feed(Button::Top(5), true), Some(Gesture::Home));
         for n in 6..=8 {
             assert_eq!(
                 c.feed(Button::Top(n), true),

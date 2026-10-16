@@ -319,6 +319,7 @@ spec = "claude"
                 queued: 0,
                 launchable: &BTreeSet::new(),
                 held: Some(Action::Kill),
+                overview: false,
                 pressed: &pressed,
             },
         );
