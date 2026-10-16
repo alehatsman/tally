@@ -269,6 +269,23 @@ fn resolve_pages(entries: &[PageEntry]) -> Result<Pages, Error> {
                 entry.name
             )));
         }
+        // The same name is written into a JSON string in the attention
+        // journal and into a tmux window name, and a quote, a backslash
+        // or a control character is wrong in at least one of them. The
+        // journal serialises properly now (`src/journal.rs`), so this is
+        // the second fence rather than the only one: the next string
+        // built by hand out of a page name inherits the guarantee instead
+        // of having to remember it.
+        if let Some(bad) = entry
+            .name
+            .chars()
+            .find(|c| matches!(*c, '"' | '\\') || c.is_control())
+        {
+            return Err(Error::Invalid(format!(
+                "page {:?}: a name cannot contain {bad:?}, which has to survive a JSON string and a tmux window name",
+                entry.name
+            )));
+        }
         if !seen.insert(entry.name.as_str()) {
             return Err(Error::Invalid(format!(
                 "page {:?} is declared twice",
@@ -488,6 +505,28 @@ spec = "s"
     fn a_page_name_cannot_contain_a_colon() {
         let e = Config::parse("[[page]]\nname = \"a:b\"\n").expect_err("colon");
         assert!(format!("{e}").contains("':'"), "{e}");
+    }
+
+    /// A page name is written into the attention journal as part of a
+    /// JSON string, and into a tmux window name. A quote in one used to
+    /// emit a line `jq` could not read, which costs not that line but
+    /// every line after it in the week M1 is measured by.
+    #[test]
+    fn a_page_name_cannot_contain_a_quote_a_backslash_or_a_control_character() {
+        for text in [
+            r#"[[page]]
+name = "wo\"rk"
+"#,
+            r#"[[page]]
+name = "wo\\rk"
+"#,
+            r#"[[page]]
+name = "wo\nrk"
+"#,
+        ] {
+            let e = Config::parse(text).expect_err("hostile page name");
+            assert!(format!("{e}").contains("cannot contain"), "{e}");
+        }
     }
 
     #[test]
