@@ -74,16 +74,20 @@ unnamed pages `1`–`8` are enough to address a slot. The config file arrives
 with the gesture that reads it, in M3.
 
 Exit:
-- sessions created from a shell — `anchor create --label tl.slot=…` — appear
-  on the grid within one tick
-- an agent that rings and goes quiet flashes amber, and stops when it is
-  answered
-- unplug / replug, kill `tallyd`, stop `anchord`: every row of
+- ✅ sessions created from a shell — `anchor create --label tl.slot=…` —
+  appear on the grid within one tick
+- ✅ an agent that rings and goes quiet flashes amber, and stops when it is
+  answered. Both directions confirmed on hardware, including the two cases
+  that break the predicate: output in the bell's own chunk must not go
+  amber, and a newline after the bell must not cancel it
+- ◐ unplug / replug, kill `tallyd`, stop `anchord`: every row of
   [08-lifecycle.md](docs/08-lifecycle.md#failure-modes-and-what-each-looks-like)
-  behaves as written
-- **a week of real use, and a number out of `attention.jsonl`** — how many
-  ambers sent you to a session that did not want anything. Counted, not
-  remembered ([09](docs/09-testing.md#what-a-green-suite-does-not-prove)).
+  behaves as written. `lost` seen on a real anchord restart; the frozen
+  grid during an outage is unit-tested but has not been watched
+- ⬜ **a week of real use, and a number out of `attention.jsonl`** — how
+  many ambers sent you to a session that did not want anything. Counted,
+  not remembered ([09](docs/09-testing.md#what-a-green-suite-does-not-prove)).
+  The journal is writing; the week has not been lived.
 
 Risk retired: the only one that matters. If the attention signal is not
 trustworthy, stop — the rest of the program is a worse fuzzy finder.

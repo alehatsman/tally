@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicI32, Ordering};
 use std::time::Duration;
 
 use std::fs::OpenOptions;
-use std::io::BufWriter;
+use std::io::Write;
 
 use tally::anchor::Client;
 use tally::device::{Device, Event};
@@ -111,7 +111,6 @@ fn main() -> ExitCode {
                 .append(true)
                 .open(&journal_path)
         })
-        .map(BufWriter::new)
         .map_err(|e| {
             eprintln!(
                 "tallyd: no attention journal at {}: {e}",
@@ -175,7 +174,13 @@ fn main() -> ExitCode {
         };
         let resolved = model::resolve(&sessions, &watchers.snapshot(), &pages, view.now);
         if let Some(out) = journal_out.as_mut() {
-            if let Err(e) = journal.record(&resolved, &pages, view.now, out) {
+            // Unbuffered on purpose. This is a few lines a day, and a
+            // buffer would hold them until a flush that SIGKILL never
+            // reaches -- losing exactly the transitions it exists to count.
+            if let Err(e) = journal
+                .record(&resolved, &pages, view.now, out)
+                .and_then(|()| out.flush())
+            {
                 eprintln!("tallyd: attention journal: {e}");
                 journal_out = None;
             }
