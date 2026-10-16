@@ -278,13 +278,20 @@ an **ordered** match, and the order is the whole opinion:
 ```text
 1. no session bound           -> Unbound  if no spec, else Bound
 2. state == lost              -> Lost
-3. state == exited | closing  -> Exited { code }
+3. state == exited            -> Exited { code }
 4. tl.attention present       -> NeedsAnswer { Declared }     unless muted
 5. bell_pending && quiet 2s   -> NeedsAnswer { Derived }      unless muted
 6. output_bytes == 0          -> Starting
 7. now - last_output < 30s    -> Working
 8. otherwise                  -> Quiet
 ```
+
+`closing` is deliberately **not** on that list: it falls through to the live
+states at 7 and 8. A session anchor is terminating is still alive, and it
+has **no exit code yet** — `exit_code` is `None` until the child is reaped —
+so rendering it as `Exited { code }` would mean inventing a number. An
+earlier draft of this table grouped it with `exited`; writing the code is
+what surfaced that the variant could not be constructed honestly.
 
 Three of those placements are decisions, not orderings:
 
