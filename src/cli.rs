@@ -17,8 +17,9 @@ pub const DEFAULT_COMMAND: &str = "claude";
 /// The one-screen help, printed for `help` and for every usage error.
 pub const USAGE: &str = "\
 usage: tally spawn <row:col | page:row:col> [-- command [args...]]
+       tally attention <on | off>
 
-Claim a pad for a session started in the current directory.
+spawn   Claim a pad for a session started in the current directory.
 
   tally spawn 1:1                      claude, here, on page 1
   tally spawn 3:4:4                    claude, here, on page 3
@@ -27,6 +28,15 @@ Claim a pad for a session started in the current directory.
 The directory is always the one you are standing in, which is the whole
 point; there is no --cwd. Two-part addresses are row:col on the first
 page. Row 1 is the top, column 1 is the left.
+
+attention   Say whether the calling session is waiting on a human.
+
+  tally attention on                   it wants you    (sets tl.attention)
+  tally attention off                  it does not     (removes it)
+
+For a Claude Code hook. It takes no address: the session is whichever one
+this process is running inside, found by walking the process tree. Not
+being under anchor is success and prints nothing.
 ";
 
 /// What the user asked for.
@@ -36,6 +46,12 @@ pub enum Request {
     Help,
     /// Claim a pad.
     Spawn(Claim),
+    /// Declare whether the calling session is waiting on a human.
+    ///
+    /// `true` sets `tl.attention`, `false` removes it. There is no address
+    /// because there is nobody to type one: the only caller is a hook
+    /// inside the session it is talking about (`docs/14-attention.md`).
+    Attention(bool),
 }
 
 /// A validated `tally spawn`: a real address and a non-empty command.
@@ -83,8 +99,34 @@ pub fn parse(args: impl IntoIterator<Item = String>, pages: &Pages) -> Result<Re
     match first.as_str() {
         "help" | "-h" | "--help" => Ok(Request::Help),
         "spawn" => claim(args, pages).map(Request::Spawn),
+        "attention" => attention(args).map(Request::Attention),
         other => Err(Error::Usage(format!("unknown subcommand {other:?}"))),
     }
+}
+
+/// `on` or `off`, and nothing else.
+///
+/// Deliberately not accepting `1`/`0`/`true`/`yes`: the caller is a line in
+/// a settings file that somebody wrote once, so there is no ergonomic case
+/// for aliases, and every alias is another spelling to recognise when the
+/// pad is not lighting up.
+fn attention(mut args: impl Iterator<Item = String>) -> Result<bool, Error> {
+    let Some(word) = args.next() else {
+        return Err(Error::Usage("attention needs `on` or `off`".to_owned()));
+    };
+    let on = match word.as_str() {
+        "on" => true,
+        "off" => false,
+        other => {
+            return Err(Error::Usage(format!(
+                "attention takes `on` or `off`, not {other:?}"
+            )))
+        }
+    };
+    if let Some(extra) = args.next() {
+        return Err(Error::Usage(format!("unexpected {extra:?}")));
+    }
+    Ok(on)
 }
 
 fn claim(mut args: impl Iterator<Item = String>, pages: &Pages) -> Result<Claim, Error> {
@@ -192,7 +234,42 @@ mod tests {
     fn spawn(args: &[&str], pages: &Pages) -> Result<Claim, Error> {
         match parse(args.iter().map(|s| (*s).to_owned()), pages)? {
             Request::Spawn(claim) => Ok(claim),
-            Request::Help => panic!("asked to spawn, got help"),
+            other => panic!("asked to spawn, got {other:?}"),
+        }
+    }
+
+    fn attention_of(args: &[&str]) -> Result<bool, Error> {
+        match parse(args.iter().map(|s| (*s).to_owned()), &named())? {
+            Request::Attention(on) => Ok(on),
+            other => panic!("asked for attention, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn attention_takes_on_and_off() {
+        assert_eq!(attention_of(&["attention", "on"]), Ok(true));
+        assert_eq!(attention_of(&["attention", "off"]), Ok(false));
+    }
+
+    /// No aliases, by decision. The caller is one line in a settings file,
+    /// and every spelling accepted is another one to recognise later when
+    /// the pad is not lighting up.
+    #[test]
+    fn attention_refuses_anything_else() {
+        for args in [
+            &["attention"][..],
+            &["attention", "1"],
+            &["attention", "true"],
+            &["attention", "yes"],
+            &["attention", "on", "extra"],
+        ] {
+            assert!(
+                matches!(
+                    parse(args.iter().map(|s| (*s).to_owned()), &named()),
+                    Err(Error::Usage(_))
+                ),
+                "{args:?} should be a usage error"
+            );
         }
     }
 

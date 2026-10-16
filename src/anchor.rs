@@ -125,6 +125,14 @@ pub struct Session {
     /// Authoritative stream length; never rewinds.
     #[serde(default)]
     pub output_bytes: u64,
+    /// The agent's own pid, as anchord forked it. `None` once it is gone.
+    ///
+    /// Read by nothing on the grid — it exists so a hook can find the
+    /// session it is running inside by walking its own process ancestry,
+    /// which is the only key that survives two agents in one repo
+    /// (`src/attention.rs`, `docs/14-attention.md`).
+    #[serde(default)]
+    pub pid: Option<i32>,
 }
 
 impl Session {
@@ -572,6 +580,9 @@ mod tests {
         assert_eq!(s.id, "01M52D614H0SSH1WMB0PMA6YAD");
         assert_eq!(s.lifecycle(), SessionState::Running);
         assert_eq!(s.output_bytes, 988);
+        // The key `tally attention` resolves a hook by, so it has to
+        // survive the wire and not just `anchor get` (`src/attention.rs`).
+        assert_eq!(s.pid, Some(8428));
         // teleport's session: not ours, and it claims no pad.
         assert_eq!(s.slot_label(), None);
     }
@@ -585,6 +596,7 @@ mod tests {
             lost_reason: None,
             labels: BTreeMap::new(),
             output_bytes: 0,
+            pid: None,
         };
         assert_eq!(s.lifecycle(), SessionState::Lost);
     }
@@ -601,6 +613,7 @@ mod tests {
             lost_reason: None,
             labels,
             output_bytes: 1,
+            pid: None,
         };
         assert_eq!(s.slot_label(), Some("work:3:5"));
         assert!(s.muted());

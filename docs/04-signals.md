@@ -70,8 +70,20 @@ Four inputs, in increasing order of how much we trust them.
 ### 1. BEL (`0x07`) — "it wants you"
 
 The terminal bell is what an agent emits when it is done talking and wants
-input. Claude Code rings it; so do most of the others; so does a shell with
-a failed completion, which is the problem.
+input. Most agents ring it; so does a shell with a failed completion, which
+is the problem.
+
+> ⚠️ **Claude Code does not ring it, and this is the floor falling to zero.**
+> Measured across 6.6 MB of one real session: 1012 `0x07` bytes, **every one
+> an OSC title terminator, zero in GROUND state** — and the same on plain
+> `claude` with no wrapper ([14](14-attention.md#1-the-agent-never-rings--confirmed)).
+> `bell_pending` is therefore never set and [rule 5](#precedence) is
+> unreachable against the agent this grid actually runs.
+>
+> Everything below is correct and is why we can say *zero* rather than guess
+> — the scanner rejected all 1012. It is a working detector with nothing to
+> detect. Attention comes from [a hook](#4-a-hook--it-told-us) instead, on
+> both edges.
 
 ```text
 a 0x07 seen in GROUND state  →  last_bell_ms = now
@@ -106,6 +118,19 @@ teleport uses 30s (`anchor_watch.rs:34`). An agent mid-task emits something
 — a spinner, a tool call, a token — far more often than that, so quiet means
 *it is not currently thinking*. Combined with a recent bell, quiet is a
 strong signal: **bell, then silence, means it asked and is waiting.**
+
+> ✅ **This half measured true, and it was doubted.** A `claude` at its main
+> prompt with nothing typed emits **0 bytes in 92 s**; the live session on
+> pad `1:1` held **42 s flat** between turns
+> ([14](14-attention.md#2-the-agent-does-go-quiet--04-is-right-and-4-is-wrong)).
+> Quiet is reachable, rule 6 is honest, and motion does mean producing
+> output.
+>
+> **A wrapper can take that away.** `isayes` repaints a footer and blinks a
+> cursor about twice a second, so under it `last_output_ms` never ages, the
+> pad breathes forever and `Quiet` is unreachable. That is a bug in the
+> wrapper's output, not a colour to delete here — but it is the reason the
+> clearing rule below cannot lean on output.
 
 ### Stating that precisely, because the obvious phrasing is unimplementable
 
@@ -165,13 +190,27 @@ session is idle".
 
 ### Clearing attention
 
-Three things clear it, and nothing else:
+What clears it depends on which signal raised it, and the two are not the
+same rule. An earlier draft of this section gave one rule for both and it
+was wrong in a way nothing caught, because **the clearing write it
+describes was never implemented** — `tl.attention` had a reader and no
+remover ([14](14-attention.md#3-nothing-clears-tlattention--a-gap-not-a-bug-report)).
 
-| what happens | why it clears |
+A **derived** attention — a pending bell — is cleared by output, and that is
+the flag rule above rather than a separate mechanism.
+
+A **declared** attention is cleared by a hook, because output cannot be
+trusted to mean anything: under a repainting wrapper it arrives twice a
+second and would clear the label within half a second of the hook setting
+it. Two writers disagreeing at 2 Hz is worse than one writer that can be
+absent.
+
+| what happens | what it clears |
 |---|---|
-| any non-whitespace output | you answered, or it started talking again |
-| the session exits | there is nothing left to answer |
-| the mute chord ([05](05-interaction.md#gestures)) | you decided it is lying |
+| any non-whitespace output | a pending **bell** — it answered, or it started talking again |
+| `UserPromptSubmit` / `PreToolUse` hook | a **declared** attention — see [below](#4-a-hook--it-told-us) |
+| the session exits | both: terminal states outrank attention ([precedence](#precedence)) |
+| the mute chord ([05](05-interaction.md#gestures)) | neither — mute suppresses the *rendering*, leaving the state underneath |
 
 Notably **jumping to a slot does not clear it.** Looking at a window is not
 answering the question in it, and a pad that goes quiet because your eyes
@@ -209,14 +248,29 @@ when the agent is waiting on the user.
 
 ```text
 ~/.claude/settings.json
-  Notification  →  anchor label $ANCHOR_SESSION tl.attention=1
+  Stop, Notification  →  tally attention on
+  UserPromptSubmit    →  tally attention off
+  PreToolUse          →  tally attention off
 ```
 
 ```text
 tallyd, on the tick it already makes:
   tl.attention present  →  NeedsAnswer { source: Declared }
-  non-whitespace output →  anchor label --remove tl.attention
 ```
+
+> **Both edges are hooks, and `$ANCHOR_SESSION` does not exist.** An earlier
+> version of this block wrote the hook as
+> `anchor label $ANCHOR_SESSION tl.attention=1`; that variable is set by
+> nothing, appears nowhere in anchor's source, and the line expanded to an
+> empty argument. `tally attention` resolves the session by walking its own
+> process ancestry to a pid anchord recorded
+> ([14](14-attention.md#tally-attention-onoff), [11](11-cli.md)).
+>
+> The falling edge is a hook too, for the reason given in
+> [Clearing attention](#clearing-attention). `Stop` carries the common case
+> — the turn finished — because permission dialogs are mostly auto-answered
+> and `Notification` rarely fires; `PreToolUse` catches the answer to one
+> that did, which submits no prompt.
 
 The hook talks to **anchord**, which tallyd is already polling. That buys
 more than it looks like:
@@ -230,25 +284,33 @@ more than it looks like:
   ([03-model.md](03-model.md#where-the-binding-lives)). A FIFO's contents do
   not.
 - **teleport can see it too.** Two surfaces, one fact, no integration.
-- **The hook needs nothing of ours installed.** `anchor` is already on the
-  path; there is no `tally` binary in this story at all. A CLI exists now
-  ([11-cli.md](11-cli.md)) and this is still not a reason for it — the
-  argument that settled it was the spawn directory, and nothing here.
+- **The hook needs one subcommand of ours.** This *is* a reason for the
+  CLI, and the second one it has ([11-cli.md](11-cli.md)): `anchor label`
+  needs a session id, and nothing in a hook's environment carries it. The
+  measured gap is [14](14-attention.md#how-it-finds-its-session); if anchor
+  ever injects the id, `tally attention` becomes a one-line wrapper rather
+  than wasted work.
 
 The cost is latency: one reconcile tick, ≤2s. That is the same 2s the
 derived signal waits anyway, so declared attention is never *slower* than
 the floor it replaces.
 
-The clearing write is tallyd's, not the hook's — the hook fires when the
-agent starts waiting and gets no second callback when you answer. tallyd
-already watches the stream, so "non-whitespace output arrived" is a fact it
-has; removing the label is one `label` call on a transition, not per chunk.
+The clearing write is **also a hook's**, and this is the sentence that
+changed. It used to read that tallyd would clear on output, on the grounds
+that it already watches the stream — a clearing write that was never
+implemented, and that would have been defeated anyway by any agent whose UI
+repaints on a timer. The hook does get a second callback when you answer:
+`UserPromptSubmit`, or `PreToolUse` when the answer was a permission
+dialog.
 
 This is **strictly better where it applies and useless everywhere else** —
 it does not exist for codex, for a plain shell, or for an agent somebody
 installs next month. So:
 
-- the heuristic is the floor, and always runs
+- the heuristic is the floor, and always runs — **and against Claude Code
+  that floor is zero**, which is the measurement that promoted the hook
+  from *Later, unscheduled* to the only thing that makes the attention half
+  of this product exist ([14](14-attention.md))
 - a hook, when configured, **overrides** it for that session — `tl.attention`
   present means `NeedsAnswer` whatever the bytes say, and its absence never
   means "not waiting", only "nobody declared"
@@ -369,5 +431,11 @@ So tallyd appends one line per attention transition to
 Transitions only, so it is a few lines a day, not a log. It exists to answer
 one question at the end of the week — *how many of these did I look up for
 nothing* — and it is the only piece of state tallyd writes that is not
-rebuildable, which is acceptable precisely because nothing reads it back.
-Delete it when M1 exits.
+rebuildable from `anchor list`. Delete it when M1 exits.
+
+**tallyd reads it back at startup**, and that is a change from the first
+draft, which said nothing did. An in-memory map of who is asking does not
+survive a restart, so a slot still waiting got a second rising edge and an
+`after_ms` measured from the wrong one — three rises against one fall in the
+file as shipped. The instrument has to be right more than it has to be
+write-only ([14](14-attention.md#the-journal-is-miscounting-and-it-is-restarts)).
