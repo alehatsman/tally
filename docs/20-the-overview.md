@@ -214,29 +214,60 @@ its way to carry meaning in hue because hue does not get tiring
 
 - [16](16-the-queue.md#the-top-row) — the top row is `▲▼◄►⌂`; `Top(5)`
   stops being `Home` and becomes the overview modifier
-- [`render::home`](../src/render.rs) and `Gesture::Home` go, or stay —
-  see *Open*
+- [`render::home`](../src/render.rs) is **deleted**. It lit `Top(5)` dim
+  when scrolled away from the top; `render::arrow` already says exactly
+  that about `▲`, which is now the button that carries it. `Gesture::Home`
+  survives, but `chord.rs` stops emitting it — see *Home moves to
+  hold-`▲`*
 - [`palette.rs`](../src/surface/palette.rs) — the `WHITE` comment still
   cites `crate::render::page`, removed in M8. Stale, found here, fix with
   this change
 - [`addr.rs`](../src/surface/addr.rs) — `Top`'s doc says *four that carry
   nothing*; it has been three since `⌂`, and stays three after this
 
-## Open
+## Home moves to hold-`▲`
 
-**Does `Home` survive?** The overview strictly contains it: hold
-`Session`, tap the top-left pad, and you are at row 1. That is one gesture
-where there was one button.
+`Session` cannot be two things, so `⌂` leaves it. It does **not** get
+folded into the overview, because the one jump the data describes — row 13
+back to row 1 — is worth a single press.
 
-- **Absorb it.** Nothing new, nothing to time, one fewer thing to
-  remember. Recommended.
-- **Move it to hold-`▲`.** Keeps the single press for the one jump the
-  data says is common — row 13 back to row 1 — at the cost of the first
-  timer on this surface. `Chords::feed` is pure and takes no clock today;
-  a hold threshold changes that, and it changes it for every button that
-  ever wants one.
+**`▲` scrolls one row on press. Held past the threshold, it snaps to row
+1.** There is no tap-versus-hold ambiguity to resolve, because a tap is
+not withheld waiting to find out: the scroll happens immediately and
+keeping the finger down does more. Nothing is deferred, nothing is
+guessed, and you feel the arrival because `▲` goes dark the moment you
+are there.
 
-This is the only thing in this document that is not decided.
+It fires **once** per press. Autorepeat would arrive at the same row by a
+longer road and would need a rate nobody has measured.
+
+> **The clock does not go in `chord.rs`.** That module is pure — presses
+> and releases in, gestures out, no `now` parameter — and that purity is
+> what lets the four chord rules be tested without a device or a
+> timeline. A hold is a *timed* gesture, so the timer lives where the
+> clock already is: `tallyd`'s 16 ms loop, which has `elapsed` in hand on
+> the same line it calls `feed` ([`tallyd.rs:394`](../src/bin/tallyd.rs)).
+>
+> The consequence, stated so nobody looks for it: `Gesture::Home` stays in
+> the enum and `navigate` keeps handling it, but **`chord.rs` never emits
+> it**. It is the one gesture the state machine does not produce.
+
+```rust
+// tallyd
+/// How long `▲` must be held before it means *all the way up*.
+const HOME_HOLD: Duration = Duration::from_millis(500);
+// Track the press instant for Top(1); on each tick, if it is still down
+// past HOME_HOLD and has not fired, emit Home once and latch until release.
+```
+
+500 ms is a guess with a reason — short enough not to feel like waiting,
+long enough that a lazy tap cannot reach it — and it is a named constant
+because the number is a hardware question, not a design one.
+
+`▼` gets no hold. The bottom of a 64-row space where seven rows are
+occupied is not a destination, and the overview reaches the deep rows in
+one gesture anyway. If *jump to the deepest occupied row* turns out to be
+wanted, this is the symmetric place to put it.
 
 ## Validation
 
@@ -248,5 +279,9 @@ This is the only thing in this document that is not decided.
   plain
 - ⬜ `▲▼` under the overview slides the grey run and nothing else
 - ⬜ `>` is dark and does nothing while the overview is up
+- ⬜ holding `▲` for 500 ms from row 13 lands on row 1, once, and the
+  button goes dark under the finger
+- ⬜ 500 ms is not reachable by a lazy tap, and not slow enough to feel
+  like waiting
 - ⬜ a week of `via:"overview"` lines: is it reached for, and does `lit`
   move

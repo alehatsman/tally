@@ -531,7 +531,9 @@ Scope: hold `Session` and the grid becomes the whole 64-row space, one pad
 per absolute row in reading order, coloured by the worst state in that row.
 Tap a pad and the window lands there. Release without tapping and nothing
 happened. The window is marked by dim grey on its empty pads
-([docs/20](docs/20-the-overview.md)).
+([docs/20](docs/20-the-overview.md)). `⌂` moves off `Session` and onto
+hold-`▲`: the press still scrolls one row, and holding it past 500 ms
+snaps to row 1.
 
 Exit:
 - ⬜ seven lit pads and a grey run reads as a map, without counting
@@ -539,6 +541,13 @@ Exit:
 - ⬜ `Session` + kill disarms visibly, like two right-column modifiers do
 - ⬜ a week of `via:"overview"` lines — is it reached for, and does `lit`
   move off seven
+- ⬜ 500 ms is unreachable by a lazy tap and does not feel like waiting
+
+> **The clock stays out of `chord.rs`.** It is pure — presses in, gestures
+> out, no `now` — and that is what lets the four chord rules be tested
+> without a device or a timeline. The hold timer goes in `tallyd`'s 16 ms
+> loop, which already has `elapsed` on the line that calls `feed`. The
+> consequence: `Gesture::Home` survives and `chord.rs` never emits it.
 
 > **A latched mode was rejected.** The top row is built on *dark does
 > nothing, lit does one thing, there is no state to remember*. A latched
