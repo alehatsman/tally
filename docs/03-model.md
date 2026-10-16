@@ -164,6 +164,13 @@ Labels go with it: `tl.slot` is the address being claimed and `tl.spec` is
 the spec's name, so a respawn can find what to run again without the slot
 table. An empty `argv` is a config error, not a spawn of the empty string.
 
+`tl.spec` is a **name, resolved against the file you have now** — it is not
+a copy of the spec. Rename or delete the `[[spec]]` and every dead session
+that carries the old name stops being respawnable, which is the only
+answer available: there is nothing left to run. The pad says so under a
+held respawn rather than lighting and then refusing
+([05](05-interaction.md#the-held-preview)).
+
 **Size is not ours.** `create` takes `cols`/`rows` and we send anchor's
 defaults, because `anchor attach` resizes the session to the terminal it is
 attaching to before any output arrives (`anchor/src/bin/anchor.rs:343-349`)

@@ -362,8 +362,8 @@ So tallyd appends one line per attention transition to
 `~/.local/state/tally/attention.jsonl`:
 
 ```json
-{"ms":1760000000000,"session":"01J…","slot":"work:3:5","to":"needs_answer","source":"derived"}
-{"ms":1760000061000,"session":"01J…","slot":"work:3:5","to":"working","after_ms":61000}
+{"ms":1760000000000,"session":"01J…","slot":"work:3:5","to":"needs_answer","source":"derived","title":"edit tests/pty.rs?"}
+{"ms":1760000061000,"session":"01J…","slot":"work:3:5","to":"answered","after_ms":61000}
 ```
 
 Transitions only, so it is a few lines a day, not a log. It exists to answer

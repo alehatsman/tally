@@ -7,6 +7,12 @@
 //! nothing happens. Two predicates would eventually disagree, and the one
 //! that disagrees silently is the one on the destructive button.
 //!
+//! That is a claim about *inputs* as much as about the function, so it is
+//! held by construction: the pad [`effect`] is asked about comes from
+//! [`crate::model::Pads`], which is also where the renderer gets its
+//! pads. There is no second place to build one, because there was, and
+//! the two drifted.
+//!
 //! Everything here talks to anchord and can fail. Failure is reported and
 //! dropped: the next reconcile redraws from a fresh `list`, so a kill that
 //! did not land shows as a pad that is still green — which is the truth,
@@ -16,8 +22,8 @@ use std::collections::BTreeMap;
 
 use crate::anchor::{self, Client, Spawn};
 use crate::chord::Action;
-use crate::config::{Config, Launch};
-use crate::model::{effect, Effect, Pad, Resolved};
+use crate::config::Launch;
+use crate::model::{effect, Effect, Pads};
 use crate::slot::{Pages, Slot};
 
 /// What a gesture did, for the log line.
@@ -49,46 +55,20 @@ impl std::fmt::Display for Done {
 }
 
 /// Everything a press needs in order to act.
-#[derive(Debug)]
+///
+/// Two fields and no third: the socket, and the same [`Pads`] the frame
+/// was drawn from. A press reads the grid, the config and the purgeable
+/// rows **through** it, so there is nowhere left for this side to form
+/// its own opinion of what a pad is.
+#[derive(Debug, Clone, Copy)]
 pub struct Context<'a> {
     /// Where the sessions live.
     pub client: &'a Client,
-    /// What the pads can spawn.
-    pub config: &'a Config,
-    /// What is on the grid right now.
-    pub grid: &'a BTreeMap<Slot, Resolved>,
-    /// Session ids anchord would forget, by pad.
-    pub purgeable: &'a BTreeMap<Slot, Vec<String>>,
+    /// The grid the preview is showing, and what it can spawn.
+    pub pads: Pads<'a>,
 }
 
 impl Context<'_> {
-    /// The pad as [`crate::model::effect`] sees it. The same construction
-    /// the renderer does, which is why they cannot drift.
-    fn pad(&self, at: Slot) -> Pad {
-        let r = self.grid.get(&at);
-        Pad {
-            state: r.map(|r| r.state),
-            muted: r.is_some_and(|r| r.muted),
-            spec: self.launch(at).is_some(),
-            purgeable: self.purgeable.get(&at).is_some_and(|ids| !ids.is_empty()),
-        }
-    }
-
-    /// What to spawn here: the `[[slot]]` entry, or failing that the spec
-    /// named by the `tl.spec` label of whatever last ran here.
-    ///
-    /// The label is the fallback rather than the other way round because
-    /// the file is what you edited most recently and meant most
-    /// deliberately. The label is how a session spawned from a shell —
-    /// `anchor create --label tl.spec=claude` — stays respawnable without
-    /// appearing in `slots.toml` at all.
-    fn launch(&self, at: Slot) -> Option<&Launch> {
-        self.config.launch(at).or_else(|| {
-            let spec = self.grid.get(&at)?.spec.as_deref()?;
-            self.config.by_spec_name(spec)
-        })
-    }
-
     /// A bare tap: spawn a dark pad, or report that it is a jump.
     ///
     /// Returns `Ok(None)` when the pad holds a session — the caller jumps,
@@ -98,10 +78,10 @@ impl Context<'_> {
     /// # Errors
     /// Whatever `create` returned.
     pub fn tap(&self, at: Slot, pages: &Pages) -> Result<Option<Done>, anchor::Error> {
-        if self.grid.contains_key(&at) {
+        if self.pads.grid().contains_key(&at) {
             return Ok(None); // a jump; not ours
         }
-        let Some(launch) = self.launch(at) else {
+        let Some(launch) = self.pads.launch(at) else {
             // A dark pad with no spec. Nothing happens, and nothing
             // should: which pads spawn what is your layout, and a press
             // that silently started a shell would be worse than one that
@@ -116,13 +96,13 @@ impl Context<'_> {
     /// # Errors
     /// Whatever anchord returned. A refusal is reported, not retried.
     pub fn chord(&self, action: Action, at: Slot, pages: &Pages) -> Result<Done, anchor::Error> {
-        let what = effect(action, self.pad(at));
+        let what = effect(action, self.pads.at(at));
         if matches!(what, Effect::None | Effect::Skips) {
             return Ok(Done::Nothing);
         }
         match action {
             Action::Kill => self.kill(at),
-            Action::Respawn => match self.launch(at) {
+            Action::Respawn => match self.pads.launch(at) {
                 Some(launch) => self.spawn(launch, at, pages),
                 None => Ok(Done::Nothing),
             },
@@ -162,7 +142,7 @@ impl Context<'_> {
     /// keeps running, exits badly on its own an hour later, and renders
     /// dark because of a kill that never happened.
     fn kill(&self, at: Slot) -> Result<Done, anchor::Error> {
-        let Some(r) = self.grid.get(&at) else {
+        let Some(r) = self.pads.grid().get(&at) else {
             return Ok(Done::Nothing);
         };
         let mut set = BTreeMap::new();
@@ -189,11 +169,8 @@ impl Context<'_> {
     /// because eight presses that each look like nothing happening is not
     /// a gesture anybody would complete.
     fn purge(&self, at: Slot) -> Result<Done, anchor::Error> {
-        let Some(ids) = self.purgeable.get(&at) else {
-            return Ok(Done::Nothing);
-        };
         let mut gone = 0;
-        for id in ids {
+        for id in self.pads.rows(at) {
             match self.client.purge(id) {
                 Ok(()) => gone += 1,
                 // Someone else forgot it between the `list` and the
@@ -209,7 +186,7 @@ impl Context<'_> {
     }
 
     fn mute(&self, at: Slot, on: bool) -> Result<Done, anchor::Error> {
-        let Some(r) = self.grid.get(&at) else {
+        let Some(r) = self.pads.grid().get(&at) else {
             return Ok(Done::Nothing);
         };
         let mut set = BTreeMap::new();
@@ -226,8 +203,14 @@ impl Context<'_> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use super::*;
+    use crate::config::Config;
+    use crate::model::{frame_from, Resolved, View};
+    use crate::render;
     use crate::signal::SlotState;
+    use crate::surface::Button;
 
     fn at(row: u8, col: u8) -> Slot {
         Slot { page: 1, row, col }
@@ -261,9 +244,7 @@ spec = "claude"
     ) -> Context<'a> {
         Context {
             client,
-            config,
-            grid,
-            purgeable,
+            pads: Pads::new(grid, config, purgeable),
         }
     }
 
@@ -340,10 +321,65 @@ spec = "claude"
         let (client, purge) = (nowhere(), BTreeMap::new());
         let ctx = context(&client, &config, &grid, &purge);
         assert_eq!(
-            ctx.launch(at(5, 5)).map(|l| l.command.as_str()),
+            ctx.pads.launch(at(5, 5)).map(|l| l.command.as_str()),
             Some("claude")
         );
-        assert!(ctx.pad(at(5, 5)).spec, "the preview must light it too");
+        assert!(ctx.pads.at(at(5, 5)).spec, "the preview must light it too");
+    }
+
+    /// The regression the shared [`Pads`] exists to make unrepresentable.
+    ///
+    /// Rename or delete a `[[spec]]` and every dead session that named it
+    /// carries a `tl.spec` pointing at nothing. The renderer used to count
+    /// the label alone and the press used to resolve it, so holding
+    /// respawn painted the pad green — *this will respawn* — and the press
+    /// returned [`Done::Nothing`]. The preview lied about the only thing
+    /// it is there to be believed about.
+    ///
+    /// Asserted as the two halves agreeing rather than as one expected
+    /// colour: what matters is that the pixel and the press tell the same
+    /// story, whichever story that is.
+    #[test]
+    fn a_spec_label_that_resolves_to_nothing_neither_lights_nor_spawns() {
+        let config = Config::parse(CONFIG).expect("valid");
+        let mut grid = BTreeMap::new();
+        // Nothing in `slots.toml` names `ghost`: the `[[spec]]` it was
+        // spawned from has since been renamed.
+        let _r = grid.insert(
+            at(5, 5),
+            resolved(
+                at(5, 5),
+                SlotState::Failed { code: 1 },
+                false,
+                Some("ghost"),
+            ),
+        );
+        let (client, purge, pages) = (nowhere(), BTreeMap::new(), Pages::default());
+        let ctx = context(&client, &config, &grid, &purge);
+        let pressed = BTreeSet::new();
+        let frame = frame_from(
+            &ctx.pads,
+            &View {
+                pages: &pages,
+                current: 1,
+                anchord_reachable: true,
+                now: 0,
+                held: Some(Action::Respawn),
+                pressed: &pressed,
+            },
+        );
+
+        assert_eq!(
+            frame.get(Button::Grid { row: 5, col: 5 }),
+            render::preview(Action::Respawn, Effect::Skips),
+            "a spec that does not resolve must not read as a respawn"
+        );
+        assert_eq!(
+            ctx.chord(Action::Respawn, at(5, 5), &pages)
+                .expect("no call"),
+            Done::Nothing,
+            "and the press must agree with the pixel"
+        );
     }
 
     /// The file wins over the label: it is what you edited most recently
@@ -364,7 +400,7 @@ spec = "claude"
         let (client, purge) = (nowhere(), BTreeMap::new());
         let ctx = context(&client, &config, &grid, &purge);
         assert_eq!(
-            ctx.launch(at(1, 1)).map(|l| l.spec.as_str()),
+            ctx.pads.launch(at(1, 1)).map(|l| l.spec.as_str()),
             Some("claude")
         );
     }
@@ -377,7 +413,7 @@ spec = "claude"
         let _p = purge.insert(at(3, 3), vec!["01A".to_owned(), "01B".to_owned()]);
         let (client, config, grid) = (nowhere(), Config::default(), BTreeMap::new());
         let ctx = context(&client, &config, &grid, &purge);
-        let pad = ctx.pad(at(3, 3));
+        let pad = ctx.pads.at(at(3, 3));
         assert!(pad.purgeable && pad.state.is_none());
         assert_eq!(effect(Action::Purge, pad), Effect::Acts);
     }

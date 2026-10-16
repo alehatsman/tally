@@ -14,6 +14,8 @@ use std::collections::BTreeMap;
 use std::io::{self, Write};
 use std::path::PathBuf;
 
+use serde::Serialize;
+
 use crate::model::Resolved;
 use crate::signal::{SlotState, Source};
 use crate::slot::{Pages, Slot};
@@ -59,16 +61,17 @@ impl Journal {
                 Source::Derived => "derived",
                 Source::Declared => "declared",
             };
-            // The title is what makes a week of these judgeable. A line
-            // naming only a ULID cannot be scored as a right or wrong
-            // amber seven days later; one carrying "edit tests/pty.rs?"
-            // can. Absent is normal and must stay legal.
-            writeln!(
+            let at = address(*slot, pages);
+            write_line(
                 out,
-                r#"{{"ms":{now},"session":"{}","slot":"{}","to":"needs_answer","source":"{source}","title":{}}}"#,
-                r.session,
-                address(*slot, pages),
-                json_string(r.title.as_deref()),
+                &Asked {
+                    ms: now,
+                    session: &r.session,
+                    slot: &at,
+                    to: "needs_answer",
+                    source,
+                    title: r.title.as_deref(),
+                },
             )?;
         }
 
@@ -86,11 +89,16 @@ impl Journal {
             .collect();
         for slot in done {
             if let Some((session, since)) = self.asking.remove(&slot) {
-                writeln!(
+                let at = address(slot, pages);
+                write_line(
                     out,
-                    r#"{{"ms":{now},"session":"{session}","slot":"{}","to":"answered","after_ms":{}}}"#,
-                    address(slot, pages),
-                    now.saturating_sub(since),
+                    &Answered {
+                        ms: now,
+                        session: &session,
+                        slot: &at,
+                        to: "answered",
+                        after_ms: now.saturating_sub(since),
+                    },
                 )?;
             }
         }
@@ -103,30 +111,55 @@ impl Journal {
     }
 }
 
-/// A JSON string, or `null`. Escapes only what JSON requires; a terminal
-/// title is arbitrary bytes and a raw quote would corrupt the line.
-fn json_string(text: Option<&str>) -> String {
-    let Some(text) = text else {
-        return "null".to_owned();
-    };
-    let mut out = String::with_capacity(text.len() + 2);
-    out.push('"');
-    for c in text.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => {
-                use std::fmt::Write as _;
-                let _written = write!(out, "\\u{:04x}", c as u32);
-            }
-            c => out.push(c),
-        }
-    }
-    out.push('"');
-    out
+/// A slot that just started asking.
+///
+/// A struct rather than a `format!` because every string on this line is
+/// one tally did not choose — a page name, an agent's session id, a
+/// terminal title — and a single raw `"` in any of them turns the line
+/// into something `jq` stops at. Hand-escaping covered the title and not
+/// the other two. **Field order is declaration order** in serde, and the
+/// order here is the one already written to `attention.jsonl`, so old and
+/// new lines read alike.
+#[derive(Debug, Serialize)]
+struct Asked<'a> {
+    ms: i64,
+    session: &'a str,
+    slot: &'a str,
+    /// Always `needs_answer`. Constant per shape, but it is the field the
+    /// week's count is grouped by, so it is written out.
+    to: &'static str,
+    source: &'static str,
+    /// The title is what makes a week of these judgeable. A line naming
+    /// only a ULID cannot be scored as a right or wrong amber seven days
+    /// later; one carrying "edit tests/pty.rs?" can. Absent is normal and
+    /// stays legal — `null`, as it has always been written.
+    title: Option<&'a str>,
+}
+
+/// A slot that stopped asking: answered, exited, muted, or gone empty.
+///
+/// Its own struct rather than `Option` fields on [`Asked`], because the
+/// two shapes genuinely differ: `source` and `title` have no meaning for
+/// a transition *out* of asking, and emitting `"source":null` here would
+/// be a third format rather than an honest one.
+#[derive(Debug, Serialize)]
+struct Answered<'a> {
+    ms: i64,
+    session: &'a str,
+    slot: &'a str,
+    /// Always `answered`; see [`Asked::to`].
+    to: &'static str,
+    after_ms: i64,
+}
+
+/// One line, newline-terminated — the journal is JSON Lines.
+///
+/// Serialising these structs cannot fail on its own (no non-string map
+/// keys, no floats), so any error is the sink's and is reported as the
+/// `io::Error` it is.
+fn write_line(out: &mut impl Write, line: &impl Serialize) -> io::Result<()> {
+    serde_json::to_writer(&mut *out, line).map_err(io::Error::from)?;
+    writeln!(out)
 }
 
 /// `page:row:col`, falling back to the index for a page with no name.
@@ -257,6 +290,89 @@ mod tests {
         assert!(lines(&out)[0].contains(r#""slot":"work:2:4""#));
     }
 
+    /// Every string on a journal line is one tally did not choose: a page
+    /// name comes from `slots.toml`, a session id from anchor, a title
+    /// from whatever the agent set. Hand-built, the line `{"slot":"wo"rk…`
+    /// was not JSON — and `jq` stops at the first one of those, so one bad
+    /// page name costs the whole week M1 is measured by.
+    #[test]
+    fn a_page_name_a_session_or_a_title_full_of_quotes_still_parses() {
+        let pages = Pages::new([r#"wo"rk\"#.to_owned()]);
+        let slot = Slot {
+            page: 1,
+            row: 2,
+            col: 4,
+        };
+        let mut state = BTreeMap::new();
+        let _p = state.insert(
+            slot,
+            Resolved {
+                slot,
+                session: r#"01J"X"#.to_owned(),
+                title: Some("say \"hi\"\n\u{1}tab\there".to_owned()),
+                state: SlotState::NeedsAnswer {
+                    source: Source::Derived,
+                },
+                muted: false,
+                spec: None,
+            },
+        );
+        let mut out = Vec::new();
+        let mut j = Journal::default();
+        j.record(&state, &pages, T0, &mut out).expect("write");
+        // ...and the line written when it stops asking, which carries the
+        // same page name and session id.
+        j.record(&BTreeMap::new(), &pages, T0 + 1_000, &mut out)
+            .expect("write");
+
+        let got = lines(&out);
+        assert_eq!(got.len(), 2, "{got:?}");
+        for line in &got {
+            let v: serde_json::Value = serde_json::from_str(line).expect("valid JSON");
+            assert_eq!(
+                v.get("slot").and_then(serde_json::Value::as_str),
+                Some(r#"wo"rk\:2:4"#),
+                "{line}"
+            );
+            assert_eq!(
+                v.get("session").and_then(serde_json::Value::as_str),
+                Some(r#"01J"X"#),
+                "{line}"
+            );
+        }
+        let first = got.first().expect("first line");
+        let v: serde_json::Value = serde_json::from_str(first).expect("valid JSON");
+        assert_eq!(
+            v.get("title").and_then(serde_json::Value::as_str),
+            Some("say \"hi\"\n\u{1}tab\there"),
+            "{first}"
+        );
+    }
+
+    /// Absent is normal: an agent that set no title must still produce a
+    /// line, and `null` is what the field has always carried.
+    #[test]
+    fn a_missing_title_is_written_as_null() {
+        let slot = Slot {
+            page: 1,
+            row: 1,
+            col: 1,
+        };
+        let mut state = asking_at(slot, "01J");
+        if let Some(r) = state.get_mut(&slot) {
+            r.title = None;
+        }
+        let mut out = Vec::new();
+        Journal::default()
+            .record(&state, &Pages::default(), T0, &mut out)
+            .expect("write");
+        let got = lines(&out);
+        assert!(
+            got.first().is_some_and(|l| l.contains(r#""title":null"#)),
+            "{got:?}"
+        );
+    }
+
     #[test]
     fn a_quiet_grid_writes_nothing() {
         let mut out = Vec::new();
@@ -264,24 +380,5 @@ mod tests {
             .record(&BTreeMap::new(), &Pages::default(), T0, &mut out)
             .expect("write");
         assert!(out.is_empty());
-    }
-}
-
-#[cfg(test)]
-mod escaping_tests {
-    use super::json_string;
-
-    /// A terminal title is arbitrary bytes. A raw quote in one would
-    /// corrupt the line it lands in, and the journal is read back by
-    /// `jq` or an eye, both of which deserve valid JSON.
-    #[test]
-    fn titles_that_would_break_the_line_are_escaped() {
-        assert_eq!(json_string(None), "null");
-        assert_eq!(json_string(Some("plain")), r#""plain""#);
-        assert_eq!(json_string(Some(r#"say "hi""#)), r#""say \"hi\"""#);
-        assert_eq!(json_string(Some("a\\b")), r#""a\\b""#);
-        assert_eq!(json_string(Some("two\nlines")), r#""two\nlines""#);
-        // Non-ASCII stays as-is: JSON is UTF-8 and agents title in it.
-        assert_eq!(json_string(Some("tally")), r#""tally""#);
     }
 }

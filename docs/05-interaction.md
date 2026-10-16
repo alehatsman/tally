@@ -219,6 +219,15 @@ Two deliberate choices in that table:
   on the same address would give you two processes in one repo and one pad
   to look at them with. Purge first; the purge is the act of deciding it is
   really gone.
+- **The spec has to still resolve**, not merely be named. A pad is
+  respawnable because `slots.toml` binds it, or because the dead session
+  carries a `tl.spec` whose `[[spec]]` is *still in the file* — rename that
+  spec and the label points at nothing. Both halves ask the same function
+  for the pad they are reasoning about (`src/model.rs`, `Pads`), because
+  they did not always: the preview counted the label and the press resolved
+  it, so a renamed spec lit the pad green and then did nothing. A preview
+  that is wrong about one pad is a preview you stop believing about all of
+  them, which costs more than the gesture it was wrong about.
 - **Mute is the only two-colour preview**, because it is the only toggle.
   Blue and white are the control colours, not slot colours: you are about
   to change how tally treats the pad, not what is running on it.
