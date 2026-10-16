@@ -300,21 +300,22 @@ A view is a **pane** ([docs/15](docs/15-views.md)). Then
 not close, and [#3](https://github.com/alehatsman/tally/issues/3) has a
 coordinate that is the whole address rather than most of it.
 
-Scope, in dependency order — each step closes one issue and ships alone:
+Scope, in dependency order. **Only the first is cleared**, and the reason
+is [#8](https://github.com/alehatsman/tally/issues/8):
 
-1. **Identity to the pane**, `remain-on-exit`, revive-in-place. Closes #2.
-2. **Adoption** — `tally spawn` takes over the pane you ran it in. Closes #1.
-3. **The return trip** — a second press on the pad you are on. Closes #3.
+| step | closes | cleared |
+|---|---|---|
+| 1. identity to the pane, `remain-on-exit`, revive-in-place | #2 | ✅ |
+| 2. adoption — `tally spawn` takes over the pane you ran it in | #1 | ⬜ |
+| 3. the return trip — a press on the pad you are on | #3 | ⬜ |
 
-Exit:
+Exit, for step 1:
 - ⬜ kill a session while focused on its view: still attached, corpse
   readable, layout intact — and the same when an agent exits on its own
 - ⬜ kill the only live session and the `tally` session survives, with no
   stray shell window reintroduced
-- ⬜ `tally spawn` in a split lands the view in that split, and the pad
-  finds it there
-- ⬜ press the pad you are on and land back in nvim, cursor where it was
-- ⬜ a week without reaching for `--detach` out of habit
+- ⬜ a detach leaves the pad green and the next press revives the view in
+  the pane it was already in
 
 > **Two tmux facts that argue against the obvious implementation**, both
 > measured on a live 3.6b server rather than assumed. A window option is
@@ -334,6 +335,14 @@ Exit:
 > fix it before #1 or alongside it. It is the step the other two are built
 > on: adoption needs a pane that survives its agent, and a return needs a
 > pane-level coordinate to return to.
+
+> **Steps 2 and 3 were written before anyone checked the layout docs, and
+> they collide with them.** `docs/13` §5 already decided that a second tap
+> on a pad still jumps — so the return gesture would be a third meaning on
+> one press, separated by state that is not on the surface, which is the
+> shape of the three greens and the title scroll. And adoption is written
+> against `page:row:col`, which #8 may replace one-way. The design stands;
+> the clearance does not. #8 decides first.
 
 ---
 
@@ -357,7 +366,8 @@ M3  spawn + chords    ← the launcher half
 M4  pages             ← ergonomics
 M5  tally spawn       ← the folder comes from a shell, not a file
 M6  the amber exists  ← M1's risk, answered: the signal was absent
-M7  where views live  ← a view is a pane; three issues, one sentence
+M7  where views live  ← a view is a pane; step 1 only, #2
+#8  the layout rework ← gates M7's other two steps; gate not yet run
 ```
 
 M6 is out of order on purpose. It is M1's work, and it is here rather than

@@ -176,6 +176,12 @@ to a pane you actually *closed*, not to one whose agent merely died.
 
 ## Adoption: `tally spawn` from a pane
 
+> ⚠️ **Held.** This section is designed, not cleared — see
+> [What is cleared to build](#what-is-cleared-to-build). It is written
+> against `page:row:col`, and
+> [#8](https://github.com/alehatsman/tally/issues/8) may replace that
+> address format one-way.
+
 Spawning from a shell means standing somewhere on purpose. `tally spawn`
 run **inside tmux** adopts the pane it was invoked in.
 
@@ -222,6 +228,12 @@ chord does nothing on a pad claimed this way ([11-cli.md](11-cli.md#what-it-does
 Adoption does not change what a shell-spawned session knows about itself.
 
 ## The return trip
+
+> ⚠️ **Held, and one rule below is contradicted.**
+> [`docs/13` §5](13-layout-review.md) already decided what a second tap on
+> a pad means — *"a second tap still jumps"*. Rule 3 gives that press a
+> third meaning. See
+> [What is cleared to build](#what-is-cleared-to-build).
 
 A jump is one-directional today because `jump` (`src/jump.rs:314`) switches
 the client without first reading where it was. The information exists for
@@ -445,6 +457,38 @@ this list, after the three greens, the hard amber, and the title scroll:
 The last one is the real test and it is the same shape as M6's: the
 criterion that cannot be hurried.
 
+## What is cleared to build
+
+The pane claim is right and the three steps below are the right
+decomposition. **Two of the three are not cleared**, and the reason is not
+in this document — it is in
+[`docs/12`](12-layout-proposal.md) and [`docs/13`](13-layout-review.md),
+tracked as [#8](https://github.com/alehatsman/tally/issues/8).
+
+| step | closes | cleared | why |
+|---|---|---|---|
+| 1. identity to the pane | **#2** | ✅ | nothing in any layout changes whether a pane closes when its command exits |
+| 2. adoption | #1 | ⬜ | built on `page:row:col`, which #8 may replace one-way |
+| 3. the return trip | #3 | ⬜ | `13` §5 already spent the second tap |
+
+**The #3 conflict is the one worth stating plainly.** The return gesture
+was proposed here as *no new button, no new colour* — and that was true
+and not sufficient, because the press was already spoken for. A tap on a
+bound slot jumps (`05`); a tap on an amber slot enters answer mode and a
+second tap jumps (`13` §5); this document adds *and a press while you are
+already looking at it returns you*. Three meanings on one press, separated
+by state that is not on the surface. That is the shape of the three greens,
+the two bright page colours and the title scroll — each of which was
+legible and unmemorable, and each of which took hardware to disprove.
+
+It does not mean the return trip is wrong. It means the gesture has to be
+chosen **after** #8 decides what the top row and the arrows are for, not
+before — because #8 is where the rest of the gesture budget is being spent.
+
+**Step 1 does not wait.** The detach is a daily bug, it is plumbing beneath
+every layout in both documents, and fixing it changes nothing a user sees
+except that it stops happening.
+
 ## Sequencing
 
 Three steps, in dependency order, each shippable alone:
@@ -461,3 +505,7 @@ Three steps, in dependency order, each shippable alone:
 
 #2 asked whether it should be fixed first or together with #1. First — and
 not as a compromise: it is the step the other two are built on.
+
+Steps 2 and 3 are held behind
+[#8](https://github.com/alehatsman/tally/issues/8). Their design above
+stands; their clearance does not.
