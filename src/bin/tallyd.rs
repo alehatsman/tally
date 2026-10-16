@@ -90,7 +90,7 @@ fn perform(ctx: &Context<'_>, gesture: Gesture, at: Slot, pages: &Pages, tmux: &
         Gesture::Tap { .. } => match ctx.tap(at, pages) {
             // Occupied: this is a jump, and jumps are not anchord's.
             Ok(None) => {
-                if let Some(r) = ctx.grid.get(&at) {
+                if let Some(r) = ctx.pads.grid().get(&at) {
                     eprintln!("tallyd: jump {}:{row}:{col} -> {}", at.page, r.session);
                     // The address names the window. Unnamed pages cannot
                     // happen for a slot that parsed, but an empty string
@@ -157,12 +157,6 @@ fn main() -> ExitCode {
         config_path.display()
     );
     let pages = config.pages().clone();
-    let spawnable: std::collections::BTreeSet<Slot> = (1..=tally::slot::PAGES)
-        .flat_map(|page| {
-            (1..=8).flat_map(move |row| (1..=8).map(move |col| Slot { page, row, col }))
-        })
-        .filter(|&at| config.launch(at).is_some())
-        .collect();
 
     let mut chords = Chords::default();
     let watchers = Watchers::new(anchor.clone());
@@ -259,9 +253,10 @@ fn main() -> ExitCode {
                                 };
                                 let ctx = Context {
                                     client: &anchor,
-                                    config: &config,
-                                    grid: &grid,
-                                    purgeable: &purgeable,
+                                    // Last tick's grid: what the pad the
+                                    // finger landed on was showing, which
+                                    // is the only honest thing to act on.
+                                    pads: model::Pads::new(&grid, &config, &purgeable),
                                 };
                                 perform(&ctx, gesture, at, &pages, &tmux);
                                 // Whatever it was, the grid is now stale.
@@ -337,15 +332,12 @@ fn main() -> ExitCode {
             .into_iter()
             .filter(|&a| chords.is_held(a))
             .collect();
-        let with_rows: std::collections::BTreeSet<Slot> = purgeable.keys().copied().collect();
         let view = View {
             pages: &pages,
             current,
             anchord_reachable: reachable,
             now: tally::now_ms(),
             held: chords.modifier(),
-            spawnable: &spawnable,
-            purgeable: &with_rows,
             pressed: &pressed,
         };
         let resolved = model::resolve(&sessions, &watchers.snapshot(), &pages, view.now);
@@ -362,7 +354,7 @@ fn main() -> ExitCode {
                 journal_out = None;
             }
         }
-        let frame = model::frame_from(&resolved, &view);
+        let frame = model::frame_from(&model::Pads::new(&resolved, &config, &purgeable), &view);
         if let Some(d) = device.as_mut() {
             // A full repaint on (re)connect: the device may have been
             // unplugged, power-cycled, or left in another process's idea
