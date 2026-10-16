@@ -209,12 +209,19 @@ asserts the encoder reproduces each one exactly, which is knowable without
 hardware:
 
 ```text
-90 0B 05                      note on, ch 1: pad 11 (bottom-left) static red
-91 51 13                      note on, ch 2: pad 81 (top-left) flashing yellow
-F0 00 20 29 02 0D 03 00 0B 0D  pad 11 static yellow …
-                    01 0B 0C 0D  … pad 11 flashing green/yellow …
-                    02 0B 0D F7  … pad 11 pulsing yellow
+90 0B 05   note on, ch 1: pad 11 (bottom-left) static red
+91 51 13   note on, ch 2: pad 81 (top-left) flashing yellow
+
+F0 00 20 29 02 0D 03     SysEx, three colourspecs:
+   00 0B 0D                pad 11 static yellow
+   01 0C 0C 0D             pad 12 flashing green/yellow
+   02 0D 0D              pad 13 pulsing yellow
+F7
 ```
+
+The three colourspecs walk *adjacent* pads — `0B`, `0C`, `0D`. An earlier
+draft of this file transcribed all three as `0B`, which is not a useful
+example: three specs for one pad in one frame just overwrite each other.
 
 Two traps are visible in the first line alone. `0B` is **11 decimal written
 in hex** — the addressing scheme is decimal row-column and the wire is hex,
