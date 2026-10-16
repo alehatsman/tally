@@ -143,11 +143,25 @@ mod tests {
             }
         }
         assert_eq!(
-            Slot { page: 1, row: 3, col: 5 }.label(&pages).as_deref(),
+            Slot {
+                page: 1,
+                row: 3,
+                col: 5
+            }
+            .label(&pages)
+            .as_deref(),
             Some("work:3:5")
         );
         // A page past the declared ones has no name to write.
-        assert_eq!(Slot { page: 7, row: 1, col: 1 }.label(&pages), None);
+        assert_eq!(
+            Slot {
+                page: 7,
+                row: 1,
+                col: 1
+            }
+            .label(&pages),
+            None
+        );
     }
 
     fn named() -> Pages {

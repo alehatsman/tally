@@ -350,12 +350,7 @@ mod tests {
         assert!(animated(page(wants)));
     }
 
-    const EFFECTS: [Effect; 4] = [
-        Effect::Acts,
-        Effect::Unmutes,
-        Effect::Skips,
-        Effect::None,
-    ];
+    const EFFECTS: [Effect; 4] = [Effect::Acts, Effect::Unmutes, Effect::Skips, Effect::None];
 
     /// The one reservation the whole design rests on. A preview that
     /// borrowed amber would put a second amber thing on a surface whose
@@ -388,7 +383,10 @@ mod tests {
         assert_eq!(preview(Action::Kill, Effect::Acts), Cell::Static(RED));
         assert_eq!(preview(Action::Respawn, Effect::Acts), Cell::Static(GREEN));
         assert_eq!(preview(Action::Purge, Effect::Acts), Cell::Static(DARK_RED));
-        assert_eq!(slot(SlotState::Failed { code: 1 }), preview(Action::Kill, Effect::Acts));
+        assert_eq!(
+            slot(SlotState::Failed { code: 1 }),
+            preview(Action::Kill, Effect::Acts)
+        );
         assert_eq!(slot(SlotState::Lost), preview(Action::Purge, Effect::Acts));
     }
 

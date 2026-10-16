@@ -393,8 +393,14 @@ cwd = "/tmp/b"
 "#,
         )
         .expect("valid");
-        assert_eq!(c.launch(at(1, 1, 1)).expect("a").cwd.as_deref(), Some(Path::new("/tmp/a")));
-        assert_eq!(c.launch(at(1, 1, 2)).expect("b").cwd.as_deref(), Some(Path::new("/tmp/b")));
+        assert_eq!(
+            c.launch(at(1, 1, 1)).expect("a").cwd.as_deref(),
+            Some(Path::new("/tmp/a"))
+        );
+        assert_eq!(
+            c.launch(at(1, 1, 2)).expect("b").cwd.as_deref(),
+            Some(Path::new("/tmp/b"))
+        );
     }
 
     /// Missing is not malformed. This is the whole M1 install.
@@ -550,7 +556,10 @@ spec = "s"
     #[test]
     fn a_spec_is_findable_by_the_name_a_label_carries() {
         let c = Config::parse(FULL).expect("valid");
-        assert_eq!(c.by_spec_name("claude").map(|l| l.command.as_str()), Some("claude"));
+        assert_eq!(
+            c.by_spec_name("claude").map(|l| l.command.as_str()),
+            Some("claude")
+        );
         assert_eq!(c.by_spec_name("nope"), None);
     }
 

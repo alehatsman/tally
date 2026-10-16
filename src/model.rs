@@ -92,7 +92,14 @@ pub fn resolve(
             derived: derived.get(&session.id),
         };
         let state = slot_state(Some(view), now);
-        if state == SlotState::Empty {
+        // A kill you asked for is not a failure. anchord records a
+        // terminate as an ordinary non-zero exit, so without the label
+        // the pad you just killed goes red -- and red has one job, which
+        // is *go and look*. Checked here rather than in `slot_state`
+        // because this is tally's opinion about its own label, not
+        // anything the signal layer can derive from bytes.
+        let asked_for = session.killed() && matches!(state, SlotState::Failed { .. });
+        if state == SlotState::Empty || asked_for {
             // A clean exit holds its slot in anchor but not on the grid.
             // Leaving it in `taken` would shadow a fresh session spawned
             // onto the same pad, which is exactly what pressing it does.
@@ -196,7 +203,11 @@ impl Pad {
 /// What `action` would do to `pad`.
 pub fn effect(action: Action, pad: Pad) -> Effect {
     let occupied = pad.state.is_some();
-    let skip = if occupied { Effect::Skips } else { Effect::None };
+    let skip = if occupied {
+        Effect::Skips
+    } else {
+        Effect::None
+    };
     match action {
         Action::Kill if pad.alive() => Effect::Acts,
         // Respawn needs somewhere to put the new session and something to
@@ -269,8 +280,7 @@ pub fn frame_from(resolved: &BTreeMap<Slot, Resolved>, view: &View<'_>) -> Frame
                 let pad = Pad {
                     state: r.map(|r| r.state),
                     muted: r.is_some_and(|r| r.muted),
-                    spec: view.spawnable.contains(&at)
-                        || r.is_some_and(|r| r.spec.is_some()),
+                    spec: view.spawnable.contains(&at) || r.is_some_and(|r| r.spec.is_some()),
                     purgeable: view.purgeable.contains(&at),
                 };
                 frame.set(at.button(), render::preview(action, effect(action, pad)));
@@ -413,10 +423,18 @@ mod tests {
     #[test]
     fn kill_acts_on_everything_alive_and_nothing_else() {
         for state in ALIVE {
-            assert_eq!(effect(Action::Kill, pad(Some(state))), Effect::Acts, "{state:?}");
+            assert_eq!(
+                effect(Action::Kill, pad(Some(state))),
+                Effect::Acts,
+                "{state:?}"
+            );
         }
         for dead in [SlotState::Failed { code: 1 }, SlotState::Lost] {
-            assert_eq!(effect(Action::Kill, pad(Some(dead))), Effect::Skips, "{dead:?}");
+            assert_eq!(
+                effect(Action::Kill, pad(Some(dead))),
+                Effect::Skips,
+                "{dead:?}"
+            );
         }
         assert_eq!(effect(Action::Kill, pad(None)), Effect::None);
     }
@@ -433,7 +451,10 @@ mod tests {
         };
         assert_eq!(effect(Action::Respawn, with_spec(None)), Effect::Acts);
         assert_eq!(
-            effect(Action::Respawn, with_spec(Some(SlotState::Failed { code: 1 }))),
+            effect(
+                Action::Respawn,
+                with_spec(Some(SlotState::Failed { code: 1 }))
+            ),
             Effect::Acts
         );
         assert_eq!(
@@ -441,7 +462,10 @@ mod tests {
             Effect::Skips
         );
         for state in ALIVE {
-            assert_eq!(effect(Action::Respawn, with_spec(Some(state))), Effect::Skips);
+            assert_eq!(
+                effect(Action::Respawn, with_spec(Some(state))),
+                Effect::Skips
+            );
         }
     }
 
@@ -489,13 +513,7 @@ mod tests {
             };
             assert_eq!(effect(Action::Mute, on), Effect::Acts);
             assert_eq!(
-                effect(
-                    Action::Mute,
-                    Pad {
-                        muted: true,
-                        ..on
-                    }
-                ),
+                effect(Action::Mute, Pad { muted: true, ..on }),
                 Effect::Unmutes
             );
         }
@@ -506,18 +524,107 @@ mod tests {
         );
     }
 
+    /// anchord records a terminate as an ordinary non-zero exit — there
+    /// is no field saying who asked for it, and there should not be.
+    /// Without `tl.killed` the pad you just killed on purpose renders
+    /// identically to an agent that crashed, and red stops meaning *go
+    /// and look*.
+    #[test]
+    fn a_kill_you_asked_for_is_not_a_failure() {
+        let pages = Pages::default();
+        let mut killed = session("k", "exited", Some("1:1:1"));
+        killed.exit_code = Some(1);
+        let _l = killed
+            .labels
+            .insert(crate::anchor::LABEL_KILLED.to_owned(), "1".to_owned());
+        assert!(
+            resolve(&[killed], &BTreeMap::new(), &pages, NOW).is_empty(),
+            "a deliberate kill leaves no mark"
+        );
+
+        // The same exit without the label is still red: an agent that
+        // died on its own is exactly what you have to go and look at.
+        let mut crashed = session("c", "exited", Some("1:1:1"));
+        crashed.exit_code = Some(1);
+        let drawn = resolve(&[crashed], &BTreeMap::new(), &pages, NOW);
+        assert_eq!(
+            drawn
+                .get(&Slot {
+                    page: 1,
+                    row: 1,
+                    col: 1
+                })
+                .map(|r| r.state),
+            Some(SlotState::Failed { code: 1 })
+        );
+    }
+
+    /// The label only speaks about endings. A session we labelled and
+    /// then failed to terminate is still running, and must still be green.
+    #[test]
+    fn the_killed_label_does_not_hide_a_live_session() {
+        let pages = Pages::default();
+        let mut live = session("k", "running", Some("1:1:1"));
+        let _l = live
+            .labels
+            .insert(crate::anchor::LABEL_KILLED.to_owned(), "1".to_owned());
+        let drawn = resolve(&[live], &BTreeMap::new(), &pages, NOW);
+        assert_eq!(
+            drawn
+                .get(&Slot {
+                    page: 1,
+                    row: 1,
+                    col: 1
+                })
+                .map(|r| r.state),
+            Some(SlotState::Quiet)
+        );
+    }
+
+    /// Dark does not mean forgotten: the row and its scrollback are still
+    /// there, and the purge chord is still how you clear them.
+    #[test]
+    fn a_killed_row_is_still_purgeable() {
+        let pages = Pages::default();
+        let mut killed = session("k", "exited", Some("1:1:1"));
+        killed.exit_code = Some(1);
+        let _l = killed
+            .labels
+            .insert(crate::anchor::LABEL_KILLED.to_owned(), "1".to_owned());
+        let rows = purgeable(&[killed], &pages);
+        assert_eq!(
+            rows.get(&Slot {
+                page: 1,
+                row: 1,
+                col: 1
+            })
+            .map(Vec::len),
+            Some(1)
+        );
+    }
+
     /// `Unmutes` is mute's alone. Nothing else on the surface toggles,
     /// so nothing else may claim the variant that says which way.
     #[test]
     fn only_mute_ever_reports_a_toggle() {
-        let every_pad = [None, Some(SlotState::Working), Some(SlotState::Quiet),
-            Some(SlotState::Failed { code: 1 }), Some(SlotState::Lost)];
+        let every_pad = [
+            None,
+            Some(SlotState::Working),
+            Some(SlotState::Quiet),
+            Some(SlotState::Failed { code: 1 }),
+            Some(SlotState::Lost),
+        ];
         for action in [Action::Kill, Action::Respawn, Action::Purge] {
             for state in every_pad {
                 for muted in [false, true] {
                     for spec in [false, true] {
                         for rows in [false, true] {
-                            let p = Pad { state, muted, spec, purgeable: rows };
+                            let p = Pad {
+                                state,
+                                muted,
+                                spec,
+                                purgeable: rows,
+                            };
                             assert_ne!(effect(action, p), Effect::Unmutes, "{action:?} {p:?}");
                         }
                     }
@@ -533,7 +640,10 @@ mod tests {
         let pages = Pages::default();
         let sessions = [session("a", "running", Some("1:3:5"))];
         let resting = frame(&sessions, &BTreeMap::new(), &view(&pages));
-        assert_eq!(resting.get(Button::Grid { row: 3, col: 5 }), Cell::Static(GREEN));
+        assert_eq!(
+            resting.get(Button::Grid { row: 3, col: 5 }),
+            Cell::Static(GREEN)
+        );
 
         let held = View {
             held: Some(Action::Kill),
@@ -616,13 +726,21 @@ mod tests {
         let sessions = [clean, session("live", "running", Some("1:1:1"))];
 
         let drawn = resolve(&sessions, &BTreeMap::new(), &pages, NOW);
-        let at = Slot { page: 1, row: 2, col: 2 };
+        let at = Slot {
+            page: 1,
+            row: 2,
+            col: 2,
+        };
         assert!(!drawn.contains_key(&at), "a clean exit is not drawn");
 
         let rows = purgeable(&sessions, &pages);
         assert_eq!(rows.get(&at).map(Vec::len), Some(1), "but it is purgeable");
         assert!(
-            !rows.contains_key(&Slot { page: 1, row: 1, col: 1 }),
+            !rows.contains_key(&Slot {
+                page: 1,
+                row: 1,
+                col: 1
+            }),
             "a running session is not"
         );
     }

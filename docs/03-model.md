@@ -63,13 +63,14 @@ tl.slot       = "work:3:5"  page, row, col — the binding
 tl.spec       = "claude"    which spec spawned it, for respawn
 tl.mute       = "1"         this slot never raises attention
 tl.attention  = "1"         a hook declared it is waiting
+tl.killed     = "1"         tally ended it on purpose, so the pad is dark
 ```
 
 `tl.attention` is written by a `Notification` hook, never by a human — see
 [04-signals.md](04-signals.md#4-a-hook--it-told-us).
 
 Only the first is required: a session carrying `tl.slot` and nothing else is
-a fully functional slot. The other three are state that would otherwise have
+a fully functional slot. The other four are state that would otherwise have
 to live inside tallyd, and putting them here is what keeps
 [08-lifecycle.md](08-lifecycle.md)'s claim true — **tallyd holds nothing that
 cannot be rebuilt from a `list`.** A mute that evaporates when tallyd

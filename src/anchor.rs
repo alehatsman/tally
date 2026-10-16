@@ -34,6 +34,14 @@ pub const LABEL_SPEC: &str = "tl.spec";
 pub const LABEL_MUTE: &str = "tl.mute";
 /// Set by a `Notification` hook to declare the agent is waiting.
 pub const LABEL_ATTENTION: &str = "tl.attention";
+/// Set by tally immediately before it terminates a session.
+///
+/// anchord records a terminate as an ordinary non-zero exit — there is
+/// no field saying who asked, and there should not be: that is the
+/// client's opinion, not the daemon's fact. Without this label a kill you
+/// performed deliberately renders identically to an agent that crashed,
+/// and red stops meaning *go and look*.
+pub const LABEL_KILLED: &str = "tl.killed";
 
 /// How long to wait on anchord before calling the tick failed.
 const TIMEOUT: Duration = Duration::from_secs(2);
@@ -125,6 +133,11 @@ impl Session {
     /// Whether a hook has declared this session is waiting on a human.
     pub fn declared_attention(&self) -> bool {
         self.labels.contains_key(LABEL_ATTENTION)
+    }
+
+    /// Whether tally ended this session on purpose.
+    pub fn killed(&self) -> bool {
+        self.labels.contains_key(LABEL_KILLED)
     }
 }
 
@@ -372,9 +385,9 @@ impl Client {
             "labels": spawn.labels,
         });
         let reply = self.op(&request)?;
-        reply.session.ok_or_else(|| {
-            Error::Protocol("create said ok and named no session".to_owned())
-        })
+        reply
+            .session
+            .ok_or_else(|| Error::Protocol("create said ok and named no session".to_owned()))
     }
 
     /// End a session.

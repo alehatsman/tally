@@ -46,7 +46,10 @@ fn main() {
         }),
     );
     for row in 1..=8 {
-        f.set(Button::Action(row), render::action(tally::chord::Action::of(Button::Action(row)), false));
+        f.set(
+            Button::Action(row),
+            render::action(tally::chord::Action::of(Button::Action(row)), false),
+        );
     }
     f.set(
         Button::Logo,

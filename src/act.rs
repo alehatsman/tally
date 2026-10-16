@@ -70,10 +70,7 @@ impl Context<'_> {
             state: r.map(|r| r.state),
             muted: r.is_some_and(|r| r.muted),
             spec: self.launch(at).is_some(),
-            purgeable: self
-                .purgeable
-                .get(&at)
-                .is_some_and(|ids| !ids.is_empty()),
+            purgeable: self.purgeable.get(&at).is_some_and(|ids| !ids.is_empty()),
         }
     }
 
@@ -118,12 +115,7 @@ impl Context<'_> {
     ///
     /// # Errors
     /// Whatever anchord returned. A refusal is reported, not retried.
-    pub fn chord(
-        &self,
-        action: Action,
-        at: Slot,
-        pages: &Pages,
-    ) -> Result<Done, anchor::Error> {
+    pub fn chord(&self, action: Action, at: Slot, pages: &Pages) -> Result<Done, anchor::Error> {
         let what = effect(action, self.pad(at));
         if matches!(what, Effect::None | Effect::Skips) {
             return Ok(Done::Nothing);
@@ -158,11 +150,36 @@ impl Context<'_> {
             .map(Done::Spawned)
     }
 
+    /// End a session, having first said that we meant to.
+    ///
+    /// The label goes on **before** the terminate, so there is no window
+    /// in which anchord reports a non-zero exit that nothing explains —
+    /// the pad would go red for a tick and then dark, on every single
+    /// kill.
+    ///
+    /// If the terminate then fails, the label is taken back off. Leaving
+    /// it would be a small lie that outlives the mistake: the session
+    /// keeps running, exits badly on its own an hour later, and renders
+    /// dark because of a kill that never happened.
     fn kill(&self, at: Slot) -> Result<Done, anchor::Error> {
         let Some(r) = self.grid.get(&at) else {
             return Ok(Done::Nothing);
         };
-        self.client.terminate(&r.session)?;
+        let mut set = BTreeMap::new();
+        let _killed = set.insert(anchor::LABEL_KILLED.to_owned(), "1".to_owned());
+        self.client.label(&r.session, &set, &[])?;
+        if let Err(e) = self.client.terminate(&r.session) {
+            let undo = self
+                .client
+                .label(&r.session, &BTreeMap::new(), &[anchor::LABEL_KILLED]);
+            if let Err(undo) = undo {
+                eprintln!(
+                    "tallyd: could not take tl.killed back off {}: {undo}",
+                    r.session
+                );
+            }
+            return Err(e);
+        }
         Ok(Done::Killed(r.session.clone()))
     }
 
@@ -296,7 +313,8 @@ spec = "claude"
         let ctx = context(&client, &config, &grid, &purge);
         for action in [Action::Kill, Action::Mute, Action::Respawn] {
             assert_eq!(
-                ctx.chord(action, at(2, 2), &Pages::default()).expect("no call"),
+                ctx.chord(action, at(2, 2), &Pages::default())
+                    .expect("no call"),
                 Done::Nothing,
                 "{action:?}"
             );
@@ -312,11 +330,19 @@ spec = "claude"
         // 5:5 is in no `[[slot]]`, but the dead session there names a spec.
         let _r = grid.insert(
             at(5, 5),
-            resolved(at(5, 5), SlotState::Failed { code: 1 }, false, Some("claude")),
+            resolved(
+                at(5, 5),
+                SlotState::Failed { code: 1 },
+                false,
+                Some("claude"),
+            ),
         );
         let (client, purge) = (nowhere(), BTreeMap::new());
         let ctx = context(&client, &config, &grid, &purge);
-        assert_eq!(ctx.launch(at(5, 5)).map(|l| l.command.as_str()), Some("claude"));
+        assert_eq!(
+            ctx.launch(at(5, 5)).map(|l| l.command.as_str()),
+            Some("claude")
+        );
         assert!(ctx.pad(at(5, 5)).spec, "the preview must light it too");
     }
 
@@ -328,11 +354,19 @@ spec = "claude"
         let mut grid = BTreeMap::new();
         let _r = grid.insert(
             at(1, 1),
-            resolved(at(1, 1), SlotState::Failed { code: 1 }, false, Some("ghost")),
+            resolved(
+                at(1, 1),
+                SlotState::Failed { code: 1 },
+                false,
+                Some("ghost"),
+            ),
         );
         let (client, purge) = (nowhere(), BTreeMap::new());
         let ctx = context(&client, &config, &grid, &purge);
-        assert_eq!(ctx.launch(at(1, 1)).map(|l| l.spec.as_str()), Some("claude"));
+        assert_eq!(
+            ctx.launch(at(1, 1)).map(|l| l.spec.as_str()),
+            Some("claude")
+        );
     }
 
     /// A dark pad with rows behind it is a purge target, and the pad the
@@ -358,7 +392,8 @@ spec = "claude"
         );
         let ctx = context(&client, &config, &grid, &purge);
         assert_eq!(
-            ctx.chord(Action::Purge, at(3, 3), &Pages::default()).expect("no call"),
+            ctx.chord(Action::Purge, at(3, 3), &Pages::default())
+                .expect("no call"),
             Done::Nothing
         );
     }

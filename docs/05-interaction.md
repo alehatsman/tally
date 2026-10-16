@@ -254,6 +254,26 @@ actually dead rather than when we asked.
 No "are you sure" blink-and-confirm. A confirmation you give by pressing
 the same pad twice is a confirmation you learn to double-tap through.
 
+**A killed pad goes dark, not red**, and that needs a label to be true.
+anchord records a terminate as an ordinary non-zero exit — there is no
+field naming who asked for it, and there should not be: that is a client's
+opinion, not the daemon's fact ([07](07-seams.md#what-we-must-not-ask-anchor-for)).
+So tally writes `tl.killed` on the session immediately *before* the
+terminate, and a terminal state carrying it renders as nothing.
+
+That keeps the rule one sentence: **red means it ended in a way you did
+not ask for.** Without it, the pad you just deliberately killed is
+indistinguishable from an agent that crashed, and red stops meaning *go
+and look* — which is the only thing red is for.
+
+Two consequences, both deliberate:
+
+- `anchor kill <id>` from a shell still goes red, because nothing told
+  us. That is the honest answer: tally knows what tally did.
+- Dark is not forgotten. The row and its scrollback stay — you often kill
+  an agent *because* it went wrong and want to read why — and the purge
+  chord is still how you clear them.
+
 ### The title scroll
 
 Hold a pad; its title scrolls across the grid in the slot's own colour.
