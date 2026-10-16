@@ -105,14 +105,32 @@ fn perform(ctx: &Context<'_>, gesture: Gesture, at: Slot, pages: &Pages, tmux: &
             Ok(Some(done)) => eprintln!("tallyd: {}:{row}:{col} {done}", at.page),
             Err(e) => eprintln!("tallyd: spawn {}:{row}:{col}: {e}", at.page),
         },
-        Gesture::Chord { action, .. } => match ctx.chord(action, at, pages) {
-            // The preview already said nothing would happen here, so the
-            // log stays quiet too: a line per dimmed pad you brushed is
-            // noise in the only file that is read after something broke.
-            Ok(Done::Nothing) => {}
-            Ok(done) => eprintln!("tallyd: {action:?} {}:{row}:{col} {done}", at.page),
-            Err(e) => eprintln!("tallyd: {action:?} {}:{row}:{col}: {e}", at.page),
-        },
+        Gesture::Chord { action, .. } => {
+            // Taken before the act, because afterwards anchord has
+            // forgotten them and there is nothing left to look up. Purge
+            // clears the pad, so it clears the view (`docs/15-views.md`).
+            let purging: Vec<String> = if action == Action::Purge {
+                ctx.pads.rows(at).to_vec()
+            } else {
+                Vec::new()
+            };
+            match ctx.chord(action, at, pages) {
+                // The preview already said nothing would happen here, so
+                // the log stays quiet too: a line per dimmed pad you
+                // brushed is noise in the only file that is read after
+                // something broke.
+                Ok(Done::Nothing) => {}
+                Ok(done) => {
+                    eprintln!("tallyd: {action:?} {}:{row}:{col} {done}", at.page);
+                    for id in &purging {
+                        if let Err(e) = tmux.close(id) {
+                            eprintln!("tallyd: could not close the view for {id}: {e}");
+                        }
+                    }
+                }
+                Err(e) => eprintln!("tallyd: {action:?} {}:{row}:{col}: {e}", at.page),
+            }
+        }
         Gesture::Page(_) => {}
     }
 }
