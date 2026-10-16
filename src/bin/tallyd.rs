@@ -1,8 +1,6 @@
 //! `tallyd` — the daemon that owns the Launchpad.
 //!
-//! The reconcile loop: poll anchord, render, repeat. No watchers yet, so
-//! the live states are `Working`/`Quiet` from the session list alone and
-//! nothing goes amber — attention needs the output stream.
+//! The reconcile loop: poll anchord, start watchers, render, repeat.
 //!
 //! An unreachable anchord lights the logo dark red and **leaves the grid
 //! alone**, because "nothing is running" and "I cannot tell" are different
@@ -12,15 +10,13 @@ use std::process::ExitCode;
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::time::Duration;
 
-use std::collections::BTreeMap;
-
 use tally::anchor::Client;
 use tally::device::{Device, Event};
 use tally::lock::Lock;
 use tally::model::{self, View};
-use tally::signal::Derived;
 use tally::slot::Pages;
 use tally::surface::Button;
+use tally::watch::Watchers;
 
 /// Set by the signal handler, read by the main loop. `0` means no signal.
 static SIGNALLED: AtomicI32 = AtomicI32::new(0);
@@ -31,13 +27,6 @@ const RECONCILE: Duration = Duration::from_secs(2);
 /// How often the loop wakes. Input is drained at this rate so a press
 /// feels immediate rather than waiting out a reconcile.
 const TICK: Duration = Duration::from_millis(16);
-
-/// Milliseconds since the unix epoch.
-fn now_ms() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
-}
 
 /// Async-signal-safe: a relaxed store and nothing else.
 ///
@@ -104,7 +93,7 @@ fn main() -> ExitCode {
     );
 
     let pages = Pages::default();
-    let derived: BTreeMap<String, Derived> = BTreeMap::new();
+    let watchers = Watchers::new(anchor.clone());
     let mut sessions = Vec::new();
     let mut reachable = false;
     let mut current = 1u8;
@@ -137,6 +126,8 @@ fn main() -> ExitCode {
                     if !reachable {
                         eprintln!("tallyd: anchord reachable, {} sessions", list.len());
                     }
+                    watchers.reconcile(&list, &pages, tally::now_ms());
+                    watchers.retain_known(&list);
                     sessions = list;
                     reachable = true;
                 }
@@ -155,9 +146,9 @@ fn main() -> ExitCode {
             pages: &pages,
             current,
             anchord_reachable: reachable,
-            now: now_ms(),
+            now: tally::now_ms(),
         };
-        let frame = model::frame(&sessions, &derived, &view);
+        let frame = model::frame(&sessions, &watchers.snapshot(), &view);
         if let Err(e) = device.render(&frame) {
             eprintln!("tallyd: {e}");
             break libc::SIGTERM;

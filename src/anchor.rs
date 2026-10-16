@@ -11,7 +11,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -114,6 +114,73 @@ impl Session {
 }
 
 #[derive(Debug, Deserialize)]
+struct AttachReply {
+    ok: bool,
+    #[serde(default)]
+    offset: u64,
+}
+
+/// What anchord sends an attached observer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Frame {
+    /// PTY bytes, with the offset of the first one.
+    Output {
+        /// Offset of the first byte in the stream.
+        offset: u64,
+        /// The bytes themselves. Not UTF-8 in general.
+        bytes: Vec<u8>,
+    },
+    /// The session ended. `None` when anchor cannot say with what.
+    Exit(Option<i32>),
+    /// A frame we do not act on — lease, resize.
+    Other,
+}
+
+/// A stream of frames from an attached session.
+#[derive(Debug)]
+pub struct Frames {
+    reader: BufReader<UnixStream>,
+    offset: u64,
+}
+
+impl Frames {
+    /// Where anchord said the stream starts.
+    pub fn offset(&self) -> u64 {
+        self.offset
+    }
+
+    /// The next frame, or `None` when the connection ends.
+    ///
+    /// Ending is **normal**: an exit frame, EOF, or being dropped for
+    /// falling behind all finish a watcher, and the supervisor starts a
+    /// fresh one if the session is still live.
+    pub fn next_frame(&mut self) -> Option<Frame> {
+        // u8 tag, u64 offset BE, u32 length BE. The exit payload inside is
+        // little-endian -- mixed, deliberately, and only the code says so.
+        let mut header = [0u8; 13];
+        self.reader.read_exact(&mut header).ok()?;
+        let tag = *header.first()?;
+        let offset = u64::from_be_bytes(header.get(1..9)?.try_into().ok()?);
+        let len = u32::from_be_bytes(header.get(9..13)?.try_into().ok()?);
+        let mut payload = vec![0u8; usize::try_from(len).ok()?];
+        self.reader.read_exact(&mut payload).ok()?;
+        Some(match tag {
+            0x01 => Frame::Output {
+                offset,
+                bytes: payload,
+            },
+            0x03 => Frame::Exit(
+                payload
+                    .get(0..4)
+                    .and_then(|b| b.try_into().ok())
+                    .map(i32::from_le_bytes),
+            ),
+            _ => Frame::Other,
+        })
+    }
+}
+
+#[derive(Debug, Deserialize)]
 struct ListReply {
     ok: bool,
     #[serde(default)]
@@ -186,6 +253,51 @@ impl Client {
             || "not ok, and no error given".to_owned(),
             |e| format!("{}: {}", e.code, e.message),
         )))
+    }
+
+    /// Attach as an **observer** and return the stream of output frames.
+    ///
+    /// Never `control: true`. The lease belongs to the terminal you jumped
+    /// to; a surface that steals it makes typing stop working, from across
+    /// the room, for no visible reason (`docs/04-signals.md`).
+    ///
+    /// `from` is a byte offset. **Zero the first time**, always: the
+    /// signals worth having are emitted at startup — an agent sets its
+    /// title and rings in its opening banner — and a supervisor cannot
+    /// attach before that happened. Starting at the head reliably misses
+    /// exactly the output that matters.
+    ///
+    /// # Errors
+    /// [`Error::Unreachable`] if anchord will not talk, [`Error::Protocol`]
+    /// if it refuses the attach.
+    pub fn attach(&self, session: &str, from: u64) -> Result<Frames, Error> {
+        let stream =
+            UnixStream::connect(&self.path).map_err(|e| Error::Unreachable(e.to_string()))?;
+        let request = serde_json::json!({
+            "id": 1, "op": "attach", "session": session, "from": from, "control": false
+        });
+        let mut writing = &stream;
+        writing
+            .write_all(format!("{request}\n").as_bytes())
+            .map_err(|e| Error::Unreachable(e.to_string()))?;
+        writing
+            .flush()
+            .map_err(|e| Error::Unreachable(e.to_string()))?;
+
+        let mut reader = BufReader::new(stream);
+        let mut line = String::new();
+        reader
+            .read_line(&mut line)
+            .map_err(|e| Error::Unreachable(e.to_string()))?;
+        let reply: AttachReply =
+            serde_json::from_str(&line).map_err(|e| Error::Protocol(e.to_string()))?;
+        if !reply.ok {
+            return Err(Error::Protocol(format!("attach refused: {line}")));
+        }
+        Ok(Frames {
+            reader,
+            offset: reply.offset,
+        })
     }
 
     fn call(&self, request: &str) -> Result<String, Error> {

@@ -13,3 +13,15 @@ pub mod render;
 pub mod signal;
 pub mod slot;
 pub mod surface;
+pub mod watch;
+
+/// Milliseconds since the unix epoch.
+///
+/// One clock for the whole program: signals compare timestamps across
+/// threads, and two sources of "now" is how those comparisons go subtly
+/// wrong.
+pub fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
+}
