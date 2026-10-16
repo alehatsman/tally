@@ -65,8 +65,9 @@ being actively shaped by its first real consumer. Building a second client
 *now* is useful — a second consumer is how a boundary gets proven — and it
 means pinning a commit rather than a release, and reading anchor's diffs.
 
-**Pinned at `e1503c9`.** That is the commit carrying the label-write fix
-above; `49e2f9d` and earlier do not have it. Being the second consumer has
+**Pinned at `e1503c9`** — the commit carrying the label-write fix above.
+Check `~/.local/bin/.anchord.commit` to see what is actually *running*,
+which is a different question and the one that decides behaviour. Being the second consumer has
 already paid for itself twice in one day: tally found the filter semantics
 that shaped [03](03-model.md#where-the-binding-lives), and tally's use of
 labels is what made #12 worth fixing rather than noting.
@@ -122,15 +123,31 @@ knowing, because the obvious half-fix looks right and is not — serialising
 the writers in memory while letting them reach the store in either order
 leaves the persisted map one key short, and a restart resurrects the loss.
 
-So the guarantee this section originally claimed is now real: **prefix-
-disjoint writes to the same live session keep every key, in memory and on
-disk.** No retry, no read-back, nothing to design around.
+So the guarantee this section originally claimed is real **from
+`e1503c9` onwards**: prefix-disjoint writes to the same live session keep
+every key, in memory and on disk. No retry, no read-back, nothing to design
+around.
 
-The history stays here rather than being deleted as a scare, for two
-reasons. It is why the guarantee exists rather than being an accident. And
-it is **version-conditional** — anything running an anchord older than
-`e1503c9` does not have it, which matters because this is a pinned
-dependency ([below](#the-one-thing-to-watch)).
+### The version that matters is the one serving the socket
+
+An earlier revision of this paragraph said "the guarantee is real" on the
+strength of having re-pinned tally to `e1503c9`. That is a statement about
+what tally *builds against*, and it is the wrong thing to check.
+
+**This guarantee is a property of the running `anchord` binary, not of the
+pin in these docs.** A daemon installed from an older commit keeps the old
+behaviour until someone rebuilds and restarts it — and at the time of
+writing, the `anchord` on this machine was built from `49e2f9d`
+(`~/.local/bin/.anchord.commit`), which predates the fix. The pin moved;
+the binary did not.
+
+So: before relying on it, check the stamp, not the checkout. That is a
+general rule for everything in this file — tally is a client of a daemon
+with its own release cycle, and *"the source has it"* and *"the thing
+answering my socket has it"* are different facts. Which is the same
+distinction [01-scope.md](01-scope.md#the-boundary-stated-plainly) insists
+on everywhere else: an empty list and an unreachable daemon are not the
+same, and neither are a fixed bug and a deployed fix.
 
 Where it would have touched tally: **the attention hook and tallyd are two
 writers on one live session.** The hook sets `tl.attention`; tallyd removes
