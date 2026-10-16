@@ -61,6 +61,10 @@ pub struct View<'a> {
     /// neither, so a fumble is visible rather than merely inert
     /// (`crate::chord::Chords::modifier`).
     pub pressed: &'a BTreeSet<Action>,
+    /// Is an art playing? It lights `Drums` white, and nothing else here
+    /// knows about it: the daemon paints the 64 pads itself while this is
+    /// true (`docs/21-the-arts.md`).
+    pub art: bool,
 }
 
 /// What a session resolved to, once.
@@ -187,12 +191,35 @@ pub fn purgeable(sessions: &[Session], pages: &Pages) -> BTreeMap<Slot, Vec<Stri
 /// [`Pad`]s tells the same lie as two functions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Effect {
-    /// It will act on this pad.
-    Acts,
+    /// It will act on this pad, and this is what happens.
+    ///
+    /// The consequence rides here rather than being re-derived from the
+    /// [`Action`] by whoever is asking, because the colour of a pad is
+    /// the colour of *what happens to it*
+    /// (`docs/05-interaction.md#the-held-preview`). One button with two
+    /// consequences is the case that makes the difference load-bearing
+    /// (`docs/22-the-mode-button.md`).
+    Acts(Consequence),
     /// Something is here and this gesture does not apply to it. Dim.
     Skips,
     /// Nothing here for this gesture. Dark.
     None,
+}
+
+/// What acting on a pad does to it.
+///
+/// Two, and they can never apply to the same pad: [`Pad::alive`] is
+/// working, quiet or asking, and [`Pad::purgeable`] is exited or lost.
+/// That disjointness is what lets one button carry both — every pad
+/// under the hold has exactly one outcome and exactly one colour
+/// (`docs/22-the-mode-button.md#stop-does-kill-and-purge`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Consequence {
+    /// The session drawn here is terminated.
+    Ends,
+    /// Every ended row behind this pad is forgotten — including the ones
+    /// nothing draws.
+    Forgotten,
 }
 
 /// One pad, as a gesture sees it.
@@ -292,9 +319,18 @@ pub fn row_launch(
 /// it has to answer with the same predicate the press uses.
 pub fn effect(action: Action, pad: Pad) -> Effect {
     match action {
-        Action::Kill if pad.alive() => Effect::Acts,
-        Action::Kill if pad.state.is_some() => Effect::Skips,
-        Action::Kill => Effect::None,
+        // Alive wins over purgeable, and the order is the rule: a pad can
+        // be running *and* have a dozen ended rows behind it, and the one
+        // you mean is the one you can see. The rows are still there
+        // afterwards.
+        Action::Stop if pad.alive() => Effect::Acts(Consequence::Ends),
+        Action::Stop if pad.purgeable => Effect::Acts(Consequence::Forgotten),
+        // Drawn, not alive, and nothing anchord would forget. Defensive:
+        // every state `resolve` draws dead is also one `purgeable`
+        // collects, and this arm is what keeps that an observation
+        // rather than an assumption.
+        Action::Stop if pad.state.is_some() => Effect::Skips,
+        Action::Stop => Effect::None,
     }
 }
 
@@ -520,7 +556,7 @@ pub fn frame_from(pads: &Pads<'_>, view: &View<'_>) -> Frame {
                 let pad = pads.at(at);
                 frame.set(
                     Button::Grid { row, col },
-                    render::preview(action, effect(action, pad)),
+                    render::preview(effect(action, pad)),
                 );
             }
         }
@@ -537,7 +573,8 @@ pub fn frame_from(pads: &Pads<'_>, view: &View<'_>) -> Frame {
     frame.set(Button::Top(3), render::back(view.can_go_back));
     frame.set(Button::Top(4), render::next(view.queued > 0));
     frame.set(Button::Top(5), render::overview_button(view.overview));
-    for index in 6..=crate::surface::TOP_BUTTONS {
+    frame.set(Button::Top(6), render::arts(view.art));
+    for index in 7..=crate::surface::TOP_BUTTONS {
         // Carries nothing, and stays dark. An unassigned button is better
         // than a strained one.
         frame.set(Button::Top(index), crate::surface::Cell::Off);
@@ -556,7 +593,7 @@ pub fn frame_from(pads: &Pads<'_>, view: &View<'_>) -> Frame {
     }
     frame.set(
         Button::Action(8),
-        render::action(Some(Action::Kill), view.pressed.contains(&Action::Kill)),
+        render::action(Some(Action::Stop), view.pressed.contains(&Action::Stop)),
     );
 
     // Attention you cannot see, because it is scrolled off the window.
@@ -630,6 +667,7 @@ mod tests {
             held: None,
             overview: false,
             pressed: &NO_BUTTONS,
+            art: false,
         }
     }
 
@@ -677,25 +715,74 @@ mod tests {
     ];
 
     #[test]
-    fn kill_acts_on_everything_alive_and_nothing_else() {
+    fn stop_ends_everything_alive_and_nothing_else() {
         for state in ALIVE {
             assert_eq!(
-                effect(Action::Kill, pad(Some(state))),
-                Effect::Acts,
+                effect(Action::Stop, pad(Some(state))),
+                Effect::Acts(Consequence::Ends),
                 "{state:?}"
             );
         }
+        // Drawn dead with nothing anchord would forget. Unreachable in
+        // practice and asserted anyway: it is the arm that keeps the
+        // agreement between `resolve` and `purgeable` an observation.
         for dead in [
             SlotState::Failed { code: 1 },
             SlotState::Lost { reclaimable: false },
         ] {
             assert_eq!(
-                effect(Action::Kill, pad(Some(dead))),
+                effect(Action::Stop, pad(Some(dead))),
                 Effect::Skips,
                 "{dead:?}"
             );
         }
-        assert_eq!(effect(Action::Kill, pad(None)), Effect::None);
+        assert_eq!(effect(Action::Stop, pad(None)), Effect::None);
+    }
+
+    /// The whole claim of the merged button: every pad has **one**
+    /// outcome, because alive and purgeable cannot both be true of the
+    /// same pad (`docs/22-the-mode-button.md`).
+    #[test]
+    fn a_pad_is_never_both_a_kill_and_a_purge() {
+        for state in [
+            None,
+            Some(SlotState::Working),
+            Some(SlotState::Quiet),
+            Some(SlotState::Failed { code: 1 }),
+            Some(SlotState::Lost { reclaimable: true }),
+        ] {
+            for purgeable in [false, true] {
+                let p = Pad {
+                    state,
+                    purgeable,
+                    ..Pad::default()
+                };
+                // Alive wins, and the rows survive it.
+                let want = match (p.alive(), purgeable, state.is_some()) {
+                    (true, _, _) => Effect::Acts(Consequence::Ends),
+                    (false, true, _) => Effect::Acts(Consequence::Forgotten),
+                    (false, false, true) => Effect::Skips,
+                    (false, false, false) => Effect::None,
+                };
+                assert_eq!(effect(Action::Stop, p), want, "{state:?}/{purgeable}");
+            }
+        }
+    }
+
+    /// The pad purge exists for: a clean exit keeps its `tl.slot` and its
+    /// log, draws as nothing, and is invisible until the hold reveals it.
+    #[test]
+    fn a_pad_that_draws_dark_can_still_be_forgotten() {
+        let hidden = Pad {
+            state: None,
+            purgeable: true,
+            ..Pad::default()
+        };
+        assert_eq!(
+            effect(Action::Stop, hidden),
+            Effect::Acts(Consequence::Forgotten),
+            "dark, and not empty"
+        );
     }
 
     /// Reclaimable changes what a press does, never what the eye sees.
@@ -800,7 +887,7 @@ mod tests {
         );
 
         let held = View {
-            held: Some(Action::Kill),
+            held: Some(Action::Stop),
             ..view(&pages)
         };
         let f = frame(&sessions, &BTreeMap::new(), &NO_SPECS, &held);
@@ -981,14 +1068,20 @@ mod tests {
             // Only the controls. Named rather than counted, so a button
             // that starts lighting up says which one it is instead of
             // moving a number: `▼` (there is somewhere to scroll),
-            // `Session` (always lit, there is always an overview) and
+            // `Session` (always lit, there is always an overview),
+            // `Drums` (always lit, there is always an art to start) and
             // `CC19` (kill, at rest). Every `>` is dark because an
             // unparseable label puts nothing in any row, and the rest of
             // the top row has nowhere to go and nothing to offer.
             let lit: Vec<Button> = Button::all().filter(|&b| f.get(b) != Cell::Off).collect();
             assert_eq!(
                 lit,
-                vec![Button::Action(8), Button::Top(2), Button::Top(5)],
+                vec![
+                    Button::Action(8),
+                    Button::Top(2),
+                    Button::Top(5),
+                    Button::Top(6)
+                ],
                 "{bad:?} lit a pad"
             );
         }
@@ -1289,10 +1382,10 @@ mod tests {
         assert_eq!(bottom.get(Button::Top(2)), Cell::Off, "nothing below");
     }
 
-    /// The three buttons that carry nothing stay dark, in every state. A
+    /// The two buttons that carry nothing stay dark, in every state. A
     /// lit button that does nothing is one you press twice.
     #[test]
-    fn the_unassigned_half_of_the_top_row_is_always_dark() {
+    fn the_unassigned_end_of_the_top_row_is_always_dark() {
         let pages = Pages::default();
         let sessions = [session("a", "running", Some("1:3:5"))];
         let v = View {
@@ -1301,7 +1394,7 @@ mod tests {
             ..view(&pages)
         };
         let f = frame(&sessions, &BTreeMap::new(), &NO_SPECS, &v);
-        for index in 6..=crate::surface::TOP_BUTTONS {
+        for index in 7..=crate::surface::TOP_BUTTONS {
             assert_eq!(f.get(Button::Top(index)), Cell::Off, "Top({index})");
         }
         assert_eq!(f.get(Button::Top(3)), Cell::Static(WHITE), "back is live");
@@ -1383,5 +1476,22 @@ mod tests {
             .map(|s| s.id.as_str())
             .collect();
         assert_eq!(ids, ["live", "closing"]);
+    }
+
+    /// The frame says an art is playing, and says it on the button you
+    /// pressed to start one (`docs/21-the-arts.md`).
+    #[test]
+    fn an_art_lights_the_button_that_started_it() {
+        let pages = Pages::default();
+        let sessions = Vec::new();
+        let playing = View {
+            art: true,
+            ..view(&pages)
+        };
+        let f = frame(&sessions, &BTreeMap::new(), &NO_SPECS, &playing);
+        assert_eq!(f.get(Button::Top(6)), render::arts(true));
+        let resting = frame(&sessions, &BTreeMap::new(), &NO_SPECS, &view(&pages));
+        assert_eq!(resting.get(Button::Top(6)), render::arts(false));
+        assert_ne!(f.get(Button::Top(6)), resting.get(Button::Top(6)));
     }
 }

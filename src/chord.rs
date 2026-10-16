@@ -23,14 +23,17 @@ use crate::surface::Button;
 /// width away.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Action {
-    /// `CC19` — end the session in this slot.
+    /// `CC19` — **end what is running, forget what has ended.**
     ///
-    /// **The only modifier left.** Respawn was unreachable without a
-    /// `slots.toml`, and purge and mute moved to the shell when the column
-    /// became launchers (`docs/18-the-launch-column.md`). Being the only
-    /// one makes it easier to find rather than harder, and it keeps the
-    /// corner the silkscreen labels *Stop*.
-    Kill,
+    /// Two consequences on one button, and they can never land on the
+    /// same pad: alive and ended are disjoint sets, so the preview shows
+    /// exactly one colour per pad and the press does exactly what it
+    /// showed (`docs/22-the-mode-button.md#stop-does-kill-and-purge`).
+    ///
+    /// It is called *Stop* rather than *Kill* because killing is only
+    /// half of what it does, and because that is the word the silkscreen
+    /// puts under the corner it lives in.
+    Stop,
 }
 
 impl Action {
@@ -40,7 +43,7 @@ impl Action {
     /// that lights up like a live one is an invitation to press it.
     pub fn of(button: Button) -> Option<Self> {
         match button {
-            Button::Action(8) => Some(Self::Kill),
+            Button::Action(8) => Some(Self::Stop),
             // `Action(1)`-`Action(7)` are `>`, and they are **taps**, not
             // modifiers: they destroy nothing, so there is nothing for a
             // hold to protect (`docs/18-the-launch-column.md`).
@@ -51,13 +54,13 @@ impl Action {
     /// The button this action lives on.
     pub fn button(self) -> Button {
         match self {
-            Self::Kill => Button::Action(8),
+            Self::Stop => Button::Action(8),
         }
     }
 
     /// Every action, in top-to-bottom order.
     pub fn all() -> [Self; 1] {
-        [Self::Kill]
+        [Self::Stop]
     }
 }
 
@@ -110,6 +113,11 @@ pub enum Gesture {
         /// Overview col 1-8, 1 is the left.
         col: u8,
     },
+    /// Move to the next art, or back to the grid (`Drums`).
+    ///
+    /// The only button on this surface that does nothing useful, which is
+    /// the whole argument for it being there (`docs/21-the-arts.md`).
+    Arts,
     /// `>` beside a grid row: spawn into it (`docs/18-the-launch-column.md`).
     Launch {
         /// Grid row 1-7, 1 is the top. There is no `>` beside row 8.
@@ -119,7 +127,7 @@ pub enum Gesture {
 
 /// What a top-row button does.
 ///
-/// Three of the eight carry nothing and return `None`, which is the same
+/// Two of the eight carry nothing and return `None`, which is the same
 /// answer `Action::of` gives for `CC49`-`CC79` and for the same reason: an
 /// inert button that lights up like a live one is an invitation to press
 /// it (`docs/16-the-queue.md`).
@@ -136,6 +144,7 @@ fn top(n: u8) -> Option<Gesture> {
         // 5 is `Session`, and it is a modifier rather than a press: it is
         // handled before this function is reached, and it emits nothing
         // of its own.
+        6 => Some(Gesture::Arts),
         _ => None,
     }
 }
@@ -350,7 +359,7 @@ mod tests {
             assert_eq!(c.modifier(), None, "and no preview");
             assert_eq!(c.feed(PAD, true), None, "and nothing fires");
             assert!(
-                c.is_held(Action::Kill),
+                c.is_held(Action::Stop),
                 "but the button still reads as down"
             );
         }
@@ -424,7 +433,7 @@ mod tests {
         assert_eq!(
             c.feed(PAD, true),
             Some(Gesture::Chord {
-                action: Action::Kill,
+                action: Action::Stop,
                 row: 3,
                 col: 5
             })
@@ -472,7 +481,7 @@ mod tests {
             assert_eq!(
                 c.feed(Button::Grid { row: 1, col }, true),
                 Some(Gesture::Chord {
-                    action: Action::Kill,
+                    action: Action::Stop,
                     row: 1,
                     col
                 })
@@ -488,7 +497,7 @@ mod tests {
         let mut c = Chords::default();
         let _a = c.feed(KILL, true);
         let _b = c.feed(KILL, true);
-        assert_eq!(c.modifier(), Some(Action::Kill), "still exactly one");
+        assert_eq!(c.modifier(), Some(Action::Stop), "still exactly one");
         let _d = c.feed(KILL, false);
         assert_eq!(c.modifier(), None);
         let _e = c.feed(KILL, false); // a release for nothing
@@ -502,14 +511,15 @@ mod tests {
         let mut c = Chords::default();
         let _held = c.feed(KILL, true);
         assert_eq!(c.feed(Button::Top(4), true), Some(Gesture::Next));
-        for n in 6..=8 {
+        assert_eq!(c.feed(Button::Top(6), true), Some(Gesture::Arts));
+        for n in 7..=8 {
             assert_eq!(
                 c.feed(Button::Top(n), true),
                 None,
                 "Top({n}) carries nothing"
             );
         }
-        assert_eq!(c.modifier(), Some(Action::Kill), "still held");
+        assert_eq!(c.modifier(), Some(Action::Stop), "still held");
     }
 
     #[test]
@@ -528,7 +538,24 @@ mod tests {
         let _held = c.feed(KILL, true);
         c.clear();
         assert_eq!(c.modifier(), None);
-        assert!(!c.is_held(Action::Kill));
+        assert!(!c.is_held(Action::Stop));
         assert_eq!(c.feed(PAD, true), Some(Gesture::Tap { row: 3, col: 5 }));
+    }
+
+    /// `Drums` and nothing else. The two buttons beside it still carry
+    /// nothing, and an inert button that fired a gesture would be the
+    /// exact failure `top` exists to prevent.
+    #[test]
+    fn drums_is_the_only_art_button() {
+        let mut c = Chords::default();
+        assert_eq!(c.feed(Button::Top(6), true), Some(Gesture::Arts));
+        for n in [7, 8] {
+            assert_eq!(c.feed(Button::Top(n), true), None, "Top({n}) is not inert");
+        }
+        assert_eq!(
+            c.feed(Button::Top(6), false),
+            None,
+            "a release fires nothing"
+        );
     }
 }

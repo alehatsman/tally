@@ -7,6 +7,7 @@
 
 pub mod act;
 pub mod anchor;
+pub mod art;
 pub mod attention;
 pub mod chord;
 pub mod cli;

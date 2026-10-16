@@ -23,7 +23,7 @@ use std::collections::BTreeMap;
 use crate::anchor::{self, Client, Spawn};
 use crate::chord::Action;
 use crate::config::Launch;
-use crate::model::{effect, Effect, Pads};
+use crate::model::{effect, Consequence, Effect, Pads};
 use crate::slot::{Pages, Slot};
 
 /// What a gesture did, for the log line.
@@ -33,6 +33,8 @@ pub enum Done {
     Spawned(String),
     /// A session ended.
     Killed(String),
+    /// Ended rows were forgotten, and how many.
+    Forgot(usize),
     /// The gesture did not apply here. The preview said so first.
     Nothing,
 }
@@ -42,6 +44,8 @@ impl std::fmt::Display for Done {
         match self {
             Self::Spawned(id) => write!(f, "spawned {id}"),
             Self::Killed(id) => write!(f, "killed {id}"),
+            Self::Forgot(1) => write!(f, "forgot 1 row"),
+            Self::Forgot(n) => write!(f, "forgot {n} rows"),
             Self::Nothing => write!(f, "nothing to do"),
         }
     }
@@ -89,12 +93,14 @@ impl Context<'_> {
     /// # Errors
     /// Whatever anchord returned. A refusal is reported, not retried.
     pub fn chord(&self, action: Action, at: Slot) -> Result<Done, anchor::Error> {
-        let what = effect(action, self.pads.at(at));
-        if matches!(what, Effect::None | Effect::Skips) {
-            return Ok(Done::Nothing);
-        }
-        match action {
-            Action::Kill => self.kill(at),
+        // The **consequence** dispatches, not the button. `Stop` carries
+        // two, and asking `effect` which one applies here is the same
+        // question the preview asked a frame ago — so there is still one
+        // predicate, and still no second place for it to disagree.
+        match effect(action, self.pads.at(at)) {
+            Effect::None | Effect::Skips => Ok(Done::Nothing),
+            Effect::Acts(Consequence::Ends) => self.kill(at),
+            Effect::Acts(Consequence::Forgotten) => Ok(self.forget(at)),
         }
     }
 
@@ -148,6 +154,38 @@ impl Context<'_> {
             return Err(e);
         }
         Ok(Done::Killed(r.session.clone()))
+    }
+
+    /// Forget every ended row behind a pad.
+    ///
+    /// **The whole stack, not the newest.** A pad is an address and
+    /// anchord holds every session that ever claimed it; forgetting one
+    /// of them would leave the pad looking exactly as it did before,
+    /// which is the shape of a button you press twice
+    /// (`docs/22-the-mode-button.md#purge-takes-the-whole-stack`).
+    ///
+    /// A refusal on one id does not stop the others. anchord refuses a
+    /// row it has already forgotten, and a `purge` that gave up halfway
+    /// would leave the pad in a state no further press could clear —
+    /// worse than the partial result, which the next reconcile draws
+    /// truthfully either way.
+    /// It cannot fail as a whole, which is why it returns no `Result`:
+    /// a stack that half-forgets has still forgotten something, and the
+    /// next reconcile draws whatever actually survived.
+    fn forget(&self, at: Slot) -> Done {
+        let mut forgotten = 0;
+        for id in self.pads.rows(at) {
+            match self.client.purge(id) {
+                Ok(()) => forgotten += 1,
+                Err(e) => eprintln!("tallyd: could not forget {id}: {e}"),
+            }
+        }
+        if forgotten == 0 {
+            // Rows were there and anchord kept all of them. Saying
+            // "forgot 0 rows" would read as a thing that happened.
+            return Done::Nothing;
+        }
+        Done::Forgot(forgotten)
     }
 }
 
@@ -243,7 +281,7 @@ spec = "claude"
         let (client, config, purge) = (nowhere(), Config::default(), BTreeMap::new());
         let ctx = context(&client, &config, &grid, &purge);
         assert_eq!(
-            ctx.chord(Action::Kill, at(2, 2)).expect("no call"),
+            ctx.chord(Action::Stop, at(2, 2)).expect("no call"),
             Done::Nothing
         );
     }
@@ -273,6 +311,65 @@ spec = "claude"
         assert!(ctx.pads.at(at(5, 5)).spec, "the preview must light it too");
     }
 
+    /// The pad the merged button exists for, and the one that makes it
+    /// risky: a clean exit keeps its `tl.slot` and draws as **nothing**,
+    /// so this pad is dark on every frame until the hold reveals it
+    /// (`docs/22-the-mode-button.md#stop-does-kill-and-purge`).
+    ///
+    /// Asserted as all three halves agreeing — the pad is dark at rest,
+    /// dark red under the hold, and the press is handed every id, not
+    /// the newest.
+    #[test]
+    fn a_dark_pad_with_history_is_dark_until_the_hold_reveals_it() {
+        let config = Config::default();
+        let grid = BTreeMap::new(); // nothing drawn here, ever
+        let mut purge = BTreeMap::new();
+        let _p = purge.insert(
+            at(5, 5),
+            vec!["01J_c".to_owned(), "01J_b".to_owned(), "01J_a".to_owned()],
+        );
+        let client = nowhere();
+        let ctx = context(&client, &config, &grid, &purge);
+        let pressed = BTreeSet::new();
+
+        assert!(
+            ctx.pads.at(at(5, 5)).state.is_none(),
+            "dark at rest: there is nothing to draw"
+        );
+        assert_eq!(
+            effect(Action::Stop, ctx.pads.at(at(5, 5))),
+            Effect::Acts(Consequence::Forgotten),
+            "and a target under the hold"
+        );
+
+        let frame = frame_from(
+            &ctx.pads,
+            &View {
+                pages: &Pages::default(),
+                offset: 0,
+                anchord_reachable: true,
+                now: 0,
+                can_go_back: false,
+                queued: 0,
+                launchable: &BTreeSet::new(),
+                held: Some(Action::Stop),
+                overview: false,
+                pressed: &pressed,
+                art: false,
+            },
+        );
+        assert_eq!(
+            frame.get(Button::Grid { row: 5, col: 5 }),
+            render::preview(Effect::Acts(Consequence::Forgotten)),
+            "the hold is the only thing that has ever shown these rows"
+        );
+        assert_eq!(
+            ctx.pads.rows(at(5, 5)).len(),
+            3,
+            "and the press is handed the whole stack, not the newest"
+        );
+    }
+
     /// The regression the shared [`Pads`] exists to make unrepresentable.
     ///
     /// Rename or delete a `[[spec]]` and every dead session that named it
@@ -290,6 +387,10 @@ spec = "claude"
     /// (`docs/18-the-launch-column.md`). The invariant it guards is not:
     /// the pixel and the press ask the same function, and a pad the
     /// preview dims is a pad the press leaves alone.
+    ///
+    /// It reaches the dim arm because the purge map is **empty** — a
+    /// dead pad anchord would forget is a target now
+    /// (`docs/22-the-mode-button.md`), and that case is the test below.
     #[test]
     fn the_preview_and_the_press_agree_about_a_dead_pad() {
         let config = Config::parse(CONFIG).expect("valid");
@@ -318,19 +419,20 @@ spec = "claude"
                 can_go_back: false,
                 queued: 0,
                 launchable: &BTreeSet::new(),
-                held: Some(Action::Kill),
+                held: Some(Action::Stop),
                 overview: false,
                 pressed: &pressed,
+                art: false,
             },
         );
 
         assert_eq!(
             frame.get(Button::Grid { row: 5, col: 5 }),
-            render::preview(Action::Kill, Effect::Skips),
+            render::preview(Effect::Skips),
             "a pad that already ended is not a kill target"
         );
         assert_eq!(
-            ctx.chord(Action::Kill, at(5, 5)).expect("no call"),
+            ctx.chord(Action::Stop, at(5, 5)).expect("no call"),
             Done::Nothing,
             "and the press must agree with the pixel"
         );

@@ -15,6 +15,7 @@ use std::io::Write;
 
 use tally::act::{Context, Done};
 use tally::anchor::Client;
+use tally::art::{Piece, Reel};
 use tally::chord::{Action, Chords, Gesture};
 use tally::config::Config;
 use tally::device::{Device, Error, Event};
@@ -138,6 +139,7 @@ fn perform(ctx: &Context<'_>, gesture: Gesture, at: Slot, pages: &Pages, tmux: &
         | Gesture::Next
         | Gesture::Home
         | Gesture::Goto { .. }
+        | Gesture::Arts
         | Gesture::Launch { .. } => {}
     }
 }
@@ -172,6 +174,68 @@ fn launch_labels(at: Slot, pages: &Pages) -> std::collections::BTreeMap<String, 
         let _slot = labels.insert(tally::anchor::LABEL_SLOT.to_owned(), address);
     }
     labels
+}
+
+/// Move along the reel, and say where it went.
+///
+/// `None` is both ends of the cycle: the working grid is what you get
+/// before the first press and after the last (`docs/21-the-arts.md`).
+fn next_art(reel: &mut Option<Reel>) {
+    *reel = Piece::after(reel.as_ref().map(Reel::piece)).map(Reel::new);
+    match reel.as_ref() {
+        Some(r) => eprintln!("tallyd: arts {}", r.piece().name()),
+        None => eprintln!("tallyd: arts off"),
+    }
+}
+
+/// End the art if this press should, and say whether the press itself is
+/// then **swallowed**.
+///
+/// Everything except `Drums` ends it, because you reached for the thing
+/// you actually wanted and the pad under your finger a quarter second ago
+/// was a sine wave, not a session. `►` is the one that still acts: making
+/// you press it twice would be the toy charging rent on the one gesture
+/// this product exists to provide (`docs/21-the-arts.md`).
+fn left_art(reel: &mut Option<Reel>, gesture: Gesture) -> bool {
+    if reel.is_none() || gesture == Gesture::Arts {
+        return false;
+    }
+    *reel = None;
+    eprintln!("tallyd: arts off");
+    gesture != Gesture::Next
+}
+
+/// Advance the art one frame, on every other wake.
+///
+/// ~31 fps off a 16 ms tick: smooth to the eye at half the bytes
+/// (`docs/21-the-arts.md#the-frame-rate`).
+fn advance_art(reel: Option<&mut Reel>, wake: &mut bool) {
+    *wake = !*wake;
+    if let Some(r) = reel.filter(|_| *wake) {
+        r.tick();
+    }
+}
+
+/// The surface while an art is playing (`docs/21-the-arts.md`).
+///
+/// The art owns the sixty-four pads and nothing else. Three lights are
+/// not its to take: `►`, because the one gesture this product exists to
+/// provide does not go away because the grid is busy; `Drums`, because a
+/// mode has to say it is on; and the logo, which carries **all** the
+/// attention now rather than only the scrolled-off kind — a grid showing
+/// a plasma field is showing none of it.
+fn art_surface(reel: &Reel, reachable: bool, queued: usize) -> tally::surface::Frame {
+    let mut frame = reel.frame();
+    frame.set(Button::Top(4), tally::render::next(queued > 0));
+    frame.set(Button::Top(6), tally::render::arts(true));
+    frame.set(
+        Button::Logo,
+        tally::render::logo(tally::render::Health {
+            anchord_reachable: reachable,
+            offscreen_attention: queued > 0,
+        }),
+    );
+    frame
 }
 
 /// Send the beat the surface breathes to.
@@ -338,6 +402,7 @@ fn navigate(
         Gesture::Tap { .. }
         | Gesture::Chord { .. }
         | Gesture::Launch { .. }
+        | Gesture::Arts
         | Gesture::Goto { .. } => {}
     }
 }
@@ -426,6 +491,11 @@ fn main() -> ExitCode {
     let mut next_clock = Duration::ZERO;
     let mut clock_started = false;
     let mut last_reconcile = Duration::ZERO;
+    // The art, if one is playing (`docs/21-the-arts.md`). `None` is the
+    // working grid, and it is where the reel starts and ends.
+    let mut reel: Option<Reel> = None;
+    // Art advances every other wake: ~31 fps off a 16 ms tick.
+    let mut art_wake = false;
     let mut repaint = true;
     let mut last_reply = Duration::ZERO;
     let tmux = Tmux::default();
@@ -490,7 +560,16 @@ fn main() -> ExitCode {
                         let Some(gesture) = chords.feed(button, down) else {
                             continue;
                         };
+                        let swallowed = left_art(&mut reel, gesture);
+                        repaint |= swallowed;
+                        if swallowed {
+                            continue;
+                        }
                         match gesture {
+                            Gesture::Arts => {
+                                next_art(&mut reel);
+                                repaint = true;
+                            }
                             Gesture::Launch { row } => {
                                 repaint |= launch(
                                     offset.saturating_add(row),
@@ -676,9 +755,14 @@ fn main() -> ExitCode {
             queued,
             held: chords.modifier(),
             overview: chords.overview(),
+            art: reel.is_some(),
             pressed: &pressed,
         };
         let frame = model::frame_from(&pads, &view);
+        advance_art(reel.as_mut(), &mut art_wake);
+        let frame = reel
+            .as_ref()
+            .map_or(frame, |r| art_surface(r, reachable, queued));
         if let Some(d) = device.as_mut() {
             // A full repaint on (re)connect: the device may have been
             // unplugged, power-cycled, or left in another process's idea

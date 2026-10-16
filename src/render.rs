@@ -16,7 +16,7 @@
 //! the afternoon. Urgency is carried by hue, which does not get tiring.
 
 use crate::chord::Action;
-use crate::model::Effect;
+use crate::model::{Consequence, Effect};
 use crate::signal::SlotState;
 use crate::surface::palette::{AMBER, DARK_GREY, DARK_RED, GREEN, RED, WHITE};
 use crate::surface::Cell;
@@ -113,6 +113,21 @@ pub fn overview(summary: Option<SlotState>, in_window: bool) -> Cell {
     }
 }
 
+/// How `Drums` is lit: dim at rest, white while an art is playing.
+///
+/// It is never dark, because unlike the rest of the row it never has
+/// nothing to do — a press always moves you along the reel, and the reel
+/// wraps back to the working grid (`docs/21-the-arts.md`). White is the
+/// same white the right column uses while a modifier is held, and says
+/// the same thing: *this is what you are doing right now*.
+pub fn arts(playing: bool) -> Cell {
+    if playing {
+        Cell::Static(WHITE)
+    } else {
+        Cell::Static(DARK_GREY)
+    }
+}
+
 /// How `◄` is lit: white when there is somewhere to go back to.
 ///
 /// One of the two control colours, and the same white the right column
@@ -171,19 +186,23 @@ pub fn action(button: Option<Action>, held: bool) -> Cell {
 /// two thirds of the grid blank and you guessing which half of the reason
 /// applied (`docs/05-interaction.md#the-held-preview`).
 ///
-/// Each colour is the colour of the **consequence**, not of the button:
-/// kill reds the pads that are about to be red, respawn greens the ones
-/// about to be green. Nothing here pulses — a preview lasts as long as
-/// your thumb does, and motion on sixty pads for two seconds is noise.
-pub fn preview(action: Action, effect: Effect) -> Cell {
+/// Each colour is the colour of the **consequence**, not of the button —
+/// and it takes no [`Action`] at all, which is that sentence stated in
+/// the type. One button now carries two consequences
+/// (`docs/22-the-mode-button.md`), so a colour derived from the button
+/// would have to be wrong about one of them.
+///
+/// Nothing here pulses — a preview lasts as long as your thumb does, and
+/// motion on sixty pads for two seconds is noise.
+pub fn preview(effect: Effect) -> Cell {
     match effect {
         Effect::None => Cell::Off,
         Effect::Skips => Cell::Static(DARK_GREY),
-        // The colour of the **consequence**, not of the button: kill reds
-        // the pads that are about to be red.
-        Effect::Acts => Cell::Static(match action {
-            Action::Kill => RED,
-        }),
+        // Red for what is about to be red. Dark red for what is about to
+        // be forgotten — the colour `lost` already wears, on pads that
+        // are already gone.
+        Effect::Acts(Consequence::Ends) => Cell::Static(RED),
+        Effect::Acts(Consequence::Forgotten) => Cell::Static(DARK_RED),
     }
 }
 
@@ -265,8 +284,8 @@ mod tests {
             next(true),
             back(true),
             arrow(true),
-            action(Some(Action::Kill), true),
-            action(Some(Action::Kill), false),
+            action(Some(Action::Stop), true),
+            action(Some(Action::Stop), false),
         ] {
             assert!(!matches!(control, Cell::Flash { .. }), "{control:?} blinks");
         }
@@ -286,8 +305,8 @@ mod tests {
         {
             assert!(!amber(slot(other)), "{other:?} is amber too");
         }
-        assert!(!amber(action(Some(Action::Kill), false)));
-        assert!(!amber(action(Some(Action::Kill), true)));
+        assert!(!amber(action(Some(Action::Stop), false)));
+        assert!(!amber(action(Some(Action::Stop), true)));
     }
 
     /// Green means alive, and nothing else does. The failure this guards is
@@ -459,18 +478,21 @@ mod tests {
         assert_eq!(arrow(true), Cell::Static(DARK_GREY));
     }
 
-    const EFFECTS: [Effect; 3] = [Effect::Acts, Effect::Skips, Effect::None];
+    const EFFECTS: [Effect; 4] = [
+        Effect::Acts(Consequence::Ends),
+        Effect::Acts(Consequence::Forgotten),
+        Effect::Skips,
+        Effect::None,
+    ];
 
     /// The one reservation the whole design rests on. A preview that
     /// borrowed amber would put a second amber thing on a surface whose
     /// promise is that there is only ever one.
     #[test]
     fn no_preview_is_ever_amber() {
-        for action in Action::all() {
-            for effect in EFFECTS {
-                assert_ne!(preview(action, effect), Cell::Static(AMBER));
-                assert_ne!(preview(action, effect), Cell::Pulse(AMBER));
-            }
+        for effect in EFFECTS {
+            assert_ne!(preview(effect), Cell::Static(AMBER));
+            assert_ne!(preview(effect), Cell::Pulse(AMBER));
         }
     }
 
@@ -478,23 +500,33 @@ mod tests {
     /// two seconds is noise, not information.
     #[test]
     fn nothing_in_a_preview_moves() {
-        for action in Action::all() {
-            for effect in EFFECTS {
-                assert!(!animated(preview(action, effect)), "{action:?}/{effect:?}");
-            }
+        for effect in EFFECTS {
+            assert!(!animated(preview(effect)), "{effect:?}");
         }
     }
 
     /// Three levels, and the middle one is the one that earns its keep.
     #[test]
     fn the_three_preview_levels_are_distinguishable() {
-        for action in Action::all() {
-            let acts = preview(action, Effect::Acts);
-            let skips = preview(action, Effect::Skips);
-            assert_eq!(skips, Cell::Static(DARK_GREY), "{action:?}");
-            assert_eq!(preview(action, Effect::None), Cell::Off, "{action:?}");
-            assert_ne!(acts, skips, "{action:?}");
+        let skips = preview(Effect::Skips);
+        assert_eq!(skips, Cell::Static(DARK_GREY));
+        assert_eq!(preview(Effect::None), Cell::Off);
+        for c in [Consequence::Ends, Consequence::Forgotten] {
+            assert_ne!(preview(Effect::Acts(c)), skips, "{c:?}");
+            assert_ne!(preview(Effect::Acts(c)), Cell::Off, "{c:?}");
         }
+    }
+
+    /// One button, two consequences, and the only thing standing between
+    /// them is that they do not look alike. A thumb one pad off forgets a
+    /// row instead of doing nothing, so this is the assertion the merged
+    /// button rests on (`docs/22-the-mode-button.md`).
+    #[test]
+    fn ending_and_forgetting_do_not_look_alike() {
+        assert_ne!(
+            preview(Effect::Acts(Consequence::Ends)),
+            preview(Effect::Acts(Consequence::Forgotten))
+        );
     }
 
     /// An unassigned button lit like a live one is an invitation to press
@@ -503,8 +535,8 @@ mod tests {
     fn an_action_button_with_no_gesture_is_dark() {
         assert_eq!(action(None, false), Cell::Off);
         assert_eq!(action(None, true), Cell::Off);
-        assert_eq!(action(Some(Action::Kill), false), Cell::Static(RED));
-        assert_eq!(action(Some(Action::Kill), true), Cell::Static(WHITE));
+        assert_eq!(action(Some(Action::Stop), false), Cell::Static(RED));
+        assert_eq!(action(Some(Action::Stop), true), Cell::Static(WHITE));
     }
 
     /// The rule this replaces was *exactly one page button is bright and
@@ -549,5 +581,14 @@ mod tests {
                 "{control:?} collides with a slot colour"
             );
         }
+    }
+
+    /// `Drums` is the one top-row button that is never dark: it always
+    /// has somewhere to go, which is back to the grid.
+    #[test]
+    fn drums_is_lit_either_way() {
+        assert_eq!(arts(false), Cell::Static(DARK_GREY));
+        assert_eq!(arts(true), Cell::Static(WHITE));
+        assert_ne!(arts(true), arts(false), "a mode that does not say it is on");
     }
 }
