@@ -4,13 +4,34 @@ Press a live pad; end up looking at that agent. This is the gesture the
 whole device exists for, and it is the one piece that is not about MIDI at
 all.
 
+> ⚠️ **The unit is a pane, not a window — see [15](15-views.md).**
+> Everything below is right about *why* and out of date about *what*. This
+> document says a view is a tmux window, which was true while `tallyd`
+> under launchd was the only thing creating views, and became the
+> definition by accident. A pane is the unit you can adopt, the unit that
+> can outlive its command, and the unit a return gesture can name; three
+> open issues were all downstream of that one sentence.
+>
+> Read `window` as `pane` throughout, with four substitutions:
+> `list-windows -a` → `list-panes -a`, `set-option -w` → `set-option -p`,
+> a view now carries `remain-on-exit`, and a dead view is revived **in
+> place** rather than recreated elsewhere. The arguments are unchanged —
+> they were arguments about identity and targeting, and both survive the
+> change of unit.
+>
+> ⚠️ **Jump is also no longer one-directional.** `◄` returns you to where
+> you were standing and `►` goes to whatever has been waiting longest
+> ([16](16-the-queue.md)).
+
 ## The problem
 
 An anchor session is a PTY in a daemon. It is not a window. Something has
 to be attached to it for there to be anywhere to jump *to*, and that
 something has to be findable and focusable.
 
-## The answer: a tmux window per session
+## The answer: a tmux pane per session
+
+*(Written as "a window per session"; see the amendment above.)*
 
 You already have the shape of this on the keyboard —
 `~/.local/bin/tmux-claude-jump`, bound to `prefix C-j`, fuzzy-picks a pane
@@ -61,10 +82,14 @@ window, reopen it from the same pad, and the scrollback replays from offset
 Jump is then:
 
 ```sh
-# find the window whose @tally_session option equals the session id
-tmux list-windows -a -F '#{window_id} #{@tally_session}'
-tmux switch-client -c "<client>" -t "<window_id>"
+# find the pane whose @tally_session option equals the session id
+tmux list-panes -a -F '#{pane_id} #{window_id} #{pane_dead} #{@tally_session}'
+tmux switch-client -c "<client>" -t "<pane_id>"
 ```
+
+`switch-client -t` takes a pane directly — tmux(1): *"As a special case,
+-t may refer to a pane … to change session, window and pane."* One
+command, not three.
 
 ...plus raising the terminal emulator itself, because tmux switching a
 client that is behind a browser window changes nothing you can see. On
@@ -85,21 +110,32 @@ reconcile.
 
 ### Recovering a view
 
-A window can disappear — closed, tmux server restarted, a reboot. The
+A view can disappear — closed, tmux server restarted, a reboot. The
 session is fine; the view is gone. Pressing the pad then **recreates the
 view and jumps to it**, rather than reporting an error. The pad means "put
-this in front of me", and whether that needs a new window is an
+this in front of me", and whether that needs a new pane is an
 implementation detail of the press.
+
+There are now three cases, not two ([15](15-views.md#recovery-respawn-in-place)):
+alive, switch to it; **dead, respawn in the pane it already occupies**;
+absent, create one. The middle case is what makes an adopted pane
+survivable — the pad goes on meaning the place you put it, instead of
+quietly relocating to a window under `tally` the first time its agent
+died.
 
 That is the second reason `@tally_session` is an option on the window rather
 than a name convention: window names get renamed by programs, options do
 not, and a jump that finds the wrong window is worse than one that creates
 a new one.
 
-**Set it with `set-option -w`.** Without `-w` tmux sets a *session* option,
-every window in the session inherits it, and every view then reports the
-first session id ever tagged — which produces precisely the wrong-window
-jump this paragraph exists to prevent. Observed on hardware, not theorised.
+**Set it with `set-option -p`.** This paragraph used to say `-w`, and the
+bug it describes has a smaller twin one level down. Without `-w`, tmux
+sets a *session* option and every window inherits it. With `-w`, every
+**pane** in the window inherits it — so splitting a view gives two panes
+claiming the same session, and a jump lands on either. Both were observed
+rather than theorised; the second was measured on tmux 3.6b while writing
+[15](15-views.md), and did not bite only because nothing split a view
+window until `tally spawn` learned to adopt one.
 
 ✅ Both of these are confirmed: a pad press reaches the right window, and a
 killed view leaves the agent `running` and is recreated by the next press

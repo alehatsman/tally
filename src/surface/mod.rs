@@ -10,5 +10,5 @@ pub mod frame;
 pub mod palette;
 pub mod sysex;
 
-pub use addr::{Button, SURFACE_LEN};
+pub use addr::{Button, SURFACE_LEN, TOP_BUTTONS};
 pub use frame::{Cell, Frame};

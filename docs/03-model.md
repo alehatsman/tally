@@ -38,11 +38,15 @@ layer, once, and no other file knows about it. A label is a human artefact
 and reads top-down like everything else written on a screen.
 
 **A page is a name, not an index.** The order of the `[[page]]` entries in
-`slots.toml` maps names onto the eight top-row buttons — first entry is
-`CC91`, eighth is `CC98`. Names are in the label because `anchor ls` output
-should be readable without the config file open; the ordering is in the file
-because which button a page sits under is a layout preference, not an
-identity.
+`slots.toml` is the order the pages stack into the row space — the first
+entry's eight rows come first, the second entry's next, and so on down to
+row 64. Names are in the label because `anchor ls` output should be
+readable without the config file open; the ordering is in the file because
+where a page sits in the stack is a layout preference, not an identity.
+
+*(It used to map names onto the eight top-row buttons, `CC91`–`CC98`.
+Those buttons are now `▲▼◄►` and four dark ones — see
+[Pages](#pages) below and [16](16-the-queue.md).)*
 
 Press a **dark** slot → spawn its spec. Press a **lit** slot → jump. A
 session exiting cleanly unbinds the slot; the spec stays, the pad goes dark,
@@ -119,7 +123,7 @@ it has to name a directory in advance. The other is a shell standing in
 that directory: `tally spawn 3:5` ([11-cli.md](11-cli.md)).
 
 ```toml
-# Order is the layout: first page is CC91, eighth is CC98.
+# Order is the layout: the first page's rows come first in the stack.
 [[page]]
 name = "work"
 [[page]]
@@ -193,16 +197,47 @@ session under whoever holds the lease is the inverse of the problem.
 
 ## Pages
 
-Eight pages, selected by the top row (`CC91`–`CC98`). 512 addressable slots,
-of which you will use maybe twenty — pages are not capacity, they are
-**grouping**. One page per repo, or per machine, or per kind of work.
+Eight pages. 512 addressable slots, of which you will use maybe twenty —
+pages are not capacity, they are **grouping**. One page per repo, or per
+machine, or per kind of work.
 
-A page indicator is lit when it holds any session; it **flashes amber when
-a session on a page you are not looking at needs an answer**. That is the
-whole reason pages are in M-something-early rather than "later": without it,
-switching away from a page means going blind to it, and a surface you have
-to remember to check is no better than a terminal you have to remember to
-check.
+### They are a naming scheme, not a place you go
+
+⚠️ **Amended by [16](16-the-queue.md).** Pages used to be eight buttons
+across the top row, and switching page meant cutting to a different
+screenful. They are now purely how an address is *written*: eight pages of
+eight rows stack into one sixty-four-row space, and the grid is an
+eight-row window onto it that `▲▼` slide **one row at a time**.
+
+Everything in this document about addresses is unchanged — `work:3:5` is
+still `work:3:5`, `slots.toml` still declares the order, `tl.slot` still
+carries it. What changed is that a page boundary stopped being an edge you
+cross and became an arithmetic detail: page 1 row 8 and page 2 row 1 are
+adjacent rows, and scrolling past them does nothing special, because
+nothing special is there.
+
+Two reasons, one measured and one felt:
+
+- **Pages used, 70 : 2.** Page 2 had been visited twice, ever. Eight
+  dedicated buttons for that is eight buttons spent on a thing that was
+  not happening.
+- **A page boundary is not something you can feel; a row is.** Sliding
+  keeps the layout under your finger where cutting replaces it, and keeps
+  adjacent projects adjacent across what used to be a hard edge.
+
+### Going blind to a page was the problem, and it is solved differently
+
+The original argument for pages landing early still stands and now reads
+as an argument for something else: *switching away from a page means going
+blind to it, and a surface you have to remember to check is no better than
+a terminal you have to remember to check.*
+
+That is still true, and the fix is no longer a per-page indicator. It is
+`►` — one press that goes to whatever has been waiting longest, wherever
+it is, scrolling the grid to it ([16](16-the-queue.md)). **You no longer
+navigate to attention; attention navigates to you**, so there is nothing
+left to remember to check. The logo still says *something off the window
+wants you*; what it is, and getting there, is one button.
 
 ## Lifecycle of a slot
 

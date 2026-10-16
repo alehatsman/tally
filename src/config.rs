@@ -251,7 +251,7 @@ fn resolve_pages(entries: &[PageEntry]) -> Result<Pages, Error> {
     }
     if entries.len() > PAGES as usize {
         return Err(Error::Invalid(format!(
-            "{} pages declared; there are {PAGES} buttons in the top row",
+            "{} pages declared; the address space is {PAGES} pages deep",
             entries.len()
         )));
     }
@@ -529,15 +529,19 @@ name = "wo\nrk"
         }
     }
 
+    /// Nine pages is a ninth page's worth of addresses that cannot be
+    /// written. The limit used to be the eight buttons in the top row;
+    /// since `docs/16` it is the depth of the address space itself, which
+    /// is the thing it was always really about.
     #[test]
-    fn more_pages_than_buttons_is_refused() {
+    fn more_pages_than_the_address_space_is_refused() {
         let text = (1..=9).fold(String::new(), |mut acc, n| {
             use std::fmt::Write as _;
             let _written = writeln!(acc, "[[page]]\nname = \"p{n}\"");
             acc
         });
         let e = Config::parse(&text).expect_err("nine pages");
-        assert!(format!("{e}").contains("top row"), "{e}");
+        assert!(format!("{e}").contains("8 pages deep"), "{e}");
     }
 
     /// An empty argv would otherwise reach anchord as `command: ""`.

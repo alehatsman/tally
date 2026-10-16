@@ -5,6 +5,14 @@
 //! hardware numbers its rows from the bottom. **The flip happens here and
 //! nowhere else** (`docs/02-surface.md`, `docs/03-model.md`).
 
+/// How many buttons the top row has.
+///
+/// Eight, because the hardware has eight — **not** because there are eight
+/// pages. The two were the same number for the same reason until
+/// `docs/16` made the row a queue, and a constant that happens to be right
+/// is one that goes wrong silently.
+pub const TOP_BUTTONS: u8 = 8;
+
 /// A physical button on the surface.
 ///
 /// Rows and columns are 1-based and **row 1 is the top row**, which is the
@@ -18,7 +26,8 @@ pub enum Button {
         /// 1-8, 1 is the left column.
         col: u8,
     },
-    /// Top row, left to right, 1-8: `▲ ▼ ◄ ► Session Drums Keys User`.
+    /// Top row, left to right, 1-[`TOP_BUTTONS`]:
+    /// `▲ ▼ ◄ ► Session Drums Keys User`.
     ///
     /// Named for where it is, not for what it does, because what it does
     /// changed: these were eight page selectors until `docs/16` made the

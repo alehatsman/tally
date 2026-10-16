@@ -434,7 +434,7 @@ pub fn frame_from(pads: &Pads<'_>, view: &View<'_>) -> Frame {
     );
     frame.set(Button::Top(3), render::back(view.can_go_back));
     frame.set(Button::Top(4), render::next(view.queued > 0));
-    for index in 5..=slot::PAGES {
+    for index in 5..=crate::surface::TOP_BUTTONS {
         // Carries nothing, and stays dark. An unassigned button is better
         // than a strained one.
         frame.set(Button::Top(index), crate::surface::Cell::Off);
@@ -1103,7 +1103,7 @@ mod tests {
             ..view(&pages)
         };
         let f = frame(&sessions, &BTreeMap::new(), &NO_SPECS, &v);
-        for index in 5..=slot::PAGES {
+        for index in 5..=crate::surface::TOP_BUTTONS {
             assert_eq!(f.get(Button::Top(index)), Cell::Off, "Top({index})");
         }
         assert_eq!(f.get(Button::Top(3)), Cell::Static(WHITE), "back is live");

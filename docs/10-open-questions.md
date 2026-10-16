@@ -94,7 +94,9 @@ in front of your face; the grid is for the sixty-three that are not.
 ### ~~What a slot address means~~ — settled
 
 `page:row:col`, with **row 1 at the top**, col 1 at the left, and the page a
-*name* declared in order in `slots.toml` which maps it onto `CC91`–`CC98`.
+*name* declared in order in `slots.toml`, which is the order the pages
+stack into the sixty-four-row space the grid scrolls through
+([16](16-the-queue.md)). It used to map the page onto a top-row button.
 Humans type this string into shell scripts, so it reads the way text reads;
 the bottom-left-first flip lives in the surface layer and nowhere else.
 [03](03-model.md#the-address-pinned).

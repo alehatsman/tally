@@ -150,7 +150,7 @@ Palette entries this design actually uses:
 | 13 | yellow | starting | yellow with a green cast |
 | 21 | **green** | **running** | green |
 | 23 | dark green | exited clean | green — close to 21, but distinguishable |
-| 37 | turquoise | page button holding sessions | cyan |
+| 37 | turquoise | *was* the page button holding sessions — unused since [16](16-the-queue.md) | cyan |
 | 45 | blue | action buttons, resting | blue |
 
 Three of these took a judgment a photograph could not make, and all three
