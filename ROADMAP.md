@@ -108,8 +108,21 @@ Scope: tmux view windows (`@tally_session`) in a dedicated `tally:` session,
 the jump with an explicit client target, raising the terminal, recreating a
 lost view, starting a tmux server that is not there.
 
-Exit: press a lit pad from anywhere, end up in that agent's window. View
-windows close and reopen without the agent noticing.
+Exit:
+- ✅ press a lit pad from anywhere, end up in that agent's window —
+  confirmed from a real press through the launchd daemon
+- ✅ view windows close and reopen without the agent noticing: a killed
+  view leaves the session `running`, and the next press recreates it with
+  the scrollback replayed from offset 0
+
+> Two bugs worth keeping. `set-option` without `-w` sets a *session*
+> option, so every view inherited the first session id ever tagged and a
+> jump would land on the wrong window — the exact failure
+> [docs/06](docs/06-jump.md) calls worse than creating a new one. And
+> launchd hands an agent `PATH=/usr/bin:/bin:/usr/sbin:/sbin`, which
+> contains neither `tmux` nor `anchor`: the jump worked every time by hand
+> and failed under the service manager, which is the only configuration
+> that matters.
 
 ---
 

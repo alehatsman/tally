@@ -96,6 +96,27 @@ than a name convention: window names get renamed by programs, options do
 not, and a jump that finds the wrong window is worse than one that creates
 a new one.
 
+**Set it with `set-option -w`.** Without `-w` tmux sets a *session* option,
+every window in the session inherits it, and every view then reports the
+first session id ever tagged — which produces precisely the wrong-window
+jump this paragraph exists to prevent. Observed on hardware, not theorised.
+
+✅ Both of these are confirmed: a pad press reaches the right window, and a
+killed view leaves the agent `running` and is recreated by the next press
+with its scrollback replayed from offset 0.
+
+### What the daemon's environment does not have
+
+`tallyd` runs under launchd with `PATH=/usr/bin:/bin:/usr/sbin:/sbin`.
+Neither `tmux` nor `anchor` is on it, so **the jump works when you run
+`tallyd` by hand and fails as a service** — and a tmux server that `tallyd`
+starts inherits that PATH, leaving its view windows unable to find `anchor`
+either. The agent's `PATH` is therefore set in the LaunchAgent, declared in
+`~/dotfiles/components/tally` ([07-seams.md](07-seams.md#provision)).
+
+Worth stating because it generalises: everything this file asks of tmux is
+an `exec`, and an agent's environment is not a login shell's.
+
 ## The alternatives, and why not
 
 **A fresh Alacritty window per session.** Simpler to spawn, worse to live
