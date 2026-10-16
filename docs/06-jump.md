@@ -28,9 +28,30 @@ window running `anchor attach <id>` in it.
 
 ```text
 tap pad ──▶ anchor create --label tl.slot=work:3:5 -- claude
-       └──▶ tmux new-window -d -n "w3.5" "anchor attach <id>"
+       └──▶ tmux new-window -d -t tally: -n "work.3.5" "anchor attach <id>"
             tmux set-option -t <win> @tally_session <id>
 ```
+
+### Both tmux commands need an explicit target, and it is not obvious
+
+tallyd runs under launchd. It has no controlling terminal, no `$TMUX`, and
+possibly **no attached client at all** — so every tmux default that resolves
+to "the current one" resolves to something arbitrary, or fails.
+
+- **`new-window` goes to a named session, `tally:`,** created with
+  `new-session -d -s tally` if it is missing. Without `-t`, tmux picks the
+  most-recently-used session, which is wherever you happened to be looking
+  five minutes ago. View windows must not land in the middle of the session
+  you are working in.
+- **`switch-client` names its client.** `tmux list-clients -F '#{client_name}'`,
+  and if there is exactly one, switch it. **Zero clients is not an error** —
+  the view window exists and is correct, and the next time you attach it is
+  there; tallyd logs it and moves on. More than one client is the case worth
+  naming: switch **all** of them. A jump is "put this in front of me" and
+  you do not know which terminal "me" is sitting at.
+
+The window name `work.3.5` is cosmetic and carries no meaning —
+`@tally_session` is the identity, for the reason below.
 
 The tmux window is a *view*, and that is the whole reason this composes:
 closing it does not touch the agent, because anchor owns the PTY. Kill the
@@ -40,7 +61,9 @@ window, reopen it from the same pad, and the scrollback replays from offset
 Jump is then:
 
 ```sh
-tmux switch-client -t "<window>"    # find by @tally_session == id
+# find the window whose @tally_session option equals the session id
+tmux list-windows -a -F '#{window_id} #{@tally_session}'
+tmux switch-client -c "<client>" -t "<window_id>"
 ```
 
 ...plus raising the terminal emulator itself, because tmux switching a
@@ -97,9 +120,17 @@ display.
 
 That assumption is true here — `.tmux.conf`, `tmux-resurrect`,
 `tmux-continuum`, and an existing jump binding all say so — and it should be
-checked rather than inferred: on start, tallyd verifies a tmux server is
-reachable and says so plainly if it is not. A surface whose central gesture
-silently does nothing is worse than one that refuses to start.
+checked rather than inferred: on start, tallyd runs `tmux has-session` and
+says plainly in the log if there is no server.
+
+**It says so; it does not refuse to start.** A missing tmux server is the
+normal state at login, before anything is attached, and tallyd is explicitly
+required to tolerate starting before everything else exists
+([08-lifecycle.md](08-lifecycle.md#who-starts-it)). The grid is still
+truthful with no tmux running — it is the *jump* that has no target, and
+jump creates its own server when it has to (`new-session -d -s tally` on a
+dead server starts one). Refusing to start would trade the half of the
+product that works for the half that is temporarily unavailable.
 
 The jump mechanism is therefore **one function behind one trait**, with the
 tmux implementation being the only one, so that a second one is possible

@@ -9,15 +9,26 @@ full surface we use:
 
 | op | for |
 |---|---|
-| `list` filtered by `tl.slot` presence | reconstruct the grid, every 2s |
+| `list`, unfiltered | reconstruct the grid, every 2s |
 | `create` with `tl.slot` / `tl.spec` labels | spawn a slot |
 | `attach` with `control:false` | derive signals ([04](04-signals.md)) |
 | `terminate` | the kill chord |
 | `purge` | the purge chord |
-| `label` | rebind a slot, adopt a session |
+| `label` | rebind a slot, mute, clear declared attention |
 
 That is six of nine ops. We never `resize` (the view window owns the size),
 never `get` (the `list` already has it), never `log` (the watcher streams).
+
+**The `list` is unfiltered, and that is forced.** anchor's filter is exact
+match on a value, AND across keys (`anchor/src/store.rs:96-105`); there is
+no "has this key" form, and `tl.slot`'s value differs per slot. teleport can
+filter because `teleport.owner` has one constant value
+(`anchor_watch.rs:155`); tally cannot without inventing a second label whose
+only job is to make a query work — and that label would become mandatory,
+breaking `anchor create --label tl.slot=… -- claude` from a shell script,
+which is a property [03-model.md](03-model.md#where-the-binding-lives) is
+explicitly buying. So: list everything, keep the rows with a `tl.slot` key.
+The filtering is one predicate over a few dozen rows.
 
 **Port teleport's client, do not write a second one.**
 `teleport/daemon/src/anchor_client.rs` already speaks both framings —
@@ -36,10 +47,15 @@ Specifically:
   there first is the evidence.
 - **No agent-state field.** [04-signals.md](04-signals.md) explains why it
   stays here.
+- **No label-presence filter.** The exact-match filter is what anchor has,
+  and wanting a second query form is not a reason to grow its protocol. A
+  client-side predicate costs nothing at this scale; if it ever does cost
+  something, the evidence will be a measurement, not an inconvenience.
 - **No slot concept.** `tl.slot` is a label. anchor never interprets a
   label, and the `tl.` prefix says whose opinion it is — the same discipline
-  as `teleport.owner` / `teleport.kind` / `teleport.claude_resume_id`
-  (`teleport/daemon/src/anchor_bridge.rs:25-29`).
+  as `teleport.owner` / `teleport.kind`
+  (`teleport/daemon/src/anchor_bridge.rs:25-29`) and
+  `teleport.claude_resume_id` (`anchor_watch.rs:51`).
 
 ### The one thing to watch
 
@@ -71,11 +87,19 @@ What it is instead:
 ### Where they could collide
 
 Both will want to own a session's metadata. teleport writes
-`teleport.claude_resume_id`; tally writes `tl.slot`. Different
-namespaces, no conflict — **as long as neither ever writes the other's
-prefix**, including "helpfully" copying one across. Write that down in the
-code as a constant with the prefix in it, not as a string literal at each
-call site.
+`teleport.claude_resume_id`; tally writes `tl.slot`, `tl.spec`, `tl.mute`
+and `tl.attention`. Different namespaces, no conflict — **as long as neither
+ever writes the other's prefix**, including "helpfully" copying one across.
+Write that down in the code as a constant with the prefix in it, not as a
+string literal at each call site.
+
+Concurrent writes are not a hazard, and it is worth saying why rather than
+hoping. anchor's `label` op takes `set` and `remove` **per key**
+(`anchor/docs/04-protocol.md`) — it is not a replace-the-whole-map
+operation, so two clients writing different keys on the same session at the
+same moment cannot lose each other's write. There is no read-modify-write
+anywhere in tally's use of labels, which is the only shape that would need
+one.
 
 The real overlap is the **watcher**: if teleport and tallyd are both running,
 every session has two observer attaches scanning the same bytes for the same

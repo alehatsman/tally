@@ -20,6 +20,30 @@ spec  = cwd + argv + labels           what pressing an empty slot spawns
 bind  = slot -> session id            what is in it right now, or nothing
 ```
 
+### The address, pinned
+
+A slot address is written `page:row:col` and humans type it into shell
+scripts, so both halves of it are fixed here and nowhere else.
+
+```text
+tl.slot = "work:3:5"
+           │    │ └── col 1-8, 1 at the LEFT
+           │    └──── row 1-8, 1 at the TOP
+           └───────── page name, declared in slots.toml
+```
+
+**Row 1 is the top row.** The hardware numbers from the bottom
+([02-surface.md](02-surface.md#addressing)); the flip happens in the surface
+layer, once, and no other file knows about it. A label is a human artefact
+and reads top-down like everything else written on a screen.
+
+**A page is a name, not an index.** The order of the `[[page]]` entries in
+`slots.toml` maps names onto the eight top-row buttons — first entry is
+`CC91`, eighth is `CC98`. Names are in the label because `anchor ls` output
+should be readable without the config file open; the ordering is in the file
+because which button a page sits under is a layout preference, not an
+identity.
+
 Press an **unbound** slot → spawn its spec. Press a **bound** slot → jump.
 A session exiting unbinds the slot; the spec stays. The pad goes from green
 to dim grey and is ready to run the same thing again.
@@ -29,15 +53,39 @@ to dim grey and is ready to run the same thing again.
 **In anchor's labels.** Not in a sidecar database.
 
 ```text
-tl.slot   = "work:3:5"      page, row, col
-tl.spec   = "claude"        which spec spawned it, for respawn
+tl.slot       = "work:3:5"  page, row, col — the binding
+tl.spec       = "claude"    which spec spawned it, for respawn
+tl.mute       = "1"         this slot never raises attention
+tl.attention  = "1"         a hook declared it is waiting
 ```
 
+`tl.attention` is written by a `Notification` hook, never by a human — see
+[04-signals.md](04-signals.md#4-a-hook--it-told-us).
+
+Only the first is required: a session carrying `tl.slot` and nothing else is
+a fully functional slot. The other three are state that would otherwise have
+to live inside tallyd, and putting them here is what keeps
+[08-lifecycle.md](08-lifecycle.md)'s claim true — **tallyd holds nothing that
+cannot be rebuilt from a `list`.** A mute that evaporates when tallyd
+restarts is worse than no mute at all, because you muted that agent
+precisely because it would keep ringing.
+
 anchor already offers exactly this: arbitrary caller-owned key/value, never
-interpreted by the daemon, queryable by exact match
-(anchor `docs/02-model.md`, `docs/04-protocol.md`). teleport stores a
-Claude resume id the same way, for the same reason it is stated there: *it
-is written once and needs nothing kept in step.*
+interpreted by the daemon (anchor `docs/02-model.md`,
+`docs/04-protocol.md`). teleport stores a Claude resume id the same way, for
+the same reason it is stated there: *it is written once and needs nothing
+kept in step.*
+
+One consequence to be clear-eyed about. anchor's `list` filter is **exact
+match on a value**, AND across keys (anchor `src/store.rs:96-105`) — there
+is no "has this key" filter, and `tl.slot`'s value is different for every
+slot. So the reconcile tick lists **everything** and keeps the rows carrying
+a `tl.slot` key. That is a client-side filter over a few dozen sessions,
+which is nothing, and the alternative — a second constant-valued
+`tl.owner=tally` label purely to make the filter work, as teleport does with
+`teleport.owner` — would make `anchor create --label tl.slot=work:3:5`
+silently not light a pad. One label is the binding. Asking anchor for a
+presence filter is [not ours to ask](07-seams.md#what-we-must-not-ask-anchor-for).
 
 What that buys:
 
@@ -52,14 +100,20 @@ What that buys:
   purged, so "the thing that was in 3:5 and failed" is still addressable —
   which is exactly when you want to look at it.
 
-The cost is one `list` per reconcile tick, which is the call tallyd is making
-anyway.
+The cost is one unfiltered `list` per reconcile tick, which is the call
+tallyd is making anyway.
 
 **Specs live in a file**, not in labels: `~/.config/tally/slots.toml`.
 A spec describes a slot that may have never run, so there is no session to
 hang it on.
 
 ```toml
+# Order is the layout: first page is CC91, eighth is CC98.
+[[page]]
+name = "work"
+[[page]]
+name = "infra"
+
 [[slot]]
 at   = "work:3:5"
 spec = "claude"
@@ -71,10 +125,18 @@ argv = ["claude"]
 login_shell = true
 ```
 
-Two tables rather than one because a spec is reused across slots and a slot
-is a position. This is deliberately close to teleport's `presets.toml` —
-same job, same shape, and a later merge should be possible without a
-migration.
+Three tables, each answering a different question: `[[page]]` is *where the
+top row points*, `[[spec]]` is *what to run*, `[[slot]]` is *what is where*.
+A spec is reused across slots and a slot is a position, so they cannot be
+one table. The `[[slot]]` / `[[spec]]` pair is deliberately close to
+teleport's `presets.toml` — same job, same shape, and a later merge should
+be possible without a migration.
+
+Everything in this file is optional. A `slots.toml` that does not exist is
+eight unnamed pages (`1`–`8`) and no specs: the grid still lights up for
+anything a shell script labelled, and only *spawning from an empty pad*
+needs the file. That matters because it makes [M1](../ROADMAP.md#m1--the-grid-tells-the-truth)
+— which has no spawning in it — config-free.
 
 ## Pages
 
@@ -104,13 +166,19 @@ check.
          └──────┬───────────────────────────────┘
                 │ exit
                 ▼
-         ┌──────────────────────────────┐
-         │ exited — dim green or red    │  press: jump to the scrollback
-         └──────┬───────────────────────┘  kill-chord: purge
-                │ purge
-                ▼
-             back to bound (grey) or unbound (off)
+         ┌──────────────────────────────┐          anchord restarted
+         │ exited — dim green or red    │◀── ─ ─ ─ ─ ┐
+         └──────┬───────────────────────┘            │
+                │ purge                    ┌─────────┴────────┐
+                ▼                          │ lost — red flash │
+             back to bound (grey) or       └──────────────────┘
+             unbound (off)                  press: jump to the scrollback
 ```
+
+`lost` hangs off `running`, not off `exited`, and that is the whole reason
+it is a separate state: the process may well still be alive and orphaned.
+Only a purge gets a slot out of it. See
+[04-signals.md](04-signals.md#the-state-a-pad-renders).
 
 Note what is **not** here: no restart policy, no supervision, no "keep this
 slot full". That is systemd, and anchor's scope doc already refused it. A
@@ -120,9 +188,19 @@ slot that goes dark stays dark until a human presses it.
 
 - 8 pages × 64 = 512 slots. No pagination beyond that, ever.
 - One session per slot. A slot with two is a slot you cannot read.
-- Label values follow anchor's limits; `tl.slot` is a fixed-shape string, so
-  a malformed one is a bug in tallyd, not user input to validate.
-- A session carrying an `tl.slot` for a page/row/col out of range is
-  **ignored, not clamped**. It was written by something that disagrees with
-  us about the address space, and putting it somewhere arbitrary would be
-  worse than leaving it off the grid.
+- Label values follow anchor's limits — keys match `[a-z0-9_.-]{1,64}`,
+  values are ≤256 bytes, ≤32 per session (anchor `docs/02-model.md`). Every
+  `tl.` key is well inside all three, and `tl.slot`'s value is a handful of
+  bytes.
+- `tl.slot` is **user input and must be validated**, not trusted. A shell
+  script writes it; so does a person at a prompt. Anything that is not
+  `name:1-8:1-8` with a page name declared in `slots.toml` is **ignored, not
+  clamped and not repaired** — it was written by something that disagrees
+  with us about the address space, and putting it somewhere arbitrary is
+  worse than leaving it off the grid. An ignored row is logged once, at
+  `warn`, with the offending value; silently dropping it is how you spend an
+  afternoon wondering why a pad is dark.
+- Two sessions claiming the same slot: the **newest wins** and the older is
+  logged and left off the grid. anchor lists newest-first, so this costs
+  nothing to implement and is the behaviour you want — you just spawned the
+  new one.

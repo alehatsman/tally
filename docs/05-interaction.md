@@ -17,11 +17,43 @@ and it rules out more than a handful of states.
 | exited, code 0 | 23 dark green | static | done, nothing to do |
 | exited, non-zero | 5 red | static | done badly |
 | lost | 5 red | **flashing** vs 7 | anchord restarted under it |
-| focused | 3 white | static | this is the one on your screen |
 
 Three things move, and only three: working pulses slowly, attention flashes,
 lost flashes red. Everything else is still. **Movement is the alphabet** —
 if five states animate, none of them are urgent.
+
+A muted slot ([04](04-signals.md#the-state-a-pad-renders)) renders the state
+*underneath* its attention — green, pulsing or not. It does not get a colour
+of its own: a fourth thing on the grid competing for the eye is exactly what
+the paragraph above refuses, and you muted it to stop looking at it.
+
+**There is no "focused" colour.** An earlier draft had the slot you are
+looking at render white, and it is wrong twice: tallyd would have to poll
+tmux for the current window on every tick to know, and white would overwrite
+*working* on the one pad whose working state you most want to see. The
+window you are focused on is already in front of your face. The grid is for
+the sixty-three you cannot see.
+
+### The two rows that are not slots
+
+The top row and right column are controls, and they get their own two
+colours so the grid never has to be read for them:
+
+| button | resting | held / active |
+|---|---|---|
+| page, holds no session | off | — |
+| page, holds sessions | 37 turquoise, static | 3 white — the page you are on |
+| page, off-screen attention | 9 amber, **flashing** vs 37 | — |
+| action button (right column) | 45 blue, static | 3 white while held |
+
+Page buttons use turquoise and action buttons blue because they must not be
+mistakable for *any* slot state at a glance. Nothing in the slot palette is
+near either.
+
+An amber-flashing page button says **which** page wants you; the logo says
+**that some page does**. Both, deliberately: the logo is visible from
+further away and the page button is what you act on. See
+[03-model.md](03-model.md#pages).
 
 Both animations are the device's own
 ([02-surface.md](02-surface.md#colour)) — set once, no repaint loop. That is
@@ -37,7 +69,12 @@ does not.
 |---|---|
 | off | tallyd running, anchord reachable, nothing to say |
 | 7 dark red, static | **anchord unreachable** |
-| 9 amber, flashing | a session on another page needs an answer |
+| 9 amber, flashing vs 0 | a session on a page you are not looking at needs an answer |
+
+Unreachable wins. If anchord is down there is no session list, so there is
+nothing that could be known to want you, and a logo doing both at once would
+have to alternate — which is a third animation, on the one light whose whole
+job is being unambiguous.
 
 An unreachable anchord lighting the logo rather than clearing the grid is
 the point. anchor made the same distinction for teleport — *"an unreachable
@@ -67,13 +104,44 @@ kills a running agent, that matters more than the keystroke saving.
 | hold `CC39` + tap slot | purge (exited only) |
 | hold `CC89` + tap slot | mute — stop this slot raising attention |
 
+Mute toggles, and it is written to `tl.mute` on the session
+([03](03-model.md#where-the-binding-lives)) so it survives tallyd restarting
+and is visible to anything else reading anchor's labels. A mute dies with
+the session it was set on, which is right: it was that agent you stopped
+believing, not that pad.
+
 While an action button is held, the grid **recolours to show what the
 gesture would do**: holding kill dims every pad that is not killable and
 reds the ones that are. The surface answers "what happens if I press this"
 before you press it, which is the only honest way to put a destructive
 action on a button with no label.
 
-Releasing an action button without tapping is a no-op. Always.
+### The exact rules of a chord
+
+Four of these are one sentence each and all four are load-bearing, because
+between them they decide whether a fat finger kills an agent.
+
+1. **The modifier must be down before the slot goes down.** Tapping a slot
+   and *then* grabbing kill does nothing — the slot press already resolved
+   as a jump. Order is not a detail here; it is the difference between a
+   gesture and a race.
+2. **The action fires on slot press-down, not release.** A chord is
+   deliberate by construction (you are holding something with your other
+   hand), so there is nothing left for a release to confirm, and firing on
+   release would mean sliding off the pad silently cancels.
+3. **The 400ms hold-to-scroll does not apply while a modifier is held.** A
+   held slot under a held modifier is a kill that you are being slow about,
+   not a title request. One gesture per press, decided at press-down by
+   whether a modifier is down.
+4. **Releasing an action button without tapping is a no-op. Always.** This
+   is the escape hatch that justifies hold-then-tap over a prefix in the
+   first place: you can change your mind with the hand that is already
+   committed.
+
+Releasing the *slot* first, then the modifier, is the normal case and means
+nothing extra. Pressing a second slot while still holding the modifier fires
+the gesture again on that slot — the modifier is a mode for as long as it is
+down, not a one-shot.
 
 ### Kill is the one that needs the care
 
@@ -101,6 +169,20 @@ empty text message.
 This is the entire answer to "can the button show what it needs". It cannot
 — 64 pads are 64 pixels — but a held pad can spell out `edit tests/pty.rs?`
 at 7 pads/second, and that is enough to decide whether to jump now or later.
+
+**The device takes ASCII and a title is UTF-8.** So the title is sanitised
+on the way out, in the surface layer, by one rule: printable ASCII
+(`0x20`–`0x7E`) passes, everything else becomes a space, runs of spaces
+collapse, and the result is truncated to 64 characters — about nine seconds
+of scrolling, which is already longer than anyone holds a pad. Dropping the
+em-dashes and box-drawing characters an agent puts in its title is a better
+outcome than refusing to scroll, and a far better one than sending a byte
+above `0x7F` inside a SysEx, where the device will read it as `F7` and end
+the message early.
+
+A slot with no title scrolls nothing and the hold is a no-op — not an error,
+not a placeholder. The title is a signal that is allowed to be absent
+([04](04-signals.md#3-osc-title--what-it-is-doing)).
 
 ## What a press does *not* do
 

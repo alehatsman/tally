@@ -104,15 +104,19 @@ examples; **verify on hardware**):
 |---:|---|---|
 | 0 | off | unbound slot |
 | 1 | dark grey | bound, not running |
-| 3 | white | the focused slot |
+| 3 | white | the page you are on; an action button while held |
 | 5 | red | exited non-zero |
 | 7 | dark red | anchord unreachable (logo) |
 | 9 | amber | needs an answer |
 | 13 | yellow | starting |
 | 21 | green | running |
 | 23 | dark green | exited clean |
-| 37 | turquoise | reserved — page markers |
-| 45 | blue | reserved — action buttons |
+| 37 | turquoise | page button holding sessions |
+| 45 | blue | action buttons, resting |
+
+Every one of these is used by [05-interaction.md](05-interaction.md); there
+are no reserved-but-unused entries, because an entry nothing renders is an
+entry nobody will notice is wrong.
 
 ### The whole surface in one message
 
@@ -141,6 +145,47 @@ whatever was there. The SysEx form is the one to use — it is total, so the
 rendered frame is a pure function of the model, with no dependence on what
 was on the pad before.
 
+### The three worked examples, verbatim
+
+The manual gives three, and they are the only concrete bytes in this
+document that come from Novation rather than from our reading of it. They
+are therefore the goldens — [09-testing.md](09-testing.md#1-the-surface--pure-byte-functions)
+asserts the encoder reproduces each one exactly, which is knowable without
+hardware:
+
+```text
+90 0B 05                      note on, ch 1: pad 11 (bottom-left) static red
+91 51 13                      note on, ch 2: pad 81 (top-left) flashing yellow
+F0 00 20 29 02 0D 03 00 0B 0D  pad 11 static yellow …
+                    01 0B 0C 0D  … pad 11 flashing green/yellow …
+                    02 0B 0D F7  … pad 11 pulsing yellow
+```
+
+Two traps are visible in the first line alone. `0B` is **11 decimal written
+in hex** — the addressing scheme is decimal row-column and the wire is hex,
+so `pad(1,1)` is `0x0B` and not `0x11`. And it is the *bottom* row. Both are
+exactly the mistakes [09](09-testing.md) wants a test on, and both look
+plausible when wrong.
+
+### What a frame costs on the wire
+
+Worth knowing before [throughput](10-open-questions.md) is measured, because
+"81 colourspecs" is not one number:
+
+| frame | bytes |
+|---|---|
+| header + terminator | 7 |
+| static colourspec | 3 each |
+| pulsing colourspec | 3 each |
+| flashing colourspec | 4 each |
+| RGB colourspec | 5 each |
+
+So a full repaint of all 81 LEDs is **250 bytes** if everything is static
+and **331** in the pathological all-flashing case. A steady-state diff is a
+handful of pads and well under 50. These are small; the open question is not
+the size but whether `midir`'s macOS backend passes a ~300-byte SysEx
+through in one piece.
+
 ### Text scrolling
 
 ```text
@@ -150,6 +195,12 @@ F0 00 20 29 02 0D 07 F7                                   ← stop
 
 `<speed>` is pads/second; `40h`–`7Fh` is read as negative (scrolls
 left-to-right). `<colourspec>` here is `00 <palette>` or `01 <r> <g> <b>`.
+
+`<ascii...>` is **ASCII, and that is a hard constraint, not a preference**:
+any byte ≥ `0x80` inside a SysEx is read as a status byte and ends the
+message early. Titles are UTF-8, so they are sanitised before they get here
+— the rule is in [05-interaction.md](05-interaction.md#the-title-scroll),
+and it belongs to this layer to enforce.
 
 Two properties make this usable rather than a gimmick: the scroll **overlays
 without destroying** the lighting underneath (it comes back when the scroll

@@ -13,7 +13,7 @@ already readable from somewhere else:
 
 | `tally` wants | gets it from |
 |---|---|
-| what is on the grid | `anchor list --label`, same as tallyd |
+| what is on the grid | `anchor ls`, same as tallyd |
 | slot specs | `~/.config/tally/slots.toml` |
 | to rebind a slot | edit the file, or `anchor label` |
 | to jump to a slot | runs the same tmux commands tallyd would |
@@ -21,6 +21,14 @@ already readable from somewhere else:
 So `tally` is a second binary over the same two sources of truth, and tallyd
 notices config changes on its reconcile tick. **No IPC between our own two
 binaries.** Reject the socket.
+
+The rule generalises past our own binaries, and the test case is the
+attention hook. A `Notification` hook needs to tell tallyd that an agent is
+waiting, and the obvious shape is a FIFO — a path, a reader task, EOF and
+reopen handling, a line format. It does not get one: it writes
+`tl.attention` on the session, and tallyd reads it from the `list` it is
+already making ([04-signals.md](04-signals.md#4-a-hook--it-told-us)).
+**The thing that already has a socket gets to keep being the only one.**
 
 The cost is a bounded staleness — up to one tick before the grid reflects
 an edit — which is invisible at 2s and exactly the latency the rest of the
@@ -59,13 +67,28 @@ process that did it.* So does a Launchpad left in programmer mode.
 `SIGINT` is handled too, because unlike anchor's attach there is no
 foreground terminal here for `^C` to mean anything else.
 
-**It cannot be made perfect.** `SIGKILL` and a panic in the wrong place both
-leave the device in programmer mode. The mitigation is that **start-up is
-idempotent and total**: tallyd re-enters programmer mode, turns internal
-feedback off, and paints all 81 LEDs from the model, so whatever state the
-previous process died in is overwritten rather than inherited. Recovering on
-start is worth more than exiting cleanly, because only one of the two is
-reliable.
+### None of that happens in a signal handler
+
+Four MIDI writes and a port close are nowhere near async-signal-safe, and a
+handler that allocates is a handler that can deadlock on the allocator it
+interrupted. So the signal does one thing: **it wakes the main loop.** A
+`tokio::signal` stream raced against the reconcile tick, the shutdown
+sequence running on the normal path with the port it already owns, and the
+re-raise — `SIG_DFL` then `raise()` — as the last statement.
+
+The same reasoning puts a **panic hook** on the list, and the docs should
+not have called a panic unrecoverable without trying. A panic unwinds, so
+an RAII guard owning the port restores Live mode on the way out for free;
+`std::panic::set_hook` covers a panic on a thread that is not holding it.
+Neither helps with `panic = "abort"`, which is a reason not to set it.
+
+**It still cannot be made perfect.** `SIGKILL`, a double panic and a power
+cut all leave the device in programmer mode. The mitigation is that
+**start-up is idempotent and total**: tallyd re-enters programmer mode,
+turns internal feedback off, and paints all 81 LEDs from the model, so
+whatever state the previous process died in is overwritten rather than
+inherited. Recovering on start is worth more than exiting cleanly, because
+only one of the two is reliable.
 
 ## The reconcile loop
 
@@ -73,10 +96,24 @@ One loop, 2s, doing four things in order:
 
 ```text
 1. device?    poll midir ports; (re)connect, enter programmer mode, repaint
-2. anchord?   list sessions with an tl.slot label; else light the logo red
-3. watchers   start one per live session that lacks one
+2. anchord?   list all sessions, keep those with a tl.slot key, resolve
+              each against slots.toml; on error light the logo red and
+              leave the model alone
+3. watchers   start one per live slot session that lacks one; reap the
+              finished
 4. render     model -> frame, diff against last, emit one SysEx
 ```
+
+Step 2's error branch is the one to get right: **an unreachable anchord must
+not empty the model.** Lighting the logo and rendering a stale grid is
+honest — those sessions were there a moment ago and probably still are —
+where clearing it asserts they are gone. Same distinction anchor drew for
+teleport ([01-scope.md](01-scope.md#the-boundary-stated-plainly)).
+
+Watchers outlive a failed tick. They are attached to anchord directly, so a
+tick that could not `list` says nothing about whether a watcher is still
+receiving bytes; tearing them down on a failed poll would turn one slow
+response into a full re-attach storm.
 
 Two seconds is teleport's reconcile cadence for the same job
 (`anchor_watch.rs:31`). Presses are **not** on this loop — input is
@@ -94,6 +131,8 @@ things that appear without telling us.
 | tmux server gone | jump recreates it | spawn a view window on demand |
 | a watcher dropped | nothing | supervisor restarts it from `scanned_to` |
 | tallyd itself dies | lights freeze, then stale | next start repaints from anchor's labels |
+
+| config file edited | changes appear next tick | re-reads `slots.toml`; a file that fails to parse is logged and the **previous** config is kept |
 
 The row that matters is the last one. **tallyd holds no state that cannot be
 rebuilt from `anchor list` plus a config file**

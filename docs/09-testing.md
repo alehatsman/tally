@@ -18,16 +18,25 @@ diff(prev, next)                 -> one SysEx, only changed pads
 scroll("edit tests/pty.rs?", 37) -> Vec<u8>
 ```
 
-Golden tests against the hex in
-[02-surface.md](02-surface.md), lifted from the manual's own worked
-examples — the manual gives three (`90 0B 05`, `91 51 13`, and the
-three-colourspec SysEx) and each should appear verbatim as an assertion.
-If our encoder cannot reproduce the manual's examples byte for byte, it is
-wrong, and that is knowable without hardware.
+Golden tests against
+[the three worked examples](02-surface.md#the-three-worked-examples-verbatim),
+each appearing verbatim as an assertion. If our encoder cannot reproduce
+the manual's own examples byte for byte, it is wrong, and that is knowable
+without hardware.
 
-The bottom-left-is-row-1 flip gets its own test, because it is the one
-piece of arithmetic that is easy to get wrong in a way that still looks
-plausible on screen.
+Three more that are cheap and catch the mistakes that look plausible:
+
+- **The row flip.** `pad("x:1:1")` is the *top* left in the label and the
+  *bottom* left on the wire — logical row 1 encodes as `0x51`, logical row 8
+  as `0x0B`. One assertion per corner, four total, because a flip that is
+  wrong in one axis passes any test that only checks one corner.
+- **Decimal-in-hex.** `pad` of logical (8,1) is `0x0B`, not `0x11`. The
+  address space is decimal row-column and the wire is hex, and the two
+  coincide for columns 1–9 of row 0 and nowhere else.
+- **Title sanitisation.** An em-dash, a box-drawing character and a 200-byte
+  title in; printable ASCII ≤64 bytes out, and **no byte ≥ `0x80` ever
+  reaches a SysEx** — that one is a property test, not an example, because
+  it is the failure that truncates a message mid-flight.
 
 ### 2. The signals — a fake anchor
 
@@ -36,11 +45,36 @@ opinions in it. Feed recorded PTY byte streams through the deriver:
 
 - bell then 3s of silence → `NeedsAnswer`
 - bell then immediate output → **not** `NeedsAnswer` (it rang and kept going)
+- **bell with trailing bytes in the same chunk** → not `NeedsAnswer`. This
+  is the one the obvious implementation gets wrong
+  ([04](04-signals.md#stating-that-precisely-because-the-obvious-phrasing-is-unimplementable)),
+  and getting it wrong makes the pad amber after every bell forever.
+- **bell followed by `\r\n` and nothing else** → `NeedsAnswer`, and the
+  same holds whether the newline is in the bell's chunk or the next one.
+  The mirror image of the above: treat the newline before the prompt as "it
+  kept going" and the signal never fires at all. Two assertions, because
+  which chunk it lands in is a buffering accident and both have to pass.
+- bell, 3s, then output → back to `Working`, and the amber stops
+- `NeedsAnswer` held for 10 minutes of continued silence → still
+  `NeedsAnswer` (it is not a timer)
 - OSC title split across a chunk boundary → one title, not two fragments
 - 10MB of output with no bell → `Working` throughout, no allocation growth
 - exit frame → `Exited`, and the watcher ends
-- declared signal (hook) overrides a derived one, and surviving its source
-  going quiet
+- bell then exit → `Exited`, **not** `NeedsAnswer` — the precedence table
+  ([04](04-signals.md#precedence)) in one assertion
+- declared signal (`tl.attention`) overrides a derived one, and survives its
+  source going quiet
+- `tl.mute` present → renders `Working`/`Quiet`, never amber, from either
+  source
+
+And one set that is not about bytes at all, against a fake `list`:
+
+- a session with no `tl.slot` → no watcher, not on the grid
+- `tl.slot` naming an undeclared page, row 0, row 9, or `"garbage"` →
+  **ignored, logged once**, not clamped to an edge
+- two sessions on one slot → newest renders, older logged
+- an unreachable `list` → the model is unchanged and the logo goes red; the
+  grid does **not** empty
 
 teleport's fixtures are the starting point. Record a real Claude Code
 session once — `anchor logs <id>` gives the exact bytes — and that
@@ -64,9 +98,13 @@ milestone:
 [ ] SIGTERM tallyd: device returns to Live mode, Setup menu works again
 [ ] SIGKILL tallyd, restart: device recovers to the correct grid
 [ ] stop anchord: logo goes dark red, grid does not clear
+[ ] chord ordering: tap a slot, then grab kill -- nothing is killed
+[ ] hold kill, hold a slot for two seconds -- it kills, it does not scroll
+[ ] with no tmux server at all: tallyd starts, grid is correct, a jump
+    creates the server
 ```
 
-The last four are the ones that will actually fail.
+The last six are the ones that will actually fail.
 
 ## What a green suite does not prove
 
@@ -81,7 +119,15 @@ here harder:
 - **That the attention signal is *right*.** Precision and recall of
   `NeedsAnswer` against real sessions is the actual quality metric of this
   program, and it is measurable only by using it and counting the times it
-  was wrong. Keep that count.
+  was wrong.
+
+  Keep that count **in a file**, not in your head:
+  [`attention.jsonl`](04-signals.md#measuring-whether-any-of-this-works) is
+  one line per transition, which turns [M1's exit
+  criterion](../ROADMAP.md#m1--the-grid-tells-the-truth) from a feeling into
+  a division. A week of remembering produces an opinion; a week of
+  transitions produces a number, and the number is the one deciding whether
+  the rest of the roadmap is worth building.
 
 ## The honest gap today
 

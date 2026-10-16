@@ -18,11 +18,22 @@ Not a milestone of code. Plug the device in and make
 Scope: a throwaway script. Enumerate ports; device inquiry; enter programmer
 mode; reproduce the manual's three worked examples; dump every press.
 
-Exit:
+Exit — one line per
+[unverified assertion](docs/10-open-questions.md#unverified-against-hardware),
+because that list is what this milestone exists to delete:
+
 - the port-name substring that works on this macOS is written down
 - the palette table in `02-surface.md` is corrected against what the pads
   actually look like
+- **amber-flashing-against-0 reads as urgent from three metres** — if it
+  reads as "dim" instead, the attention design needs a different colour
+  before M1 commits to it
+- **a 331-byte all-flashing SysEx arrives intact**, at a 2s cadence plus
+  input bursts, through `midir`'s macOS backend — unchunked, or chunked and
+  reassembled by the device
 - a press round-trips in under ~10ms
+- **every press produces exactly one note-off on release**, including under
+  a chord — a stuck modifier on `CC19` turns the next tap into a kill
 - the device returns to Live mode and its Setup menu works
 
 Risk retired: that any of this document is fiction.
@@ -35,10 +46,14 @@ The product, minus every verb. **No spawning, no killing, no jumping.** It
 watches and it lights up.
 
 Scope: `midir` surface layer (encode, diff, one-SysEx frames, programmer
-mode in/out, signal-safe restore); anchor client ported from teleport;
-observer watchers per session; signal derivation per
-[04-signals.md](04-signals.md); slots from `tl.slot` labels; the colour
-language; the logo health light; the reconcile loop.
+mode in/out, restore on signal and on panic); anchor client ported from
+teleport; observer watchers per session; signal derivation per
+[04-signals.md](docs/04-signals.md); slots from `tl.slot` labels; the colour
+language; the logo health light; the reconcile loop; `attention.jsonl`.
+
+**No `slots.toml` either.** M1 has no spawning, so it needs no specs, and
+unnamed pages `1`–`8` are enough to address a slot. The config file arrives
+with the gesture that reads it, in M3.
 
 Exit:
 - sessions created from a shell — `anchor create --label tl.slot=…` — appear
@@ -46,9 +61,11 @@ Exit:
 - an agent that rings and goes quiet flashes amber, and stops when it is
   answered
 - unplug / replug, kill `tallyd`, stop `anchord`: every row of
-  [08-lifecycle.md](08-lifecycle.md#failure-modes-and-what-each-looks-like)
+  [08-lifecycle.md](docs/08-lifecycle.md#failure-modes-and-what-each-looks-like)
   behaves as written
-- **a week of real use, counting every time the amber was wrong**
+- **a week of real use, and a number out of `attention.jsonl`** — how many
+  ambers sent you to a session that did not want anything. Counted, not
+  remembered ([09](docs/09-testing.md#what-a-green-suite-does-not-prove)).
 
 Risk retired: the only one that matters. If the attention signal is not
 trustworthy, stop — the rest of the program is a worse fuzzy finder.
@@ -57,8 +74,9 @@ trustworthy, stop — the rest of the program is a worse fuzzy finder.
 
 ## M2 — Jump
 
-Scope: tmux view windows (`@tally_session`), the jump, raising the terminal,
-recreating a lost view, the tmux-server-missing check.
+Scope: tmux view windows (`@tally_session`) in a dedicated `tally:` session,
+the jump with an explicit client target, raising the terminal, recreating a
+lost view, starting a tmux server that is not there.
 
 Exit: press a lit pad from anywhere, end up in that agent's window. View
 windows close and reopen without the agent noticing.
@@ -67,8 +85,11 @@ windows close and reopen without the agent noticing.
 
 ## M3 — Spawn and the destructive chords
 
-Scope: `slots.toml`; spawning an unbound slot; hold-then-tap modifiers;
-kill / respawn / purge / mute; the highlight-while-held feedback.
+Scope: `slots.toml` (`[[page]]`, `[[spec]]`, `[[slot]]`); spawning an
+unbound slot; hold-then-tap modifiers per
+[05](docs/05-interaction.md#the-exact-rules-of-a-chord); kill / respawn /
+purge / mute, the last written to `tl.mute`; the highlight-while-held
+feedback.
 
 Exit: a full day driven from the grid without opening the config file. No
 accidental kills.
@@ -88,7 +109,9 @@ off-screen wants you.
 ## Later, unscheduled
 
 - `tally` CLI, if it turns out to be needed ([docs/10](docs/10-open-questions.md))
-- a `Notification` hook as the authoritative attention source
+- the `settings.json` line for the `Notification` hook — the `tl.attention`
+  label and the `Declared` variant ship in M1 either way
+  ([04](docs/04-signals.md#4-a-hook--it-told-us))
 - teleport URL as a secondary jump target
 - a second device — only with a second device in the room
 

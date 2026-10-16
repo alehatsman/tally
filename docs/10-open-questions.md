@@ -24,8 +24,14 @@ found no Novation device. Specifically unproven:
    untested, as is whether `midir`'s macOS backend chunks it.
 5. **Latency of a press.** It should be a few milliseconds. If it is not,
    hold-then-tap chording will feel wrong and the gesture design changes.
+6. **Whether a held chord reads as held.** Hold-then-tap assumes the device
+   reports note-off on release reliably and promptly. A missed note-off
+   leaves a modifier stuck down, which on `CC19` means the next innocent tap
+   kills an agent. [05](05-interaction.md#the-exact-rules-of-a-chord) is
+   written as if this works; it is the one gesture assumption that is
+   dangerous rather than merely wrong.
 
-M0 exists to close all five.
+M0 exists to close all six.
 
 ## Decisions still open
 
@@ -41,12 +47,43 @@ what this is — **a thing that tells you without being asked** — and a
 feature request that fights the name is usually a feature request that
 fights [01-scope.md](01-scope.md).
 
-### Where the attention signal comes from, in practice
+### ~~How tallyd finds its sessions~~ — settled
 
-[04-signals.md](04-signals.md) specifies both a heuristic floor and an
-authoritative hook, with the hook overriding. What is not decided is whether
-the hook ships in M1 or later — and that depends on how good bell+silence
-turns out to be in real use, which is unknown until it is used.
+anchor's `list` filter is exact-match-on-value and `tl.slot`'s value varies
+per slot, so there is no server-side query for "has a `tl.slot`". tallyd
+lists **everything** and filters client-side, rather than adding a constant
+`tl.owner` label purely to make a query work — because that label would
+become mandatory and `anchor create --label tl.slot=… -- claude` from a
+shell script would silently not light a pad.
+[03](03-model.md#where-the-binding-lives), [07](07-seams.md#anchor).
+
+### ~~The channel a `Notification` hook writes to~~ — settled
+
+A label, `tl.attention`, on the session — not a socket and not a FIFO. It
+needs no new protocol, it survives tallyd restarting, teleport can see it,
+and it costs one reconcile tick of latency against a 2s budget.
+[04](04-signals.md#4-a-hook--it-told-us), [08](08-lifecycle.md#one-process-no-socket).
+
+What is still open is **whether the hook ships in M1 or later** — that
+depends on how good bell+silence turns out to be in real use, which is
+unknown until it is used. The label and the `Source` variant exist either
+way; only the `settings.json` line is deferred.
+
+### ~~Whether a pad shows that you are looking at it~~ — settled, cut
+
+An earlier draft rendered the focused slot white. It is gone. tallyd would
+have to poll tmux every tick to know, and white overwrites *working* on the
+one pad whose working state matters most. The window you are focused on is
+in front of your face; the grid is for the sixty-three that are not.
+[05](05-interaction.md#the-colour-language).
+
+### ~~What a slot address means~~ — settled
+
+`page:row:col`, with **row 1 at the top**, col 1 at the left, and the page a
+*name* declared in order in `slots.toml` which maps it onto `CC91`–`CC98`.
+Humans type this string into shell scripts, so it reads the way text reads;
+the bottom-left-first flip lives in the surface layer and nowhere else.
+[03](03-model.md#the-address-pinned).
 
 ### Whether `tally` (the CLI) is needed at all
 
