@@ -9,12 +9,19 @@
 //! and a signal that the main loop turns into a normal return.
 
 use std::fmt;
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use std::time::{Duration, Instant};
 
 use midir::{MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
 
 use crate::surface::sysex;
 use crate::surface::{Button, Frame};
+
+/// How long to wait for a `SysEx` reply.
+///
+/// Generous on purpose: the first round-trip after connecting is cold
+/// (~345ms measured in M0) where a warm one is ~2ms.
+const REPLY_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// The substring that identifies the port we want.
 ///
@@ -101,7 +108,9 @@ impl Device {
     /// [`Error::NotFound`] if nothing matches, [`Error::NotALaunchpad`] if
     /// the device does not identify correctly, [`Error::Midi`] otherwise.
     pub fn open() -> Result<Self, Error> {
-        let input = MidiInput::new("tally").map_err(|e| Error::Midi(e.to_string()))?;
+        let mut input = MidiInput::new("tally").map_err(|e| Error::Midi(e.to_string()))?;
+        // We depend on SysEx for identity, mode readback and every frame.
+        input.ignore(midir::Ignore::None);
         let output = MidiOutput::new("tally").map_err(|e| Error::Midi(e.to_string()))?;
 
         // In and Out are named from the DEVICE's point of view, so our
@@ -157,17 +166,33 @@ impl Device {
 
     fn confirm_identity(&mut self) -> Result<(), Error> {
         self.send(&sysex::INQUIRY)?;
-        for _ in 0..20 {
-            match self
-                .events
-                .recv_timeout(std::time::Duration::from_millis(100))
-            {
-                Ok(Event::Reply(r)) if sysex::is_launchpad_mini_mk3(&r) => return Ok(()),
-                Ok(_) => {}
-                Err(_) => break,
-            }
+        if self.await_reply(sysex::is_launchpad_mini_mk3).is_some() {
+            return Ok(());
         }
         Err(Error::NotALaunchpad)
+    }
+
+    /// Wait up to [`REPLY_TIMEOUT`] for a `SysEx` reply matching `wanted`,
+    /// discarding any presses that arrive meanwhile.
+    ///
+    /// A timeout on one `recv` is **not** the end of waiting. The device's
+    /// first round-trip after connecting is cold -- ~345ms measured in M0,
+    /// against ~2ms warm -- so treating the first quiet interval as "no
+    /// device" rejects a perfectly healthy Launchpad on every start. That
+    /// is how this was first written, and running it is what found it.
+    fn await_reply(&self, wanted: impl Fn(&[u8]) -> bool) -> Option<Vec<u8>> {
+        let deadline = Instant::now() + REPLY_TIMEOUT;
+        loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return None;
+            }
+            match self.events.recv_timeout(left) {
+                Ok(Event::Reply(r)) if wanted(&r) => return Some(r),
+                Ok(_) => {}
+                Err(RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected) => return None,
+            }
+        }
     }
 
     /// Put `frame` on the device, sending only what changed.
@@ -218,21 +243,9 @@ impl Device {
         if self.send(&sysex::MODE_READBACK).is_err() {
             return false;
         }
-        for _ in 0..20 {
-            match self
-                .events
-                .recv_timeout(std::time::Duration::from_millis(100))
-            {
-                Ok(Event::Reply(r)) => {
-                    if let Some(programmer) = sysex::programmer_mode_from(&r) {
-                        return !programmer;
-                    }
-                }
-                Ok(Event::Press { .. }) => {}
-                Err(_) => break,
-            }
-        }
-        false
+        self.await_reply(|r| sysex::programmer_mode_from(r).is_some())
+            .and_then(|r| sysex::programmer_mode_from(&r))
+            .is_some_and(|programmer| !programmer)
     }
 
     fn send(&mut self, bytes: &[u8]) -> Result<(), Error> {

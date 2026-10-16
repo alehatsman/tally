@@ -1,25 +1,43 @@
 //! `tallyd` — the daemon that owns the Launchpad.
 //!
-//! Still a skeleton: there is no anchor client yet, so there are no
-//! sessions and the grid is dark. That is not a placeholder, it is the
-//! truthful rendering — an unreachable anchord lights the logo dark red
-//! rather than showing sixty-four dark pads, because "nothing is running"
-//! and "I cannot tell" are different facts (`docs/01-scope.md`).
+//! The reconcile loop: poll anchord, render, repeat. No watchers yet, so
+//! the live states are `Working`/`Quiet` from the session list alone and
+//! nothing goes amber — attention needs the output stream.
+//!
+//! An unreachable anchord lights the logo dark red and **leaves the grid
+//! alone**, because "nothing is running" and "I cannot tell" are different
+//! facts (`docs/01-scope.md`).
 
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::time::Duration;
 
+use std::collections::BTreeMap;
+
+use tally::anchor::Client;
 use tally::device::{Device, Event};
 use tally::lock::Lock;
-use tally::render::{self, Health};
-use tally::surface::{Button, Frame};
+use tally::model::{self, View};
+use tally::signal::Derived;
+use tally::slot::Pages;
+use tally::surface::Button;
 
 /// Set by the signal handler, read by the main loop. `0` means no signal.
 static SIGNALLED: AtomicI32 = AtomicI32::new(0);
 
-/// How often the loop reconciles. Teleport's cadence for the same job.
-const TICK: Duration = Duration::from_millis(100);
+/// How often the loop asks anchord for the session list. teleport's
+/// cadence for the same job; presses are not on this clock.
+const RECONCILE: Duration = Duration::from_secs(2);
+/// How often the loop wakes. Input is drained at this rate so a press
+/// feels immediate rather than waiting out a reconcile.
+const TICK: Duration = Duration::from_millis(16);
+
+/// Milliseconds since the unix epoch.
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
+}
 
 /// Async-signal-safe: a relaxed store and nothing else.
 ///
@@ -79,30 +97,72 @@ fn main() -> ExitCode {
     };
     eprintln!("tallyd: Launchpad ready; anchord is not wired yet, so the logo is red");
 
-    let mut frame = Frame::dark();
-    // No anchor client yet: we genuinely cannot tell what is running.
-    frame.set(
-        Button::Logo,
-        render::logo(Health {
-            anchord_reachable: false,
-            offscreen_attention: false,
-        }),
+    let anchor = Client::new(Client::default_path());
+    eprintln!(
+        "tallyd: Launchpad ready; anchord at {}",
+        anchor.path().display()
     );
-    if let Err(e) = device.repaint(&frame) {
-        eprintln!("tallyd: {e}");
-        return ExitCode::FAILURE;
-    }
+
+    let pages = Pages::default();
+    let derived: BTreeMap<String, Derived> = BTreeMap::new();
+    let mut sessions = Vec::new();
+    let mut reachable = false;
+    let mut current = 1u8;
+    let mut last_reconcile = Duration::ZERO;
+    let started = std::time::Instant::now();
 
     let signum = loop {
         let signum = SIGNALLED.load(Ordering::Relaxed);
         if signum != 0 {
             break signum;
         }
-        for event in device.poll() {
-            if let Event::Press { button, down } = event {
-                eprintln!("tallyd: {button:?} {}", if down { "down" } else { "up" });
+
+        // Presses are event-driven, not on the reconcile clock.
+        for event in device.poll().collect::<Vec<_>>() {
+            if let Event::Press {
+                button: Button::Page(n),
+                down: true,
+            } = event
+            {
+                current = n;
+                eprintln!("tallyd: page {n}");
             }
         }
+
+        let elapsed = started.elapsed();
+        if elapsed.saturating_sub(last_reconcile) >= RECONCILE || last_reconcile.is_zero() {
+            last_reconcile = elapsed;
+            match anchor.list() {
+                Ok(list) => {
+                    if !reachable {
+                        eprintln!("tallyd: anchord reachable, {} sessions", list.len());
+                    }
+                    sessions = list;
+                    reachable = true;
+                }
+                Err(e) => {
+                    if reachable {
+                        eprintln!("tallyd: {e}");
+                    }
+                    // Deliberately keep the previous `sessions`: the grid
+                    // freezes rather than lying about what is running.
+                    reachable = false;
+                }
+            }
+        }
+
+        let view = View {
+            pages: &pages,
+            current,
+            anchord_reachable: reachable,
+            now: now_ms(),
+        };
+        let frame = model::frame(&sessions, &derived, &view);
+        if let Err(e) = device.render(&frame) {
+            eprintln!("tallyd: {e}");
+            break libc::SIGTERM;
+        }
+
         std::thread::sleep(TICK);
     };
 

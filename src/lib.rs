@@ -8,6 +8,8 @@
 pub mod anchor;
 pub mod device;
 pub mod lock;
+pub mod model;
 pub mod render;
 pub mod signal;
+pub mod slot;
 pub mod surface;

@@ -65,6 +65,12 @@ being actively shaped by its first real consumer. Building a second client
 *now* is useful — a second consumer is how a boundary gets proven — and it
 means pinning a commit rather than a release, and reading anchor's diffs.
 
+**Pinned at `e1503c9`.** That is the commit carrying the label-write fix
+above; `49e2f9d` and earlier do not have it. Being the second consumer has
+already paid for itself twice in one day: tally found the filter semantics
+that shaped [03](03-model.md#where-the-binding-lives), and tally's use of
+labels is what made #12 worth fixing rather than noting.
+
 ## teleport
 
 teleport is **not** in the data path. It is a sibling client of anchor, and
@@ -105,26 +111,33 @@ labels.extend(set);                               // ... edit ...
 session.set_labels(labels.clone());               // lock retaken, whole map overwritten
 ```
 
-Nothing holds a lock across the read and the write, so two clients can
+Nothing held a lock across the read and the write, so two clients could
 interleave: A reads `{}`, B reads `{}`, A writes `{tl.slot}`, B writes
-`{teleport.owner}`, and `tl.slot` is gone. The loser does not lose its own
-key — it loses **the entire map**, which is why namespacing does not help.
-The stored-session path (`server.rs:501`) holds one guard throughout and is
-genuinely safe; it is the live path, the common one, that is not. Tracked
-as anchor#12.
+`{teleport.owner}`, and `tl.slot` is gone. The loser did not lose its own
+key — it lost **the entire map**, which is why namespacing could not help.
 
-Where that touches tally: **the attention hook and tallyd are two writers
-on one live session.** The hook sets `tl.attention`; tallyd removes it when
-output arrives ([04](04-signals.md#4-a-hook--it-told-us)). The window is
-microseconds and the damage is bounded — a pad stuck amber until the next
-output, or one missed amber — so this is a thing to know, not to design
-around.
+**Fixed in anchor `e1503c9` (#12)**: one guard across read, edit, write
+*and persist*. The persist being inside the guard is the part worth
+knowing, because the obvious half-fix looks right and is not — serialising
+the writers in memory while letting them reach the store in either order
+leaves the persisted map one key short, and a restart resurrects the loss.
 
-Specifically: **do not build a retry or a read-back here.** Both would add
-a second failure mode to cover a race whose real fix is one lock held
-across an existing read and write, and that fix belongs in anchor. A client
-papering over a daemon's lost update is how two codebases end up each
-assuming the other is careful.
+So the guarantee this section originally claimed is now real: **prefix-
+disjoint writes to the same live session keep every key, in memory and on
+disk.** No retry, no read-back, nothing to design around.
+
+The history stays here rather than being deleted as a scare, for two
+reasons. It is why the guarantee exists rather than being an accident. And
+it is **version-conditional** — anything running an anchord older than
+`e1503c9` does not have it, which matters because this is a pinned
+dependency ([below](#the-one-thing-to-watch)).
+
+Where it would have touched tally: **the attention hook and tallyd are two
+writers on one live session.** The hook sets `tl.attention`; tallyd removes
+it when output arrives ([04](04-signals.md#4-a-hook--it-told-us)). That
+being a real pair rather than a cross-client hypothetical is what moved the
+fix up anchor's queue — worth remembering that reporting a seam problem
+precisely is cheaper than working around it.
 
 The real overlap is the **watcher**: if teleport and tallyd are both running,
 every session has two observer attaches scanning the same bytes for the same

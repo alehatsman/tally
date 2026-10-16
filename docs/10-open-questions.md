@@ -116,8 +116,11 @@ the jump breaks first, not the grid.
 ## Risks worth watching
 
 **anchor is moving.** It is at M5, actively shaped by teleport
-([07-seams.md](07-seams.md#the-one-thing-to-watch)). Pin a commit; read the
-diffs.
+([07-seams.md](07-seams.md#the-one-thing-to-watch)). Pinned at `e1503c9`;
+read the diffs. Two anchor behaviours tally already depends on were
+discovered rather than documented — the exact-match-only `list` filter, and
+the label write that used to drop keys (#12, fixed) — so the diffs are not
+optional reading.
 
 **The OSC heuristics rest on Claude Code's undocumented output format.**
 teleport's own scanner says so in its doc comment. Degrade silently, never

@@ -95,6 +95,17 @@ pub struct Derived {
 }
 
 impl Derived {
+    /// A watcher that has just attached and seen nothing yet.
+    ///
+    /// `now` seeds the output clock, so a session does not read as idle
+    /// for the first 30 seconds purely because its watcher is young.
+    pub fn starting_at(now: i64) -> Self {
+        Self {
+            last_output_ms: now,
+            ..Self::default()
+        }
+    }
+
     /// Fold one chunk of output in.
     ///
     /// The subtlety that makes this a flag rather than a timestamp
