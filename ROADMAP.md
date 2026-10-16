@@ -84,8 +84,12 @@ Exit:
   pads when it returns — all three states watched on hardware against a
   private daemon held down deliberately
   ([08](docs/08-lifecycle.md#failure-modes-and-what-each-looks-like))
-- ⬜ unplug / replug the device, and kill `tallyd` mid-run: the remaining
-  rows of that table
+- ✅ unplug / replug the device: the grid returns by itself, confirmed on
+  hardware. Found that a failed write is *not* how a disconnect shows up —
+  `CoreMIDI` sends into a void without error — so liveness is a readback
+  heartbeat, which also catches the replugged device coming back in Live
+  mode
+- ⬜ kill `tallyd` mid-run and restart: the last row of that table
 - ⬜ **a week of real use, and a number out of `attention.jsonl`** — how
   many ambers sent you to a session that did not want anything. Counted,
   not remembered ([09](docs/09-testing.md#what-a-green-suite-does-not-prove)).

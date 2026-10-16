@@ -55,7 +55,9 @@ A launchd user agent, declared in `~/dotfiles` and applied with provision
 that exists in anchor because anchor is shipped to strangers.
 
 `tallyd` must tolerate being started before anything else exists — no device,
-no anchord, no tmux server. It reconciles into a working state when they
+no anchord, no tmux server. A missing Launchpad is not a startup failure:
+the thing it watches is anchord, which it can do blind, and the device is
+picked up on a later tick whenever it appears. It reconciles into a working state when they
 appear, and says which one is missing while they do not.
 
 ## Shutdown is not optional
@@ -160,7 +162,8 @@ things that appear without telling us.
 
 | what broke | what you see | what tallyd does |
 |---|---|---|
-| Launchpad unplugged | nothing (it is unplugged) | keeps reconciling, repaints on return |
+| Launchpad unplugged | nothing (it is unplugged) | heartbeat goes unanswered, device dropped; anchord polling continues ✅ seen |
+| Launchpad replugged | the whole grid returns by itself | reconnects, re-enters programmer mode, **repaints totally** ✅ seen |
 | port held by another app | grid flickers between two opinions | nothing — CoreMIDI reports no conflict, so there is nothing to detect. Notice and quit the other app |
 | a second `tallyd` started | it exits immediately | the `flock` is held; the running instance is undisturbed |
 | anchord down | logo dark red, grid frozen | retries; grid is **not** cleared ✅ seen |

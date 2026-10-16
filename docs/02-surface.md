@@ -367,10 +367,26 @@ Stated now so nobody designs around it later:
   whole grid or not at all.
 - **No pressure, no velocity in.** The Mini is unweighted — press is press.
   (The Launchpad X has velocity; this does not.)
-- **No hot-plug notification.** `midir` enumerates ports; it does not tell
-  you when one appears. Poll the port list. Two seconds is the cadence
-  teleport's supervisor uses for the same kind of reconcile, and there is no
-  reason to be cleverer.
+- **No hot-plug notification, in either direction.** `midir` enumerates
+  ports; it does not tell you when one appears. Poll. Two seconds is the
+  cadence teleport's supervisor uses for the same kind of reconcile, and
+  there is no reason to be cleverer.
+
+  **And a failed write is not how you learn it went away.** ❌ An earlier
+  draft assumed the send would error once the device was unplugged. It does
+  not: `CoreMIDI` accepts sends to a removed endpoint without complaint, so
+  `render` keeps returning `Ok` into a void while the host goes on diffing
+  against a frame nothing has. Observed — the Launchpad was unplugged and
+  replugged, came back dark, and `tallyd` never noticed.
+
+  The only signal is **absence of a reply**. A mode readback every two
+  seconds costs ~2 ms and a handful of bytes
+  ([above](#other-messages-worth-knowing)); three missed probes means the
+  device is gone. The reply doubles as a mode check, which matters because
+  **a replugged Launchpad comes back in Live mode** — so a host that kept
+  its connection has to notice it is no longer in programmer mode and
+  re-enter it, or the grid stays dark forever with nothing in the model
+  having changed.
 - **Latency is not a problem.** ✅ A host→device→host round trip measures
   **~1.9 ms**. The ~10 ms budget that hold-then-tap chording needs has a 5×
   margin, so the gesture design in
