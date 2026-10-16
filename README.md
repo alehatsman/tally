@@ -27,12 +27,19 @@ in.
 
 ## Status
 
-**Research and scaffolding. No implementation.** The hardware protocol is
-read out of Novation's programmer's reference manual and written down in
-[docs/02-surface.md](docs/02-surface.md); **none of it has been verified
-against a physical device on this machine** — the Launchpad was not plugged
-in when these notes were written. Treat every hex byte here as "the manual
-says", not "this works".
+**Design and a verified hardware surface. No implementation.** The protocol
+in [docs/02-surface.md](docs/02-surface.md) was read out of Novation's
+programmer's reference manual and then **checked against a real Launchpad
+Mini MK3 on 2026-10-16** ([M0](ROADMAP.md#m0--prove-the-manual)).
+
+The manual turned out to be accurate: port names, addressing, device
+inquiry and all three worked examples came back exactly as written, a
+press round-trips in ~1.9 ms, and a full-surface repaint arrives in one
+SysEx. The two claims that were wrong were ours, not Novation's — the port
+is **not** exclusive on macOS, and the byte budget was off by one per
+frame. What is still unproven is listed in
+[docs/10](docs/10-open-questions.md#verified-against-hardware-2026-10-16);
+it is now a short list rather than the whole document.
 
 The design is in [docs/](docs/). The sequencing is in
 [ROADMAP.md](ROADMAP.md). M0 is the first milestone that writes code.

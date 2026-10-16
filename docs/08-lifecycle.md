@@ -2,8 +2,22 @@
 
 ## One process, no socket
 
-`tallyd` owns the MIDI port. That is exclusive — one process, one device —
-so there is a daemon whether we want one or not.
+`tallyd` owns the MIDI port and the model built from `anchor list`, so
+there is a daemon whether we want one or not.
+
+**The OS will not enforce that ownership.** An earlier draft said the port
+was exclusive; on macOS it is not — CoreMIDI multiplexes, two processes can
+drive the device simultaneously, and neither is told
+([02-surface.md](02-surface.md#the-port-is-not-exclusive-and-we-assumed-it-was)).
+So `tallyd` takes a **single-instance lock** itself: an exclusive `flock` on
+`$XDG_RUNTIME_DIR/tally.lock`, held for the process lifetime, acquired
+*before* the port is opened. A second instance finds it held, says so, and
+exits — rather than silently fighting the first one for 81 LEDs every two
+seconds.
+
+A lock file is not a control socket and the distinction matters: nothing is
+read from it, nothing is written to it, and no protocol crosses it. It is a
+mutex with a path.
 
 What there is **not** is a control socket for it. The obvious design is
 `tallyd` holding state and an `tally` CLI querying it over a second unix socket,
@@ -54,9 +68,25 @@ that has lost a feature with no obvious way to get it back.
 So shutdown must:
 
 1. stop any running text scroll
-2. clear the surface
-3. send Live mode — `F0 00 20 29 02 0D 0E 00 F7`
+2. send Live mode — `F0 00 20 29 02 0D 0E 00 F7`
+3. **read the mode back** — `F0 00 20 29 02 0D 0E F7` — and log loudly if
+   the reply is not `00`
 4. flush, then close the port
+
+**Do not clear the surface on the way out.** An earlier draft had a clear
+between steps 1 and 2, and it is suspected of being actively harmful:
+returning to Live mode does not make the device repaint everything it owns,
+so blanking all 81 LEDs first can leave Live mode looking wrong — dark
+where the device's own mode buttons should be. Live mode's lighting is the
+device's business; the correct handover is to stop touching it. *(Observed
+once as "it restored, kind of"; the clear has been removed and the
+replacement is pending a confirming look.)*
+
+Step 3 is the one that is easy to skip and worth keeping. The restore is a
+write with no acknowledgement, so a clean exit proves nothing about whether
+the device received it; the readback costs ~1.9 ms
+([02](02-surface.md#other-messages-worth-knowing)) and turns "we sent it"
+into "it happened".
 
 and it must happen on **SIGTERM and SIGHUP**, not only on a clean exit —
 then re-raise, so the process still looks killed to whatever was waiting on
@@ -125,7 +155,8 @@ things that appear without telling us.
 | what broke | what you see | what tallyd does |
 |---|---|---|
 | Launchpad unplugged | nothing (it is unplugged) | keeps reconciling, repaints on return |
-| port held by another app | — | logs it, retries; does **not** fight for it |
+| port held by another app | grid flickers between two opinions | nothing — CoreMIDI reports no conflict, so there is nothing to detect. Notice and quit the other app |
+| a second `tallyd` started | it exits immediately | the `flock` is held; the running instance is undisturbed |
 | anchord down | logo dark red, grid frozen | retries; grid is **not** cleared |
 | anchord restarted | slots go red-flashing (`lost`) | truthful — the sessions really are lost |
 | tmux server gone | jump recreates it | spawn a view window on demand |

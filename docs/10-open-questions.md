@@ -3,35 +3,43 @@
 What these documents assert but have not proven, and the decisions still
 open. Read this before M1.
 
-## Unverified against hardware
+## Verified against hardware (2026-10-16)
 
-Everything in [02-surface.md](02-surface.md). The Launchpad was not plugged
-into this machine when it was written — `system_profiler SPUSBDataType`
-found no Novation device. Specifically unproven:
+The device was connected and [M0](../ROADMAP.md#m0--prove-the-manual) run
+against it. Firmware `00 03 04 01`. **The manual was accurate**; the two
+things that proved wrong were both ours.
 
-1. **The exact CoreMIDI port name on macOS.** The manual names the
-   interfaces `LPMiniMK3 DAW In/Out` and `LPMiniMK3 MIDI In/Out`; what
-   `midir` actually reports on macOS 15 is a different question, and the
-   substring we match on depends on the answer.
-2. **Which palette entry is which colour.** The entries in the colour table
-   are read off a screenshot of the manual's palette grid plus its three
-   worked examples. They are probably right. "Probably" is not a thing to
-   build a colour language on.
-3. **Whether flashing against colour 0 reads as "blink"** or as something
-   dimmer and less urgent. The whole attention design rests on it.
-4. **SysEx throughput.** 81 colourspecs is ~270 bytes; whether the device
-   keeps up with one such message every 2s plus bursts on input is
-   untested, as is whether `midir`'s macOS backend chunks it.
-5. **Latency of a press.** It should be a few milliseconds. If it is not,
-   hold-then-tap chording will feel wrong and the gesture design changes.
-6. **Whether a held chord reads as held.** Hold-then-tap assumes the device
-   reports note-off on release reliably and promptly. A missed note-off
-   leaves a modifier stuck down, which on `CC19` means the next innocent tap
-   kills an agent. [05](05-interaction.md#the-exact-rules-of-a-chord) is
-   written as if this works; it is the one gesture assumption that is
-   dangerous rather than merely wrong.
+| # | question | outcome |
+|---:|---|---|
+| 1 | CoreMIDI port name on macOS | ✅ exactly as the manual names them. `LPMiniMK3 MIDI` matches under both `kMIDIPropertyName` and `kMIDIPropertyDisplayName` |
+| 2 | which palette entry is which | ◐ **9 = amber** and **21 = green** confirmed; eight entries still unchecked |
+| 3 | does flashing-against-0 read as "blink" | ✅ reads as urgent, by eye |
+| 4 | SysEx throughput | ✅ a full-surface frame arrives and renders in one message; no chunking, no desync after 100 worst-case frames |
+| 5 | latency of a press | ✅ ~1.9 ms round trip — 5× margin on the 10 ms the chording needs |
+| 6 | note-off on release, incl. under chord | ⬜ **still open** — needs fingers on the device |
 
-M0 exists to close all six.
+Two corrections went the other way, and both were errors in these documents
+rather than in the manual:
+
+- **The port is not exclusive on macOS.** CoreMIDI multiplexes; two
+  processes drove the device at once and neither was told. `tallyd` needs
+  its own single-instance lock.
+  [02](02-surface.md#the-port-is-not-exclusive-and-we-assumed-it-was),
+  [08](08-lifecycle.md#one-process-no-socket).
+- **SysEx overhead is 8 bytes, not 7.** A full 81-LED frame is 251 B static
+  / 332 B all-flashing, not 250 / 331.
+
+### Still open
+
+- **Note-off on release** (#6 above). The dangerous one: a modifier stuck
+  down turns the next ordinary tap into a kill.
+- **Eight palette entries** — 1, 3, 5, 7, 13, 23, 37, 45.
+- **Whether dropping the clear fixes the Live-mode handover.** Restoring
+  used to clear all 81 LEDs before sending Live mode, and that left the
+  device looking wrong ("it restored, kind of"). The clear has been removed
+  on the theory that Live mode does not repaint what we blanked; the
+  replacement has not been looked at yet.
+  [08](08-lifecycle.md#shutdown-is-not-optional).
 
 ## Decisions still open
 

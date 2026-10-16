@@ -19,7 +19,7 @@ Scope: a throwaway script. Enumerate ports; device inquiry; enter programmer
 mode; reproduce the manual's three worked examples; dump every press.
 
 Exit — one line per
-[unverified assertion](docs/10-open-questions.md#unverified-against-hardware),
+[unverified assertion](docs/10-open-questions.md#verified-against-hardware-2026-10-16),
 because that list is what this milestone exists to delete:
 
 - the port-name substring that works on this macOS is written down
@@ -36,7 +36,21 @@ because that list is what this milestone exists to delete:
   a chord — a stuck modifier on `CC19` turns the next tap into a kill
 - the device returns to Live mode and its Setup menu works
 
-Risk retired: that any of this document is fiction.
+> Run 2026-10-16 against the real device. **The manual is accurate** — port
+> names, addressing, inquiry and the worked examples all came back as
+> written. Round trip ~1.9 ms; a full-surface SysEx arrives and renders in
+> one message; amber-flashing-against-0 reads as urgent; Live-mode restore
+> on SIGTERM verified by readback rather than assumed.
+>
+> Two of our own claims were wrong: the port is **not** exclusive on macOS
+> (CoreMIDI multiplexes — `tallyd` needs its own lock), and the SysEx byte
+> budget was off by one per frame.
+>
+> Open: note-off-on-release under a chord, eight palette entries, and
+> whether dropping the clear fixes the Live-mode handover.
+> [docs/10](docs/10-open-questions.md#verified-against-hardware-2026-10-16).
+
+Risk retired: that any of this document is fiction. It is not.
 
 ---
 

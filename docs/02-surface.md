@@ -1,9 +1,16 @@
 # 02 — The surface
 
-Everything here is read out of Novation's *Launchpad Mini [MK3]
-Programmer's Reference Manual*. **None of it is verified against hardware
-yet** — see [10-open-questions.md](10-open-questions.md). The manual is the
-only contract; the device was not plugged into this machine.
+Read out of Novation's *Launchpad Mini [MK3] Programmer's Reference
+Manual*, then **checked against the device on 2026-10-16** (firmware
+`00 03 04 01`). Claims below are marked ✅ where hardware confirmed them and
+⚠️ where they are still the manual's word only — see
+[10-open-questions.md](10-open-questions.md) for what is left.
+
+The headline from that session: **the manual is accurate.** Port names,
+addressing, the inquiry response and the worked examples all came back
+exactly as written. The two things that turned out wrong were both *ours* —
+an arithmetic slip in the byte budget, and an assumption about port
+exclusivity that does not hold on macOS.
 
 ## Two ports, and which one we want
 
@@ -14,6 +21,8 @@ The device exposes **two** USB-MIDI interfaces:
 | `LPMiniMK3 DAW In/Out` | Session mode, faders — the DAW surface |
 | `LPMiniMK3 MIDI In/Out` | Custom modes **and Programmer mode** |
 
+✅ Confirmed. CoreMIDI on macOS 15 reports exactly these names.
+
 We want the **MIDI** interface and Programmer mode. DAW mode exists so a DAW
 can own the Session layout while leaving the MIDI port free for playing
 notes; we have no notes to play, and Programmer mode gives us the whole
@@ -23,6 +32,32 @@ Port names differ per platform and per OS release. **Match on a substring,
 never on an exact string**, and never on index: `LPMiniMK3 MIDI` is the
 stable part. Linux decorates it with an ALSA client number, Windows with
 nothing, macOS CoreMIDI with the device name.
+
+✅ Confirmed, and the substring survives a trap worth naming. CoreMIDI
+exposes *two* names per endpoint and `midir` may report either:
+
+```text
+kMIDIPropertyName          'LPMiniMK3 MIDI Out'
+kMIDIPropertyDisplayName   'Launchpad Mini MK3 LPMiniMK3 MIDI Out'
+```
+
+`LPMiniMK3 MIDI` is a substring of **both**, so the rule above holds
+whichever one you get. Matching `Launchpad Mini MK3` instead would have
+grabbed the DAW endpoints too.
+
+### In and Out are the device's, not yours
+
+The single easiest way to open the wrong port:
+
+```text
+our INPUT   reads  the SOURCE       named 'LPMiniMK3 MIDI Out'
+our OUTPUT  writes the DESTINATION  named 'LPMiniMK3 MIDI In'
+```
+
+The names are written from the **device's** point of view, so they are
+backwards from the host's. A surface layer that matches `"MIDI In"` for its
+input port opens a destination it can never read from, and the failure is
+silent — the port opens, and no press ever arrives.
 
 ## Entering and leaving Programmer mode
 
@@ -68,7 +103,8 @@ row-column**:
                                               ↑ right column
 ```
 
-`index = row*10 + col`, **row 1 at the bottom**, col 1 at the left. The 8×8
+`index = row*10 + col`, **row 1 at the bottom**, col 1 at the left.
+✅ Confirmed: `90 0B 05` lit the bottom-left pad, by eye. The 8×8
 grid sends Note On/Off; the top row and right column send Control Change.
 For *lighting*, both accept either message type — the table says what the
 device **sends when pressed**, not what it accepts.
@@ -97,22 +133,29 @@ and stops thinking about it — no timer, no repaint loop, no drift. This is
 the single biggest reason to prefer the palette channels over RGB for
 anything that moves. See [05-interaction.md](05-interaction.md).
 
-Palette entries this design actually uses (from the manual's table and
-examples; **verify on hardware**):
+Palette entries this design actually uses:
 
 | entry | colour | used for |
 |---:|---|---|
-| 0 | off | unbound slot |
-| 1 | dark grey | bound, not running |
-| 3 | white | the page you are on; an action button while held |
-| 5 | red | exited non-zero |
-| 7 | dark red | anchord unreachable (logo) |
-| 9 | amber | needs an answer |
-| 13 | yellow | starting |
-| 21 | green | running |
-| 23 | dark green | exited clean |
-| 37 | turquoise | page button holding sessions |
-| 45 | blue | action buttons, resting |
+| entry | colour | used for | verified |
+|---:|---|---|---|
+| 0 | off | unbound slot | ✅ |
+| 1 | dark grey | bound, not running | ⚠️ |
+| 3 | white | the page you are on; an action button while held | ⚠️ |
+| 5 | red | exited non-zero | ⚠️ |
+| 7 | dark red | anchord unreachable (logo) | ⚠️ |
+| 9 | **amber** | **needs an answer** | ✅ reads as orange/amber |
+| 13 | yellow | starting | ⚠️ |
+| 21 | **green** | **running** | ✅ |
+| 23 | dark green | exited clean | ⚠️ |
+| 37 | turquoise | page button holding sessions | ⚠️ |
+| 45 | blue | action buttons, resting | ⚠️ |
+
+The two that carry the most weight are the two that are confirmed. **Amber
+flashing against 0 reads as urgent from across the room** — checked by
+looking, which is the only way it can be checked
+([09-testing.md](09-testing.md#what-a-green-suite-does-not-prove)) — and
+that is the single perceptual claim the whole attention design rests on.
 
 Every one of these is used by [05-interaction.md](05-interaction.md); there
 are no reserved-but-unused entries, because an entry nothing renders is an
@@ -174,17 +217,26 @@ Worth knowing before [throughput](10-open-questions.md) is measured, because
 
 | frame | bytes |
 |---|---|
-| header + terminator | 7 |
+| header + command + terminator | 8 |
 | static colourspec | 3 each |
 | pulsing colourspec | 3 each |
 | flashing colourspec | 4 each |
 | RGB colourspec | 5 each |
 
-So a full repaint of all 81 LEDs is **250 bytes** if everything is static
-and **331** in the pathological all-flashing case. A steady-state diff is a
-handful of pads and well under 50. These are small; the open question is not
-the size but whether `midir`'s macOS backend passes a ~300-byte SysEx
-through in one piece.
+So a full repaint of all 81 LEDs is **251 bytes** static and **332** in the
+pathological all-flashing case. A steady-state diff is a handful of pads and
+well under 50.
+
+✅ Both the size and the delivery are confirmed. A 248-byte frame addressing
+all 80 non-logo pads lit **every one of them**, in one message, with the
+logo correctly untouched. `MIDISend` never blocked and never refused the
+328-byte all-flashing form, and the device answered a mode readback after
+100 back-to-back worst-case frames — so it neither chokes nor desyncs.
+
+One measurement from that session is worth **not** trusting: a 100-frame
+burst clocked at ~60 MB/s, which is impossible over USB MIDI. That number is
+the host enqueueing into CoreMIDI and returning, not the device receiving.
+The thing that actually closed this question was looking at the grid.
 
 ### Text scrolling
 
@@ -215,7 +267,24 @@ brightness     F0 00 20 29 02 0D 08 <0-127> F7
 LED sleep      F0 00 20 29 02 0D 09 <0=off,1=on> F7
 LED feedback   F0 00 20 29 02 0D 0A <internal> <external> F7
 device inquiry F0 7E 7F 06 01 F7   →  F0 7E 00 06 02 00 20 29 13 01 00 00 <v v v v> F7
+mode readback  F0 00 20 29 02 0D 0E F7  →  F0 00 20 29 02 0D 0E <0=live,1=prog> F7
 ```
+
+✅ The inquiry came back byte-exact:
+
+```text
+F0 7E 00 06 02 00 20 29 13 01 00 00 00 03 04 01 F7
+                └Novation  │  └application, not bootloader
+                           └Launchpad Mini MK3        └firmware
+```
+
+The **mode readback** is listed here because it turned out to be the only
+way to prove the Live-mode restore actually happened, rather than assuming
+it from a clean exit. A restore that fails silently is exactly the failure
+[08-lifecycle.md](08-lifecycle.md#shutdown-is-not-optional) is written to
+prevent, so the thing that verifies it belongs in the loop, not in a
+comment. Round-trip for either query is **~1.9 ms** (1.50–2.07 over 7
+warm samples), so this is cheap enough to do on every shutdown.
 
 **Turn internal feedback off.** By default the device lights a pad when you
 press it, which fights the renderer: a press would briefly show the hardware's
@@ -238,6 +307,39 @@ the bootloader, which is a different device from our point of view).
 Three hundred lines of hardware code we own beats a crate that abstracts a
 product line. This is the same call anchor made about containerd.
 
+## The port is not exclusive, and we assumed it was
+
+An earlier draft of this document asserted *"Exclusive access. One process
+owns the port. If Ableton has it, we do not."* ❌ **That is false on
+macOS.** Two processes opened the same endpoint and both talked to the
+device; the second got a correct mode readback while the first was holding
+the port and driving LEDs.
+
+CoreMIDI multiplexes. It does not hand out exclusive ownership the way ALSA
+rawmidi or WinMM do, and it reports no error to either party. So the
+failure mode this document expected — *"port is busy, report it"* — never
+arrives.
+
+What that actually costs us:
+
+- **Two `tallyd` instances would fight**, each repainting 81 LEDs over the
+  other every tick, with nothing in either process noticing. There is no OS
+  error to log and no `EBUSY` to retry.
+- The mitigation is **ours, not the kernel's**: a single-instance lock, held
+  for the life of the process. See
+  [08-lifecycle.md](08-lifecycle.md#one-process-no-socket).
+- A *different* app holding the device — Ableton, Novation Components — is
+  not excluded either. Both will drive it, and the grid will flicker between
+  two opinions. That is a real-use hazard rather than a startup error, so it
+  is a thing to notice and quit, not a thing to detect.
+
+Worth stating plainly because it inverts the design instinct: the port
+needing no arbitration was the reason this document said a daemon was
+unavoidable *"whether we want one or not"*
+([08-lifecycle.md](08-lifecycle.md#one-process-no-socket)). The daemon is
+still unavoidable, but now for the ordinary reason — something has to hold
+the state — rather than because the OS enforces it.
+
 ## What the hardware cannot do
 
 Stated now so nobody designs around it later:
@@ -250,8 +352,10 @@ Stated now so nobody designs around it later:
   you when one appears. Poll the port list. Two seconds is the cadence
   teleport's supervisor uses for the same kind of reconcile, and there is no
   reason to be cleverer.
-- **Exclusive access.** One process owns the port. If Ableton has it, we do
-  not, and the failure must be reported rather than retried silently.
+- **Latency is not a problem.** ✅ A host→device→host round trip measures
+  **~1.9 ms**. The ~10 ms budget that hold-then-tap chording needs has a 5×
+  margin, so the gesture design in
+  [05-interaction.md](05-interaction.md#the-exact-rules-of-a-chord) stands.
 - **Colour is approximate.** The palette is 128 fixed entries chosen for
   music software. RGB mode exists but costs the free animation. Pick the
   palette, and pick colours that differ in *brightness* as well as hue —
