@@ -93,13 +93,38 @@ ever writes the other's prefix**, including "helpfully" copying one across.
 Write that down in the code as a constant with the prefix in it, not as a
 string literal at each call site.
 
-Concurrent writes are not a hazard, and it is worth saying why rather than
-hoping. anchor's `label` op takes `set` and `remove` **per key**
-(`anchor/docs/04-protocol.md`) — it is not a replace-the-whole-map
-operation, so two clients writing different keys on the same session at the
-same moment cannot lose each other's write. There is no read-modify-write
-anywhere in tally's use of labels, which is the only shape that would need
-one.
+**Prefix discipline is necessary and not sufficient.** An earlier draft of
+this section claimed concurrent writes were safe because `label` takes
+`set` and `remove` per key rather than replacing the map. That is true of
+the *interface* and false of the implementation on a live session
+(`anchor/src/session/manager.rs:308`):
+
+```rust
+let mut labels = session.labels.lock().clone();   // lock released here
+labels.extend(set);                               // ... edit ...
+session.set_labels(labels.clone());               // lock retaken, whole map overwritten
+```
+
+Nothing holds a lock across the read and the write, so two clients can
+interleave: A reads `{}`, B reads `{}`, A writes `{tl.slot}`, B writes
+`{teleport.owner}`, and `tl.slot` is gone. The loser does not lose its own
+key — it loses **the entire map**, which is why namespacing does not help.
+The stored-session path (`server.rs:501`) holds one guard throughout and is
+genuinely safe; it is the live path, the common one, that is not. Tracked
+as anchor#12.
+
+Where that touches tally: **the attention hook and tallyd are two writers
+on one live session.** The hook sets `tl.attention`; tallyd removes it when
+output arrives ([04](04-signals.md#4-a-hook--it-told-us)). The window is
+microseconds and the damage is bounded — a pad stuck amber until the next
+output, or one missed amber — so this is a thing to know, not to design
+around.
+
+Specifically: **do not build a retry or a read-back here.** Both would add
+a second failure mode to cover a race whose real fix is one lock held
+across an existing read and write, and that fix belongs in anchor. A client
+papering over a daemon's lost update is how two codebases end up each
+assuming the other is careful.
 
 The real overlap is the **watcher**: if teleport and tallyd are both running,
 every session has two observer attaches scanning the same bytes for the same
