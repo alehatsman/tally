@@ -99,12 +99,28 @@ Humans type this string into shell scripts, so it reads the way text reads;
 the bottom-left-first flip lives in the surface layer and nowhere else.
 [03](03-model.md#the-address-pinned).
 
-### Whether `tally` (the CLI) is needed at all
+### ~~Whether `tally` (the CLI) is needed at all~~ — settled, and built
 
-[08-lifecycle.md](08-lifecycle.md) argues it needs no socket, which makes it
-cheap. It may also make it pointless: `anchor ls --label tl.slot=…` and
-`$EDITOR slots.toml` cover most of it. Defer until something is actually
-awkward.
+Deferred with *"until something is actually awkward"*, which is exactly how
+it resolved: spawning into the right folder was awkward, because **cwd is
+the one fact `slots.toml` cannot know in advance and a shell always knows**.
+`anchor ls` and `$EDITOR slots.toml` did cover everything else, and still
+do — `spawn` is the only subcommand, for the only job nothing else could do
+([11-cli.md](11-cli.md)).
+
+The deferral was worth it. Had this been built in M1 it would have been a
+wrapper around guesses; built after M3 shipped and went unused, it was built
+around a measured gap.
+
+### Whether respawn should stop asking `slots.toml`
+
+Respawn looks up what to run in the config (`src/act.rs:85`), so every pad
+claimed with `tally spawn` has a dead respawn button —
+[11-cli.md](11-cli.md) makes that the common case rather than the rare one.
+anchor already records a dead session's `command`, `args`, `cwd` and
+`login_shell`, so respawn could re-create from the row it is standing on
+and work everywhere. That changes what the held preview promises, so it
+waits for a week of use to say whether the button is missed at all.
 
 ### Multiple devices, multiple machines
 

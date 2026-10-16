@@ -199,9 +199,41 @@ Exit:
 
 ---
 
+## M5 — `tally spawn`
+
+Scope: the CLI half of spawning, because the directory comes from a shell
+([docs/11](docs/11-cli.md)).
+
+Exit:
+- ✅ `tally spawn 1:1` in a repo claims the pad and runs `claude` there —
+  verified against a live anchord: `cwd` is `$PWD` exactly, `login_shell`
+  is set, and `tl.slot` is the only label
+- ✅ the occupancy rule is the grid's, not a second opinion: a lit pad
+  refuses and names what holds it, a dark pad with exited rows behind it
+  spawns — both confirmed on real sessions
+- ✅ an address off the grid is refused, never clamped — the same rule a
+  label follows, and the reason it has tests
+- ⬜ a week of claiming pads this way without reaching for `anchor create`
+
+> **The config file was the wrong half for this.** `slots.toml` wants the
+> folder declared in advance, which is a prediction about work you have not
+> done — so the spawn-from-a-dark-pad feature built in M3 went unused from
+> the day it shipped. Not broken: aimed at the wrong context. **The only
+> thing that knows the directory is a shell standing in it.**
+>
+> Which makes this the fourth time the project has learned that a feature
+> is settled by use and not by design, and the first time the lesson cost
+> nothing to apply — M3's machinery is what `tally spawn` calls.
+>
+> The deferral in [docs/10](docs/10-open-questions.md) is what made that
+> cheap. *"Defer until something is actually awkward"* meant the CLI was
+> built around a measured gap rather than a guessed one, and it came out
+> one subcommand wide.
+
+---
+
 ## Later, unscheduled
 
-- `tally` CLI, if it turns out to be needed ([docs/10](docs/10-open-questions.md))
 - the `settings.json` line for the `Notification` hook — the `tl.attention`
   label and the `Declared` variant ship in M1 either way
   ([04](docs/04-signals.md#4-a-hook--it-told-us))
@@ -218,4 +250,5 @@ M1  the grid tells    ← the only real risk: is the signal trustworthy
 M2  jump              ← the payoff gesture
 M3  spawn + chords    ← the launcher half
 M4  pages             ← ergonomics
+M5  tally spawn       ← the folder comes from a shell, not a file
 ```

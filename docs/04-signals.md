@@ -231,8 +231,9 @@ more than it looks like:
   not.
 - **teleport can see it too.** Two surfaces, one fact, no integration.
 - **The hook needs nothing of ours installed.** `anchor` is already on the
-  path; there is no `tally` binary in this story at all, which is most of
-  why [whether `tally` exists](10-open-questions.md) stays open.
+  path; there is no `tally` binary in this story at all. A CLI exists now
+  ([11-cli.md](11-cli.md)) and this is still not a reason for it — the
+  argument that settled it was the spawn directory, and nothing here.
 
 The cost is latency: one reconcile tick, ≤2s. That is the same 2s the
 derived signal waits anyway, so declared attention is never *slower* than

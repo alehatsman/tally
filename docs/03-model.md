@@ -114,6 +114,10 @@ tallyd is making anyway.
 A spec describes a slot that may have never run, so there is no session to
 hang it on.
 
+The file is one of two ways to claim a pad and the less used one, because
+it has to name a directory in advance. The other is a shell standing in
+that directory: `tally spawn 3:5` ([11-cli.md](11-cli.md)).
+
 ```toml
 # Order is the layout: first page is CC91, eighth is CC98.
 [[page]]

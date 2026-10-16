@@ -8,6 +8,7 @@
 pub mod act;
 pub mod anchor;
 pub mod chord;
+pub mod cli;
 pub mod config;
 pub mod device;
 pub mod journal;
