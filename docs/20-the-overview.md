@@ -282,18 +282,45 @@ occupied is not a destination, and the overview reaches the deep rows in
 one gesture anyway. If *jump to the deepest occupied row* turns out to be
 wanted, this is the symmetric place to put it.
 
+## The first hour
+
+Nine presses, and they say something the design did not predict:
+
+```json
+{"via":"overview","to":3,"from":0,"lit":4}
+{"via":"overview","to":7,"from":5,"lit":4}
+{"via":"overview","to":1,"from":2,"lit":4}
+```
+
+**Every destination was inside the window it started in.** `to` never
+left 1-8, because on the day it shipped nothing lived past row 8 — the
+row-13 island that motivated the whole thing had gone away. So the map is
+being used as *jump straight to a row* rather than *cross the empty
+middle*, and it earns its place on the first reading while the second
+goes untested.
+
+Three `⌂` presses landed in the same stretch, most of them right after a
+`goto` — look at a row, come back. That pairing is the shape to watch: if
+it holds, `◄`'s job and `⌂`'s job are closer than this document assumed.
+
+`lit` sat at **4** all hour. Seven was the historical count; four is the
+live one. Both are far enough under sixty-four that the question in *The
+instrument* stands.
+
 ## Validation
 
-- ⬜ holding `Session` with seven occupied rows shows seven lit pads and
-  the grey run, and is readable without counting
-- ⬜ tapping row 13's pad from row 1 puts the window there in one gesture
+- ✅ holding `Session` shows the lit rows and the grey run, and is
+  readable without counting — *"the map reads well"*, at four rows lit
+- ✅ `▲` held past 500 ms lands on row 1, once per press — three `⌂`
+  presses, no sign of an accidental one
+- ⬜ tapping a pad **outside the current window** crosses the empty middle
+  in one gesture. Unexercised: nothing has lived past row 8 since it
+  shipped
 - ⬜ releasing without tapping leaves the grid exactly as it was
 - ⬜ `Session` + kill held together disarms visibly — both white, grid
   plain
 - ⬜ `▲▼` under the overview slides the grey run and nothing else
 - ⬜ `>` is dark and does nothing while the overview is up
-- ⬜ holding `▲` for 500 ms from row 13 lands on row 1, once, and the
-  button goes dark under the finger
 - ⬜ 500 ms is not reachable by a lazy tap, and not slow enough to feel
   like waiting
 - ⬜ a week of `via:"overview"` lines: is it reached for, and does `lit`

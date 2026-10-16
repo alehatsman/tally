@@ -536,12 +536,17 @@ hold-`▲`: the press still scrolls one row, and holding it past 500 ms
 snaps to row 1.
 
 Exit:
-- ⬜ seven lit pads and a grey run reads as a map, without counting
-- ⬜ row 1 to row 13 in one gesture
+- ✅ lit pads and a grey run reads as a map, without counting — *"the map
+  reads well"* on the first hour, at four rows lit
+- ⬜ row 1 to row 13 in one gesture — **unexercised**: nine presses, and
+  every one of them landed inside the window it started in, because
+  nothing has lived past row 8 since it shipped. The map earns its place
+  as *jump to a row*; crossing the empty middle is still a claim
 - ⬜ `Session` + kill disarms visibly, like two right-column modifiers do
 - ⬜ a week of `via:"overview"` lines — is it reached for, and does `lit`
   move off seven
-- ⬜ 500 ms is unreachable by a lazy tap and does not feel like waiting
+- ✅ 500 ms is unreachable by a lazy tap and does not feel like waiting —
+  three `⌂` presses in the first hour, none of them apparently accidental
 
 > **The clock stays out of `chord.rs`.** It is pure — presses in, gestures
 > out, no `now` — and that is what lets the four chord rules be tested
