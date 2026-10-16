@@ -14,7 +14,7 @@ use std::fs::OpenOptions;
 use std::io::Write;
 
 use tally::anchor::Client;
-use tally::device::{Device, Event};
+use tally::device::{Device, Error, Event};
 use tally::journal::{self, Journal};
 use tally::lock::Lock;
 use tally::model::{self, View};
@@ -31,6 +31,11 @@ const RECONCILE: Duration = Duration::from_secs(2);
 /// How often the loop wakes. Input is drained at this rate so a press
 /// feels immediate rather than waiting out a reconcile.
 const TICK: Duration = Duration::from_millis(16);
+/// How long without a reply before the device counts as gone.
+///
+/// Generous against the ~2ms warm round trip, because the cost of being
+/// wrong is a needless reconnect, and three missed probes is not a blip.
+const DEVICE_SILENCE: Duration = Duration::from_secs(7);
 
 /// Async-signal-safe: a relaxed store and nothing else.
 ///
@@ -81,19 +86,14 @@ fn main() -> ExitCode {
         }
     };
 
-    let mut device = match Device::open() {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("tallyd: {e}");
-            return ExitCode::FAILURE;
-        }
-    };
-
     let anchor = Client::new(Client::default_path());
-    eprintln!(
-        "tallyd: Launchpad ready; anchord at {}",
-        anchor.path().display()
-    );
+    eprintln!("tallyd: anchord at {}", anchor.path().display());
+
+    // No device is a normal state, not a failure. `tallyd` is started by
+    // launchd and may well come up before the Launchpad is plugged in --
+    // and the thing it is watching is anchord, which it can do blind.
+    let mut device: Option<Device> = None;
+    let mut last_device_try = Duration::ZERO;
 
     let pages = Pages::default();
     let watchers = Watchers::new(anchor.clone());
@@ -121,6 +121,8 @@ fn main() -> ExitCode {
     let mut reachable = false;
     let mut current = 1u8;
     let mut last_reconcile = Duration::ZERO;
+    let mut repaint = true;
+    let mut last_reply = Duration::ZERO;
     let started = std::time::Instant::now();
 
     let signum = loop {
@@ -129,19 +131,76 @@ fn main() -> ExitCode {
             break signum;
         }
 
-        // Presses are event-driven, not on the reconcile clock.
-        for event in device.poll().collect::<Vec<_>>() {
-            if let Event::Press {
-                button: Button::Page(n),
-                down: true,
-            } = event
-            {
-                current = n;
-                eprintln!("tallyd: page {n}");
+        let elapsed = started.elapsed();
+
+        // Poll for the device. `midir` enumerates ports; it does not tell
+        // you when one appears, so this is the same reconcile shape as
+        // everything else here.
+        if device.is_none() && elapsed.saturating_sub(last_device_try) >= RECONCILE {
+            last_device_try = elapsed;
+            match Device::open() {
+                Ok(d) => {
+                    eprintln!("tallyd: Launchpad connected");
+                    device = Some(d);
+                    repaint = true;
+                    last_reply = elapsed;
+                }
+                // Unplugged, or plugged in and still settling: a port can
+                // enumerate a moment before the device answers an inquiry.
+                // Both are ordinary and both resolve on the next try, so
+                // neither gets a line every two seconds.
+                Err(Error::NotFound | Error::NotALaunchpad) => {}
+                Err(e) => eprintln!("tallyd: {e}"),
             }
         }
 
-        let elapsed = started.elapsed();
+        // Presses are event-driven, not on the reconcile clock.
+        if let Some(d) = device.as_mut() {
+            for event in d.poll().collect::<Vec<_>>() {
+                match event {
+                    Event::Press {
+                        button: Button::Page(n),
+                        down: true,
+                    } => {
+                        current = n;
+                        eprintln!("tallyd: page {n}");
+                    }
+                    Event::Press { .. } => {}
+                    Event::Reply(r) => {
+                        last_reply = elapsed;
+                        // It answered Live mode: it was power-cycled under
+                        // us. Put it back and repaint from scratch.
+                        if tally::surface::sysex::programmer_mode_from(&r) == Some(false) {
+                            eprintln!("tallyd: Launchpad came back in Live mode, reprogramming");
+                            if let Err(e) = d.reprogram() {
+                                eprintln!("tallyd: {e}");
+                            }
+                            repaint = true;
+                        }
+                    }
+                }
+            }
+
+            // Liveness probe on the reconcile clock. A failed write is not
+            // how you learn the device is gone -- CoreMIDI accepts sends to
+            // a removed endpoint without complaint -- so absence of a reply
+            // is the only signal there is.
+            if elapsed.saturating_sub(last_device_try) >= RECONCILE {
+                last_device_try = elapsed;
+                if let Err(e) = d.ping() {
+                    eprintln!("tallyd: {e}");
+                }
+            }
+            if elapsed.saturating_sub(last_reply) >= DEVICE_SILENCE {
+                eprintln!("tallyd: Launchpad stopped answering, dropping it");
+                // It is gone, so do not try to restore it on the way out
+                // and do not warn that the restore failed.
+                d.abandon();
+                device = None;
+                repaint = true;
+            }
+        }
+
         if elapsed.saturating_sub(last_reconcile) >= RECONCILE || last_reconcile.is_zero() {
             last_reconcile = elapsed;
             match anchor.list() {
@@ -185,9 +244,26 @@ fn main() -> ExitCode {
             }
         }
         let frame = model::frame_from(&resolved, &view);
-        if let Err(e) = device.render(&frame) {
-            eprintln!("tallyd: {e}");
-            break libc::SIGTERM;
+        if let Some(d) = device.as_mut() {
+            // A full repaint on (re)connect: the device may have been
+            // unplugged, power-cycled, or left in another process's idea
+            // of a frame, so the first thing we put on it is total.
+            let wrote = if repaint {
+                d.repaint(&frame)
+            } else {
+                d.render(&frame)
+            };
+            match wrote {
+                Ok(()) => repaint = false,
+                Err(e) => {
+                    // The write failed, which on this stack means the port
+                    // went away. Drop it and go back to polling; the pads
+                    // are dark anyway, because the device is gone.
+                    eprintln!("tallyd: Launchpad disconnected ({e})");
+                    device = None;
+                    repaint = true;
+                }
+            }
         }
 
         std::thread::sleep(TICK);

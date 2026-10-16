@@ -85,6 +85,8 @@ pub struct Device {
     events: Receiver<Event>,
     /// The last frame put on the wire, so the next one can be a diff.
     last: Frame,
+    /// Whether `Drop` should try to put the device back.
+    restore_on_drop: bool,
 }
 
 impl fmt::Debug for Device {
@@ -154,6 +156,7 @@ impl Device {
             _input: listening,
             events,
             last: Frame::dark(),
+            restore_on_drop: true,
         };
         device.confirm_identity()?;
         device.send(&sysex::PROGRAMMER)?;
@@ -193,6 +196,48 @@ impl Device {
                 Err(RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected) => return None,
             }
         }
+    }
+
+    /// Give up on a device that is already gone.
+    ///
+    /// Restoring Live mode on an unplugged Launchpad cannot work, and
+    /// *saying* it failed is worse than silence — it tells the user their
+    /// Setup menu may be broken when the truth is that the cable is out.
+    /// An alarm that fires for the ordinary case is an alarm people learn
+    /// to ignore.
+    pub fn abandon(&mut self) {
+        self.restore_on_drop = false;
+    }
+
+    /// Ask the device which mode it is in, without waiting for the answer.
+    ///
+    /// This is the liveness probe, and it exists because **a failed write is
+    /// not how you learn the device is gone**. `CoreMIDI` accepts sends to a
+    /// removed endpoint without error, so `render` returning `Ok` says
+    /// nothing about whether anything is listening. Only a reply does.
+    ///
+    /// It doubles as a mode check. A Launchpad that was unplugged and
+    /// plugged back in comes up in **Live mode**, and a host still holding
+    /// a connection to it would otherwise keep diffing against a frame the
+    /// device no longer has — leaving the grid dark forever, because
+    /// nothing in the model changed.
+    ///
+    /// # Errors
+    /// [`Error::Midi`] if the write fails.
+    pub fn ping(&mut self) -> Result<(), Error> {
+        self.send(&sysex::MODE_READBACK)
+    }
+
+    /// Re-enter programmer mode and forget what we believe is on the pads,
+    /// so the next render is total.
+    ///
+    /// # Errors
+    /// [`Error::Midi`] if a write fails.
+    pub fn reprogram(&mut self) -> Result<(), Error> {
+        self.send(&sysex::PROGRAMMER)?;
+        self.send(&sysex::led_feedback(false, false))?;
+        self.last = Frame::dark();
+        Ok(())
     }
 
     /// Put `frame` on the device, sending only what changed.
@@ -255,6 +300,9 @@ impl Device {
 
 impl Drop for Device {
     fn drop(&mut self) {
+        if !self.restore_on_drop {
+            return;
+        }
         if !self.restore() {
             // Not a panic: we may already be unwinding, and a double panic
             // aborts without running anything else's destructors.
