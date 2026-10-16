@@ -381,7 +381,7 @@ mod tests {
         assert_eq!(
             decode(&[0xB0, 91, 127]),
             Some(Event::Press {
-                button: Button::Page(1),
+                button: Button::Top(1),
                 down: true
             })
         );

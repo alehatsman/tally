@@ -193,7 +193,7 @@ mod tests {
         a.set(Button::Logo, Cell::Static(DARK_RED));
         a.set(Button::Action(8), Cell::Static(BLUE));
         a.set(
-            Button::Page(3),
+            Button::Top(3),
             Cell::Flash {
                 b: AMBER,
                 a: TURQUOISE,

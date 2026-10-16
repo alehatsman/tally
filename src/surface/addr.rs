@@ -18,8 +18,14 @@ pub enum Button {
         /// 1-8, 1 is the left column.
         col: u8,
     },
-    /// Top row, left to right: the page selectors.
-    Page(u8),
+    /// Top row, left to right, 1-8: `▲ ▼ ◄ ► Session Drums Keys User`.
+    ///
+    /// Named for where it is, not for what it does, because what it does
+    /// changed: these were eight page selectors until `docs/16` made the
+    /// row a queue — `▲▼` page, `◄` back, `►` next, and four that carry
+    /// nothing. `Page(5)` meaning *a dark unassigned button* was a name
+    /// that lied.
+    Top(u8),
     /// Right column, top to bottom: the action modifiers.
     Action(u8),
     /// The logo. Not a slot — it is the health light.
@@ -37,7 +43,7 @@ impl Button {
     pub fn index(self) -> u8 {
         match self {
             Self::Grid { row, col } => (9 - row) * 10 + col,
-            Self::Page(col) => 90 + col,
+            Self::Top(col) => 90 + col,
             Self::Action(row) => (9 - row) * 10 + 9,
             Self::Logo => 99,
         }
@@ -49,7 +55,7 @@ impl Button {
         let (hw_row, col) = (index / 10, index % 10);
         match (hw_row, col) {
             (9, 9) => Some(Self::Logo),
-            (9, 1..=8) => Some(Self::Page(col)),
+            (9, 1..=8) => Some(Self::Top(col)),
             (1..=8, 9) => Some(Self::Action(9 - hw_row)),
             (1..=8, 1..=8) => Some(Self::Grid {
                 row: 9 - hw_row,
@@ -103,8 +109,8 @@ mod tests {
 
     #[test]
     fn controls_and_logo() {
-        assert_eq!(Button::Page(1).index(), 91);
-        assert_eq!(Button::Page(8).index(), 98);
+        assert_eq!(Button::Top(1).index(), 91);
+        assert_eq!(Button::Top(8).index(), 98);
         assert_eq!(Button::Logo.index(), 99);
         // CC89 is the top of the right column; CC19 the bottom. docs/05
         // binds kill to CC19, so getting this backwards is a live hazard.

@@ -364,6 +364,8 @@ spec = "claude"
                 current: 1,
                 anchord_reachable: true,
                 now: 0,
+                can_go_back: false,
+                queued: 0,
                 held: Some(Action::Respawn),
                 pressed: &pressed,
             },

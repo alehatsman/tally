@@ -1,7 +1,7 @@
 //! A realistic grid, rendered through the real `render::slot` path.
 //! Changing the colour language changes this picture — which is the point.
 
-use tally::render::{self, Health, Page};
+use tally::render::{self, Health};
 use tally::signal::{SlotState, Source};
 use tally::surface::{Button, Cell, Frame};
 
@@ -30,21 +30,11 @@ fn main() {
     for (row, col, state) in slots {
         f.set(Button::Grid { row, col }, render::slot(state));
     }
-    f.set(
-        Button::Page(1),
-        render::page(Page {
-            current: true,
-            occupied: true,
-            attention: false,
-        }),
-    );
-    f.set(
-        Button::Page(2),
-        render::page(Page {
-            occupied: true,
-            ..Page::default()
-        }),
-    );
+    // The top row: `▲ ▼ ◄ ► · · · ·` (docs/16-the-queue.md).
+    f.set(Button::Top(1), render::arrow(false));
+    f.set(Button::Top(2), render::arrow(true));
+    f.set(Button::Top(3), render::back(true));
+    f.set(Button::Top(4), render::next(true));
     for row in 1..=8 {
         f.set(
             Button::Action(row),

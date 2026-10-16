@@ -76,6 +76,13 @@ impl Journal {
             let Ok(entry) = serde_json::from_str::<Line>(line) else {
                 continue;
             };
+            // A navigation line is a record of what you pressed, not of
+            // what a slot did. Skipped explicitly rather than by failing
+            // to parse, so the two kinds can diverge without this silently
+            // starting to read one as the other.
+            if entry.kind.as_deref().is_some_and(|k| k != "state") {
+                continue;
+            }
             let Some(slot) = parse_address(&entry.slot, pages) else {
                 continue;
             };
@@ -167,6 +174,85 @@ impl Journal {
     pub fn asking(&self) -> usize {
         self.asking.len()
     }
+
+    /// Every slot that is asking, with the session and the moment it
+    /// started.
+    ///
+    /// **This is the queue** (`docs/16-the-queue.md`). It needed no new
+    /// state because the map already holds the *original* timestamp across
+    /// a restart — which was the fix for #7 and turns out to be the
+    /// ordering the top row sorts by.
+    pub fn waiting(&self) -> &BTreeMap<Slot, (String, i64)> {
+        &self.asking
+    }
+}
+
+/// Record a press of `►` or `◄`.
+///
+/// Navigation is written down because whether the queue works is a
+/// question about what you actually press, and no other record answers it
+/// (`docs/16-the-queue.md#the-instrument`).
+///
+/// # Errors
+/// Whatever the sink returns.
+pub fn nav_next(
+    out: &mut impl Write,
+    now: i64,
+    slot: &str,
+    waited_ms: i64,
+    queued: usize,
+) -> io::Result<()> {
+    write_line(
+        out,
+        &Nav {
+            ms: now,
+            kind: "nav",
+            via: "next",
+            slot: Some(slot),
+            waited_ms: Some(waited_ms),
+            queued: Some(queued),
+            ok: None,
+        },
+    )
+}
+
+/// Record a press of `◄`, and whether it had anywhere to go.
+///
+/// # Errors
+/// Whatever the sink returns.
+pub fn nav_back(out: &mut impl Write, now: i64, ok: bool) -> io::Result<()> {
+    write_line(
+        out,
+        &Nav {
+            ms: now,
+            kind: "nav",
+            via: "back",
+            slot: None,
+            waited_ms: None,
+            queued: None,
+            ok: Some(ok),
+        },
+    )
+}
+
+/// A press of a navigation button.
+///
+/// `kind` is what separates these from state lines, and it is written on
+/// every one of them so a reader never has to infer the shape from which
+/// fields happen to be present.
+#[derive(Debug, Serialize)]
+struct Nav<'a> {
+    ms: i64,
+    kind: &'static str,
+    via: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    slot: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    waited_ms: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    queued: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ok: Option<bool>,
 }
 
 /// A slot that just started asking.
@@ -222,6 +308,11 @@ struct Line {
     session: String,
     slot: String,
     to: String,
+    /// Absent means `"state"`, which is what every line written before
+    /// `docs/16` is. A `"nav"` line records a press, not a slot, and the
+    /// replay must not read one as a transition.
+    #[serde(default)]
+    kind: Option<String>,
 }
 
 /// One line, newline-terminated — the journal is JSON Lines.
@@ -273,6 +364,89 @@ fn parse_address(text: &str, pages: &Pages) -> Option<Slot> {
 
 #[cfg(test)]
 mod tests {
+
+    /// A navigation line records a press, not a slot. Reading one as a
+    /// transition would invent a rise nobody made.
+    #[test]
+    fn a_nav_line_is_not_a_state_transition() {
+        let pages = Pages::default();
+        let text = concat!(
+            r#"{"ms":1000,"session":"a","slot":"1:3:3","to":"needs_answer","source":"declared","title":null}"#,
+            "\n",
+            r#"{"ms":1200,"kind":"nav","via":"next","slot":"1:3:3","waited_ms":200,"queued":2}"#,
+            "\n",
+            r#"{"ms":1300,"kind":"nav","via":"back","ok":true}"#,
+            "\n",
+        );
+        let j = Journal::replay(text, &pages);
+        assert_eq!(j.asking(), 1, "the nav lines changed nothing");
+        let (_, since) = j
+            .waiting()
+            .get(&Slot {
+                page: 1,
+                row: 3,
+                col: 3,
+            })
+            .expect("still asking");
+        assert_eq!(*since, 1000, "and did not move the clock");
+    }
+
+    /// Every line written before `docs/16` has no `kind`. They must keep
+    /// parsing exactly as they did, or a restart loses the queue.
+    #[test]
+    fn a_line_written_before_kind_existed_still_parses() {
+        let pages = Pages::default();
+        let text = concat!(
+            r#"{"ms":1792159699962,"session":"01M52FZ9Q0ZDGR8FH5K1P1PY5T","slot":"1:3:3","to":"needs_answer","source":"derived","title":null}"#,
+            "\n",
+        );
+        assert_eq!(Journal::replay(text, &pages).asking(), 1);
+    }
+
+    /// The queue reads this map, so the session id has to come back with
+    /// the timestamp.
+    #[test]
+    fn waiting_carries_the_session_and_the_original_moment() {
+        let pages = Pages::default();
+        let text = concat!(
+            r#"{"ms":4242,"session":"ABC","slot":"1:1:1","to":"needs_answer","source":"declared","title":null}"#,
+            "\n",
+        );
+        let j = Journal::replay(text, &pages);
+        let (session, since) = j
+            .waiting()
+            .get(&Slot {
+                page: 1,
+                row: 1,
+                col: 1,
+            })
+            .expect("asking");
+        assert_eq!(session, "ABC");
+        assert_eq!(*since, 4242);
+    }
+
+    #[test]
+    fn a_nav_line_says_which_button_and_what_it_cost() {
+        let mut out = Vec::new();
+        nav_next(&mut out, 9_000, "1:2:1", 219_722, 4).expect("write");
+        nav_back(&mut out, 9_100, false).expect("write");
+        let text = String::from_utf8(out).expect("utf8");
+        let mut lines = text.lines();
+        let next: serde_json::Value =
+            serde_json::from_str(lines.next().expect("next line")).expect("json");
+        assert_eq!(next["kind"], "nav");
+        assert_eq!(next["via"], "next");
+        assert_eq!(next["slot"], "1:2:1");
+        assert_eq!(next["waited_ms"], 219_722);
+        assert_eq!(next["queued"], 4);
+        assert!(next.get("ok").is_none(), "next has no ok");
+
+        let back: serde_json::Value =
+            serde_json::from_str(lines.next().expect("back line")).expect("json");
+        assert_eq!(back["via"], "back");
+        assert_eq!(back["ok"], false);
+        assert!(back.get("slot").is_none(), "back names no slot");
+    }
     use super::*;
 
     const T0: i64 = 1_760_000_000_000;

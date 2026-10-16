@@ -101,13 +101,25 @@ colours so the grid never has to be read for them:
 
 | button | resting | held / active |
 |---|---|---|
-| page, holds no session | off | — |
-| page, holds sessions | 1 dark grey, static | 3 white — the page you are on |
-| page, off-screen attention | 9 amber, **pulsing** | — |
+| `▲` `▼` page, no page that way | off | — |
+| `▲` `▼` page, somewhere to go | 1 dark grey, static | — |
+| `◄` back, no origin | off | — |
+| `◄` back, origin recorded | 3 white, static | — |
+| `►` next, queue empty | off | — |
+| `►` next, something waiting | 9 amber, **pulsing** | — |
+| the other four top-row buttons | off | — |
 | action button (right column) | 45 blue, static | 3 white while held |
 
-**Exactly one page button is bright, and it is always the one you are on.**
-That is the rule, and it was learned the hard way: the row used to light
+⚠️ **This table was rewritten by [16](16-the-queue.md).** The top row used
+to be eight page buttons, and the rule below — *exactly one page button is
+bright, and it is always the one you are on* — was paid for in real
+confusion. It is gone, deliberately, on the strength of one number: **pages
+used, 70 : 2**. The argument, and what to revisit if pages ever become
+load-bearing, is in [16](16-the-queue.md#what-is-given-up-stated-plainly).
+What follows is kept because the lesson outlives the layout.
+
+**Exactly one page button was bright, and it was always the one you were
+on.** That was the rule, and it was learned the hard way: the row used to light
 the current page white and occupied pages turquoise, which failed exactly
 as the [three greens](#why-it-is-one-sentence) did. Both were perfectly
 legible; neither said *which is which*. The report from the desk was *"I
@@ -123,10 +135,11 @@ amber, the same amber as everywhere else, meaning the same thing.
 Action buttons stay blue because they must not be mistakable for *any*
 slot state at a glance, and nothing in the slot palette is near it.
 
-An amber-pulsing page button says **which** page wants you; the logo says
-**that some page does**. Both, deliberately: the logo is visible from
-further away and the page button is what you act on. See
-[03-model.md](03-model.md#pages).
+An amber `►` says **that something wants you**; the logo says **that it is
+off this page**. Both, deliberately: the logo is visible from further away
+and `►` is what you act on. You no longer navigate *to* attention — `►`
+navigates attention to you, across pages ([16](16-the-queue.md#the-top-row)).
+See [03-model.md](03-model.md#pages).
 
 Both animations are the device's own
 ([02-surface.md](02-surface.md#colour)) — set once, no repaint loop. That is
@@ -170,7 +183,9 @@ kills a running agent, that matters more than the keystroke saving.
 |---|---|
 | tap unbound slot | spawn its spec |
 | tap bound slot | jump ([06-jump.md](06-jump.md)) |
-| tap page button (top row) | switch page |
+| tap `▲` `▼` (top row) | change page |
+| tap `◄` (top row) | **back** — return to where you were standing |
+| tap `►` (top row) | **next** — jump to the longest-waiting amber |
 | hold `CC19` + tap slot | **kill** |
 | hold `CC29` + tap slot | respawn / resume |
 | hold `CC39` + tap slot | purge (exited only) |

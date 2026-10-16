@@ -22,7 +22,8 @@ use tally::journal::{self, Journal};
 use tally::jump::{Jump, Tmux};
 use tally::lock::Lock;
 use tally::model::{self, View};
-use tally::slot::{Pages, Slot};
+use tally::queue;
+use tally::slot::{self, Pages, Slot};
 use tally::watch::Watchers;
 
 /// Set by the signal handler, read by the main loop. `0` means no signal.
@@ -105,15 +106,53 @@ fn perform(ctx: &Context<'_>, gesture: Gesture, at: Slot, pages: &Pages, tmux: &
             Ok(Some(done)) => eprintln!("tallyd: {}:{row}:{col} {done}", at.page),
             Err(e) => eprintln!("tallyd: spawn {}:{row}:{col}: {e}", at.page),
         },
-        Gesture::Chord { action, .. } => match ctx.chord(action, at, pages) {
-            // The preview already said nothing would happen here, so the
-            // log stays quiet too: a line per dimmed pad you brushed is
-            // noise in the only file that is read after something broke.
-            Ok(Done::Nothing) => {}
-            Ok(done) => eprintln!("tallyd: {action:?} {}:{row}:{col} {done}", at.page),
-            Err(e) => eprintln!("tallyd: {action:?} {}:{row}:{col}: {e}", at.page),
-        },
-        Gesture::Page(_) => {}
+        Gesture::Chord { action, .. } => {
+            // Taken before the act, because afterwards anchord has
+            // forgotten them and there is nothing left to look up. Purge
+            // clears the pad, so it clears the view (`docs/15-views.md`).
+            let purging: Vec<String> = if action == Action::Purge {
+                ctx.pads.rows(at).to_vec()
+            } else {
+                Vec::new()
+            };
+            match ctx.chord(action, at, pages) {
+                // The preview already said nothing would happen here, so
+                // the log stays quiet too: a line per dimmed pad you
+                // brushed is noise in the only file that is read after
+                // something broke.
+                Ok(Done::Nothing) => {}
+                Ok(done) => {
+                    eprintln!("tallyd: {action:?} {}:{row}:{col} {done}", at.page);
+                    for id in &purging {
+                        if let Err(e) = tmux.close(id) {
+                            eprintln!("tallyd: could not close the view for {id}: {e}");
+                        }
+                    }
+                }
+                Err(e) => eprintln!("tallyd: {action:?} {}:{row}:{col}: {e}", at.page),
+            }
+        }
+        // Handled in the loop: they change where you are, not what the
+        // grid holds, and two of them need the queue the loop computes.
+        Gesture::PageUp | Gesture::PageDown | Gesture::Back | Gesture::Next => {}
+    }
+}
+
+/// Write one navigation line, dropping the sink if it fails.
+///
+/// Same rule as the state lines: a journal that cannot be written is
+/// reported once and then stops being tried, because the alternative is a
+/// line per press in the only file read after something broke.
+fn log_nav(
+    out: &mut Option<std::fs::File>,
+    write: impl FnOnce(&mut std::fs::File) -> std::io::Result<()>,
+) {
+    let Some(sink) = out.as_mut() else {
+        return;
+    };
+    if let Err(e) = write(sink).and_then(|()| sink.flush()) {
+        eprintln!("tallyd: attention journal: {e}");
+        *out = None;
     }
 }
 
@@ -188,6 +227,11 @@ fn main() -> ExitCode {
     let mut sessions = Vec::new();
     let mut reachable = false;
     let mut current = 1u8;
+    // The queue, as of the last tick: what the finger was looking at when
+    // it landed. Recomputing on the press would act on a grid the eye
+    // never saw.
+    let mut head: Option<queue::Head> = None;
+    let mut queued = 0usize;
     let mut last_reconcile = Duration::ZERO;
     let mut repaint = true;
     let mut last_reply = Duration::ZERO;
@@ -246,10 +290,57 @@ fn main() -> ExitCode {
                             continue;
                         };
                         match gesture {
-                            Gesture::Page(n) => {
-                                current = n;
-                                eprintln!("tallyd: page {n}");
+                            Gesture::PageUp | Gesture::PageDown => {
+                                let n = if gesture == Gesture::PageUp {
+                                    current.saturating_sub(1).max(1)
+                                } else {
+                                    current.saturating_add(1).min(slot::PAGES)
+                                };
+                                if n != current {
+                                    current = n;
+                                    eprintln!("tallyd: page {n}");
+                                }
                             }
+                            Gesture::Next => {
+                                // The head was computed on the last tick,
+                                // from the grid the finger was looking at.
+                                // Acting on a fresher one would act on a
+                                // pad that was not lit when it was pressed.
+                                if let Some(h) = head.clone() {
+                                    let at = h.at.label(&pages).unwrap_or_default();
+                                    eprintln!("tallyd: next -> {at} ({queued} waiting)");
+                                    if let Err(e) = tmux.jump(&h.session, &at) {
+                                        eprintln!("tallyd: {e}");
+                                    }
+                                    // Follow the jump with the eyes: the
+                                    // grid must show the page you are now
+                                    // standing on.
+                                    current = h.at.page;
+                                    let now = tally::now_ms();
+                                    log_nav(&mut journal_out, |out| {
+                                        journal::nav_next(
+                                            out,
+                                            now,
+                                            &at,
+                                            now.saturating_sub(h.since),
+                                            queued,
+                                        )
+                                    });
+                                }
+                            }
+                            Gesture::Back => match tmux.back() {
+                                Ok(moved) => {
+                                    eprintln!(
+                                        "tallyd: back{}",
+                                        if moved { "" } else { " (nowhere to go)" }
+                                    );
+                                    let now = tally::now_ms();
+                                    log_nav(&mut journal_out, |out| {
+                                        journal::nav_back(out, now, moved)
+                                    });
+                                }
+                                Err(e) => eprintln!("tallyd: {e}"),
+                            },
                             Gesture::Tap { row, col } | Gesture::Chord { row, col, .. } => {
                                 let at = Slot {
                                     page: current,
@@ -337,29 +428,46 @@ fn main() -> ExitCode {
             .into_iter()
             .filter(|&a| chords.is_held(a))
             .collect();
-        let view = View {
-            pages: &pages,
-            current,
-            anchord_reachable: reachable,
-            now: tally::now_ms(),
-            held: chords.modifier(),
-            pressed: &pressed,
-        };
-        let resolved = model::resolve(&sessions, &watchers.snapshot(), &pages, view.now);
+        let now = tally::now_ms();
+        let resolved = model::resolve(&sessions, &watchers.snapshot(), &pages, now);
         grid.clone_from(&resolved);
         if let Some(out) = journal_out.as_mut() {
             // Unbuffered on purpose. This is a few lines a day, and a
             // buffer would hold them until a flush that SIGKILL never
             // reaches -- losing exactly the transitions it exists to count.
             if let Err(e) = journal
-                .record(&resolved, &pages, view.now, out)
+                .record(&resolved, &pages, now, out)
                 .and_then(|()| out.flush())
             {
                 eprintln!("tallyd: attention journal: {e}");
                 journal_out = None;
             }
         }
-        let frame = model::frame_from(&model::Pads::new(&resolved, &config, &purgeable), &view);
+
+        // The queue, after the journal has been brought up to date: the
+        // map it keeps *is* the queue, ordered by when each slot started
+        // asking (`docs/16-the-queue.md`).
+        let pads = model::Pads::new(&resolved, &config, &purgeable);
+        let viewing: std::collections::BTreeSet<Slot> = tmux
+            .viewing()
+            .iter()
+            .filter_map(|id| resolved.values().find(|r| &r.session == id))
+            .map(|r| r.slot)
+            .collect();
+        head = queue::head(journal.waiting(), &pads, &viewing);
+        queued = queue::depth(journal.waiting(), &pads, &viewing);
+
+        let view = View {
+            pages: &pages,
+            current,
+            anchord_reachable: reachable,
+            now,
+            can_go_back: tmux.can_go_back(),
+            queued,
+            held: chords.modifier(),
+            pressed: &pressed,
+        };
+        let frame = model::frame_from(&pads, &view);
         if let Some(d) = device.as_mut() {
             // A full repaint on (re)connect: the device may have been
             // unplugged, power-cycled, or left in another process's idea

@@ -16,14 +16,21 @@ pub const DEFAULT_COMMAND: &str = "claude";
 
 /// The one-screen help, printed for `help` and for every usage error.
 pub const USAGE: &str = "\
-usage: tally spawn <row:col | page:row:col> [-- command [args...]]
+usage: tally spawn [--detach] <row:col | page:row:col> [-- command [args...]]
        tally attention <on | off>
 
-spawn   Claim a pad for a session started in the current directory.
+spawn   Claim a pad for a session started in the current directory, and
+        hand this pane over to it.
 
   tally spawn 1:1                      claude, here, on page 1
   tally spawn 3:4:4                    claude, here, on page 3
   tally spawn work:3:4 -- cargo test   a different command
+  tally spawn --detach 1:1             spawn it and come back
+
+Inside tmux this pane becomes the view: the shell is replaced by the
+attach, and the pad focuses this pane. --detach keeps the old behaviour
+and is what a script wants. Outside tmux there is nothing to adopt, so
+it prints and returns either way.
 
 The directory is always the one you are standing in, which is the whole
 point; there is no --cwd. Two-part addresses are row:col on the first
@@ -63,6 +70,14 @@ pub struct Claim {
     pub command: String,
     /// `argv[1..]`.
     pub args: Vec<String>,
+    /// Spawn and come back, instead of handing this pane over.
+    ///
+    /// Inside tmux the default is to **adopt**: the pane you ran this in
+    /// becomes the view and the shell is replaced
+    /// (`docs/15-views.md#adoption-tally-spawn-from-a-pane`). A script
+    /// that wants the old spawn-and-return says so. Outside tmux there is
+    /// nothing to adopt and this changes nothing.
+    pub detach: bool,
 }
 
 /// Why the arguments were refused. Both variants are the user's typing,
@@ -129,39 +144,60 @@ fn attention(mut args: impl Iterator<Item = String>) -> Result<bool, Error> {
     Ok(on)
 }
 
-fn claim(mut args: impl Iterator<Item = String>, pages: &Pages) -> Result<Claim, Error> {
-    let Some(text) = args.next() else {
-        return Err(Error::Usage("spawn needs an address".to_owned()));
-    };
-    if text == "--" {
-        return Err(Error::Usage(
-            "spawn needs an address before `--`".to_owned(),
-        ));
-    }
-    let at = address(&text, pages)?;
+fn claim(args: impl Iterator<Item = String>, pages: &Pages) -> Result<Claim, Error> {
+    let mut args = args.into_iter();
+    let mut detach = false;
+    let mut text: Option<String> = None;
+    let mut command: Option<String> = None;
+    let mut rest: Vec<String> = Vec::new();
 
     // Everything after `--` is the command. Anything *before* it that is
-    // not the address is a flag we do not have, and silently ignoring it
-    // would spawn something other than what was typed.
-    let (command, rest) = match args.next() {
-        None => (DEFAULT_COMMAND.to_owned(), Vec::new()),
-        Some(sep) if sep == "--" => {
-            let mut after = args;
-            let Some(command) = after.next() else {
-                return Err(Error::Usage("`--` with nothing after it".to_owned()));
-            };
-            (command, after.collect())
+    // not the address or a flag we have would be silently ignored
+    // otherwise, and a spawn that runs something other than what was typed
+    // is the one outcome this parser exists to prevent.
+    while let Some(token) = args.next() {
+        match token.as_str() {
+            "--" => {
+                if text.is_none() {
+                    return Err(Error::Usage(
+                        "spawn needs an address before `--`".to_owned(),
+                    ));
+                }
+                let Some(first) = args.next() else {
+                    return Err(Error::Usage("`--` with nothing after it".to_owned()));
+                };
+                command = Some(first);
+                rest = args.collect();
+                break;
+            }
+            "--detach" => {
+                if detach {
+                    return Err(Error::Usage("--detach given twice".to_owned()));
+                }
+                detach = true;
+            }
+            flag if flag.starts_with('-') => {
+                return Err(Error::Usage(format!("unknown flag {flag:?}")));
+            }
+            _ if text.is_some() => {
+                return Err(Error::Usage(format!(
+                    "unexpected {token:?}; a command goes after `--`"
+                )));
+            }
+            _ => text = Some(token),
         }
-        Some(other) => {
-            return Err(Error::Usage(format!(
-                "unexpected {other:?}; a command goes after `--`"
-            )))
-        }
+    }
+
+    let Some(text) = text else {
+        return Err(Error::Usage("spawn needs an address".to_owned()));
     };
+    let at = address(&text, pages)?;
+    let command = command.unwrap_or_else(|| DEFAULT_COMMAND.to_owned());
     Ok(Claim {
         at,
         command,
         args: rest,
+        detach,
     })
 }
 
@@ -243,6 +279,59 @@ mod tests {
             Request::Attention(on) => Ok(on),
             other => panic!("asked for attention, got {other:?}"),
         }
+    }
+
+    /// Adoption is the default inside tmux, so the flag that turns it off
+    /// has to be reachable from either side of the address — a shell user
+    /// types it where it occurs to them.
+    #[test]
+    fn detach_is_accepted_before_or_after_the_address() {
+        let pages = named();
+        assert!(!spawn(&["spawn", "1:1"], &pages).expect("plain").detach);
+        assert!(
+            spawn(&["spawn", "--detach", "1:1"], &pages)
+                .expect("before")
+                .detach
+        );
+        assert!(
+            spawn(&["spawn", "1:1", "--detach"], &pages)
+                .expect("after")
+                .detach
+        );
+        let with_cmd =
+            spawn(&["spawn", "--detach", "1:1", "--", "ls", "-l"], &pages).expect("with a command");
+        assert!(with_cmd.detach);
+        assert_eq!(with_cmd.command, "ls");
+        assert_eq!(with_cmd.args, ["-l"]);
+    }
+
+    /// A flag we do not have must not be silently dropped: it would spawn
+    /// something other than what was typed, which is the one outcome this
+    /// parser exists to prevent.
+    #[test]
+    fn an_unknown_flag_is_refused_rather_than_ignored() {
+        let pages = named();
+        for args in [
+            &["spawn", "--cwd", "1:1"][..],
+            &["spawn", "1:1", "-x"],
+            &["spawn", "--detach", "--detach", "1:1"],
+        ] {
+            assert!(
+                matches!(spawn(args, &pages), Err(Error::Usage(_))),
+                "{args:?} was accepted"
+            );
+        }
+    }
+
+    /// A flag is not an address. The old parser took the first token it
+    /// saw, so `tally spawn --detach` alone would have tried to parse the
+    /// flag as one.
+    #[test]
+    fn detach_alone_is_not_an_address() {
+        assert!(matches!(
+            spawn(&["spawn", "--detach"], &named()),
+            Err(Error::Usage(_))
+        ));
     }
 
     #[test]

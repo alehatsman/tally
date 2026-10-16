@@ -102,9 +102,11 @@ is a product.
 | [docs/09-testing.md](docs/09-testing.md) | testing a thing whose output is light |
 | [docs/10-open-questions.md](docs/10-open-questions.md) | what is asserted here but not proven |
 | [docs/11-cli.md](docs/11-cli.md) | `tally spawn`, for when the folder comes from you |
-| [docs/12-layout-proposal.md](docs/12-layout-proposal.md) | a proposal: rows are projects — **not design** |
+| [docs/12-layout-proposal.md](docs/12-layout-proposal.md) | a proposal: rows are projects — **not design**, tracked as [#8](https://github.com/alehatsman/tally/issues/8) |
 | [docs/13-layout-review.md](docs/13-layout-review.md) | the review of it, and a narrower counter-proposal |
 | [docs/14-attention.md](docs/14-attention.md) | the bell that is never rung, and the hooks that replace it |
+| [docs/15-views.md](docs/15-views.md) | a view is a pane, not a window |
+| [docs/16-the-queue.md](docs/16-the-queue.md) | the top row is a queue, not a map — and why rows are not projects |
 
 ## License
 

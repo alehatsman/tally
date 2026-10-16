@@ -20,8 +20,8 @@ fn main() {
     // CC89 is the top of the right column, CC19 the bottom (kill lives there).
     f.set(Button::Action(1), Cell::Static(BLUE));
     f.set(Button::Action(8), Cell::Static(RED));
-    // Page 1 is the leftmost of the top row.
-    f.set(Button::Page(1), Cell::Static(TURQUOISE));
+    // Top(1) is the leftmost of the top row -- `▲`.
+    f.set(Button::Top(1), Cell::Static(TURQUOISE));
     // The health light.
     f.set(Button::Logo, Cell::Static(DARK_RED));
 

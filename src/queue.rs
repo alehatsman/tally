@@ -1,0 +1,267 @@
+//! Which agent to answer first.
+//!
+//! `docs/13` §10 asked whether you need to know *which project* is blocked
+//! before you jump. The first hour of `attention.jsonl` answered a
+//! different question instead: **61% of the time more than one agent is
+//! waiting**, and when two or more are, the gap between the longest and
+//! shortest wait is a median of 386 seconds.
+//!
+//! So the bottleneck is not finding the blocked agent — at five lit pads
+//! out of sixty-four there is no finding problem. It is *choosing*, and
+//! the thing that separates the choices is how long each has been waiting
+//! (`docs/16-the-queue.md`).
+//!
+//! This module is pure, like [`crate::chord`]: it takes the map the
+//! journal already keeps and produces a slot. It does not know that tmux
+//! exists, that anchord exists, or that a press happened.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use crate::model::Pads;
+use crate::signal::SlotState;
+use crate::slot::Slot;
+
+/// The slot at the head of the queue, with its session and how long it has
+/// been waiting.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Head {
+    /// Where it is.
+    pub at: Slot,
+    /// The session to jump to.
+    pub session: String,
+    /// When it started asking. **The original moment**, preserved across a
+    /// `tallyd` restart by the journal readback (#7).
+    pub since: i64,
+}
+
+/// The longest-waiting slot that is asking, is not muted, and is not
+/// already in front of somebody.
+///
+/// `None` is the ordinary answer, not an error — it is also exactly when
+/// `►` is dark, which is the point: **one predicate, read by the renderer
+/// and by the press.** Two would eventually disagree, and a button that
+/// lights up and then does nothing is one you press twice.
+#[must_use]
+pub fn head(
+    waiting: &BTreeMap<Slot, (String, i64)>,
+    pads: &Pads<'_>,
+    viewing: &BTreeSet<Slot>,
+) -> Option<Head> {
+    waiting
+        .iter()
+        .filter(|(at, _)| !viewing.contains(*at))
+        .filter(|(at, _)| {
+            let pad = pads.at(**at);
+            // Re-checked against the grid rather than trusted: the journal
+            // map is updated once per reconcile and a press can land
+            // between two of them. Muted is the half that matters — mute
+            // is how you get a prompt you will never answer out of the
+            // way, and a queue that ignored it would hand it back forever.
+            matches!(pad.state, Some(SlotState::NeedsAnswer { .. })) && !pad.muted
+        })
+        // Oldest first. `min_by_key` takes the first of equal keys and
+        // `BTreeMap` iterates in slot order, so ties break by address and
+        // the head does not flicker between two pads that rose in the
+        // same tick.
+        .min_by_key(|(_, (_, since))| *since)
+        .map(|(at, (session, since))| Head {
+            at: *at,
+            session: session.clone(),
+            since: *since,
+        })
+}
+
+/// How many slots the queue would offer — what `queued` reports in the
+/// journal, so a week of lines can say whether there was ever a choice.
+#[must_use]
+pub fn depth(
+    waiting: &BTreeMap<Slot, (String, i64)>,
+    pads: &Pads<'_>,
+    viewing: &BTreeSet<Slot>,
+) -> usize {
+    waiting
+        .iter()
+        .filter(|(at, _)| !viewing.contains(*at))
+        .filter(|(at, _)| {
+            let pad = pads.at(**at);
+            matches!(pad.state, Some(SlotState::NeedsAnswer { .. })) && !pad.muted
+        })
+        .count()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use super::*;
+    use crate::anchor::Session;
+    use crate::config::Config;
+    use crate::model::{self, Pads};
+    use crate::signal::Source;
+    use crate::slot::Pages;
+
+    fn at(page: u8, row: u8, col: u8) -> Slot {
+        Slot { page, row, col }
+    }
+
+    /// A session asking on `slot`, optionally muted.
+    fn asking(id: &str, slot: &str, muted: bool) -> Session {
+        let mut labels = BTreeMap::new();
+        let _slot = labels.insert("tl.slot".to_owned(), slot.to_owned());
+        let _att = labels.insert("tl.attention".to_owned(), "1".to_owned());
+        if muted {
+            let _m = labels.insert("tl.mute".to_owned(), "1".to_owned());
+        }
+        Session {
+            id: id.to_owned(),
+            state: "running".to_owned(),
+            exit_code: None,
+            lost_reason: None,
+            labels,
+            output_bytes: 0,
+            pid: None,
+        }
+    }
+
+    struct Fixture {
+        resolved: BTreeMap<Slot, model::Resolved>,
+        rows: BTreeMap<Slot, Vec<String>>,
+        config: Config,
+    }
+
+    impl Fixture {
+        fn new(sessions: &[Session]) -> Self {
+            let pages = Pages::default();
+            Self {
+                resolved: model::resolve(sessions, &BTreeMap::new(), &pages, 0),
+                rows: BTreeMap::new(),
+                config: Config::default(),
+            }
+        }
+        fn pads(&self) -> Pads<'_> {
+            Pads::new(&self.resolved, &self.config, &self.rows)
+        }
+    }
+
+    fn waiting(entries: &[(Slot, &str, i64)]) -> BTreeMap<Slot, (String, i64)> {
+        entries
+            .iter()
+            .map(|(s, id, since)| (*s, ((*id).to_owned(), *since)))
+            .collect()
+    }
+
+    /// The whole point: oldest first, not newest, and not whatever order
+    /// the map happens to iterate in.
+    #[test]
+    fn the_head_is_the_longest_waiting() {
+        let f = Fixture::new(&[
+            asking("A", "1:1:1", false),
+            asking("B", "1:2:1", false),
+            asking("C", "1:3:1", false),
+        ]);
+        let w = waiting(&[
+            (at(1, 1, 1), "A", 5_000),
+            (at(1, 2, 1), "B", 1_000), // the oldest
+            (at(1, 3, 1), "C", 9_000),
+        ]);
+        let head = head(&w, &f.pads(), &BTreeSet::new()).expect("a head");
+        assert_eq!(head.at, at(1, 2, 1));
+        assert_eq!(head.session, "B");
+        assert_eq!(head.since, 1_000);
+    }
+
+    /// Mute is the way out of a prompt you are never going to answer. A
+    /// queue that ignored it would hand it back on every press, forever.
+    #[test]
+    fn a_muted_slot_is_never_the_head() {
+        let f = Fixture::new(&[
+            asking("A", "1:1:1", true), // oldest, but muted
+            asking("B", "1:2:1", false),
+        ]);
+        let w = waiting(&[(at(1, 1, 1), "A", 1_000), (at(1, 2, 1), "B", 5_000)]);
+        let head = head(&w, &f.pads(), &BTreeSet::new()).expect("a head");
+        assert_eq!(head.at, at(1, 2, 1), "the muted one is skipped");
+        assert_eq!(depth(&w, &f.pads(), &BTreeSet::new()), 1);
+    }
+
+    /// `►` must not offer you the thing already filling your terminal.
+    #[test]
+    fn the_slot_you_are_looking_at_is_never_the_head() {
+        let f = Fixture::new(&[asking("A", "1:1:1", false), asking("B", "1:2:1", false)]);
+        let w = waiting(&[(at(1, 1, 1), "A", 1_000), (at(1, 2, 1), "B", 5_000)]);
+        let viewing: BTreeSet<Slot> = [at(1, 1, 1)].into_iter().collect();
+        let head = head(&w, &f.pads(), &viewing).expect("a head");
+        assert_eq!(head.at, at(1, 2, 1));
+    }
+
+    /// One asking, and you are on it: dark, and the press does nothing.
+    #[test]
+    fn nothing_to_offer_is_none_and_not_an_error() {
+        let f = Fixture::new(&[asking("A", "1:1:1", false)]);
+        let w = waiting(&[(at(1, 1, 1), "A", 1_000)]);
+        let viewing: BTreeSet<Slot> = [at(1, 1, 1)].into_iter().collect();
+        assert_eq!(head(&w, &f.pads(), &viewing), None);
+        assert_eq!(depth(&w, &f.pads(), &viewing), 0);
+        let empty = BTreeMap::new();
+        assert_eq!(head(&empty, &f.pads(), &BTreeSet::new()), None);
+    }
+
+    /// The journal map is updated once a reconcile; a press can land
+    /// between two of them. A slot that has since stopped asking must not
+    /// be offered just because the map has not caught up.
+    #[test]
+    fn a_slot_that_stopped_asking_is_dropped_even_if_the_map_lags() {
+        let f = Fixture::new(&[]); // nothing on the grid at all
+        let w = waiting(&[(at(1, 1, 1), "A", 1_000)]);
+        assert_eq!(head(&w, &f.pads(), &BTreeSet::new()), None);
+    }
+
+    /// Two pads that rose in the same tick must not make the head flicker
+    /// between them on consecutive frames.
+    #[test]
+    fn ties_break_by_address_so_the_head_is_stable() {
+        let f = Fixture::new(&[asking("A", "1:3:1", false), asking("B", "1:2:1", false)]);
+        let w = waiting(&[(at(1, 3, 1), "A", 1_000), (at(1, 2, 1), "B", 1_000)]);
+        for _ in 0..4 {
+            let head = head(&w, &f.pads(), &BTreeSet::new()).expect("a head");
+            assert_eq!(head.at, at(1, 2, 1), "lower address wins, every time");
+        }
+    }
+
+    #[test]
+    fn depth_counts_what_the_queue_would_offer() {
+        let f = Fixture::new(&[
+            asking("A", "1:1:1", false),
+            asking("B", "1:2:1", false),
+            asking("C", "1:3:1", true),
+        ]);
+        let w = waiting(&[
+            (at(1, 1, 1), "A", 1),
+            (at(1, 2, 1), "B", 2),
+            (at(1, 3, 1), "C", 3),
+        ]);
+        assert_eq!(depth(&w, &f.pads(), &BTreeSet::new()), 2, "muted excluded");
+        let viewing: BTreeSet<Slot> = [at(1, 1, 1)].into_iter().collect();
+        assert_eq!(depth(&w, &f.pads(), &viewing), 1);
+    }
+
+    /// Source does not rank. A declared amber and a derived one are the
+    /// same request for your attention, and the only thing that orders
+    /// them is how long they have waited.
+    #[test]
+    fn where_the_amber_came_from_does_not_change_its_place() {
+        let f = Fixture::new(&[asking("A", "1:1:1", false), asking("B", "1:2:1", false)]);
+        let pads = f.pads();
+        assert!(matches!(
+            pads.at(at(1, 1, 1)).state,
+            Some(SlotState::NeedsAnswer {
+                source: Source::Declared
+            })
+        ));
+        let w = waiting(&[(at(1, 1, 1), "A", 9_000), (at(1, 2, 1), "B", 1_000)]);
+        assert_eq!(
+            head(&w, &pads, &BTreeSet::new()).expect("a head").at,
+            at(1, 2, 1)
+        );
+    }
+}

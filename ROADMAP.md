@@ -287,6 +287,106 @@ Exit:
 
 ---
 
+## M7 — Where views live
+
+Not three fixes. **One sentence in `docs/06` was wrong**, and the three
+open issues are what you get downstream of it: a view is a tmux *window*.
+That was true when `tallyd` under launchd was the only thing creating
+views, and it has been the definition ever since.
+
+A view is a **pane** ([docs/15](docs/15-views.md)). Then
+[#1](https://github.com/alehatsman/tally/issues/1) has a unit to adopt,
+[#2](https://github.com/alehatsman/tally/issues/2) has a pane that does
+not close, and [#3](https://github.com/alehatsman/tally/issues/3) has a
+coordinate that is the whole address rather than most of it.
+
+Scope, in dependency order. All three cleared by
+[docs/16](docs/16-the-queue.md), which settled the layout question #8 was
+holding them behind:
+
+| step | closes | cleared |
+|---|---|---|
+| 1. identity to the pane, `remain-on-exit`, revive-in-place | #2 | ✅ |
+| 2. adoption — `tally spawn` takes over the pane you ran it in | #1 | ✅ |
+| 3. the return trip — `◄` on the top row | #3 | ✅ |
+
+Exit, for step 1:
+- ⬜ kill a session while focused on its view: still attached, corpse
+  readable, layout intact — and the same when an agent exits on its own
+- ⬜ kill the only live session and the `tally` session survives, with no
+  stray shell window reintroduced
+- ⬜ a detach leaves the pad green and the next press revives the view in
+  the pane it was already in
+
+> **Two tmux facts that argue against the obvious implementation**, both
+> measured on a live 3.6b server rather than assumed. A window option is
+> inherited by **every pane in the window** — so splitting a view window
+> gives two panes claiming the same anchor session, today, with the
+> current code. It does not bite only because nothing splits a view
+> window, which is precisely what #1 makes normal. Same class as the
+> missing `-w` that `docs/06` already records, one level down.
+>
+> And the obvious way to ask where a client is looking is wrong:
+> `display-message -p -c <client>` resolves its target against an
+> unrelated session, because `-c` chooses where a message would be
+> *displayed*. `list-clients -F '#{client_name} #{pane_id}'` is the
+> correct call, and the incorrect one looks more correct.
+
+> **#2 goes first, and not as a compromise.** The issue asked whether to
+> fix it before #1 or alongside it. It is the step the other two are built
+> on: adoption needs a pane that survives its agent, and a return needs a
+> pane-level coordinate to return to.
+
+> **Steps 2 and 3 were written before anyone checked the layout docs, and
+> collided with them** — `docs/13` §5 had already spent the second tap, and
+> adoption was written against an address format #8 might replace. Both are
+> released by [docs/16](docs/16-the-queue.md): the return gesture moves to
+> its own button and addressing does not change. Recorded because a spec
+> validated against the code and not against the other specs will do this
+> again.
+
+---
+
+## M8 — The top row is a queue
+
+The first hour of `attention.jsonl` answered a question M6 made askable and
+`docs/13` §10 said gates the whole layout: **61% of the time more than one
+agent is waiting, and 15% of the time exactly one is.** There is usually no
+*the* amber pad. And the choice is not close — when two or more are amber
+the gap between the longest and shortest wait is a median of 386 s.
+
+So the bottleneck is not finding the blocked agent. It is **choosing among
+several, and getting back afterwards** — and neither is a grid-layout
+problem ([docs/16](docs/16-the-queue.md)).
+
+Scope: `►` jumps to the longest-waiting amber, `◄` returns you, `▲▼` page,
+and the other four top-row buttons go dark. The queue is derived from
+state tallyd already holds — `Journal::asking` keys slots to their original
+rise time, which #7 made durable and which turns out to be the queue.
+
+Exit:
+- ⬜ `►` amber reads as *there is work* and not as *this page wants you*
+- ⬜ the round trip is ten seconds: `►`, answer, `◄`
+- ⬜ losing the current-page readout is not missed
+- ⬜ a week of `kind: "nav"` lines: how often `next` was used instead of a
+  pad, how deep the queue was, and whether you answered something younger
+  than the head
+
+> **The idea this retires.** `docs/13` §5 narrowed *answer from the grid*
+> to the one answer safe to give without reading, having opened by calling
+> it "the most dangerously framed" idea in `12`. It is still a button that
+> answers an amber light rather than a command. Spending `►` on navigation
+> retires it without needing a further argument — and navigation commits
+> nothing, which is exactly why *answer-and-advance* was rejected.
+
+> **What it costs.** `docs/05` spent four paragraphs on a rule learned in
+> real confusion: exactly one page button is bright and it is the one you
+> are on. This deletes it. The defence is one number — **pages used, 70 :
+> 2** — and if pages ever become load-bearing this is the first decision to
+> revisit.
+
+---
+
 ## Later, unscheduled
 
 - ~~the `settings.json` line for the `Notification` hook~~ — **M6**. It was
@@ -307,6 +407,8 @@ M3  spawn + chords    ← the launcher half
 M4  pages             ← ergonomics
 M5  tally spawn       ← the folder comes from a shell, not a file
 M6  the amber exists  ← M1's risk, answered: the signal was absent
+M7  where views live  ← a view is a pane; #1 #2 #3
+M8  the top row queue ← 61% of the time there is no *the* amber pad
 ```
 
 M6 is out of order on purpose. It is M1's work, and it is here rather than

@@ -11,7 +11,8 @@
 //! (`docs/08-lifecycle.md#one-process-no-socket`).
 
 use std::collections::BTreeMap;
-use std::process::ExitCode;
+use std::os::unix::process::CommandExt;
+use std::process::{Command, ExitCode};
 
 use tally::anchor::{Client, Spawn};
 use tally::attention::Ancestry;
@@ -106,6 +107,13 @@ fn attention(on: bool) -> ExitCode {
     }
 }
 
+/// The binary an adopted pane hands itself to.
+///
+/// Bare, not a path: this runs in your shell, so your `PATH` is the right
+/// answer — unlike `tallyd` under launchd, which has to be told
+/// (`docs/06-jump.md#what-the-daemons-environment-does-not-have`).
+const ANCHOR_BIN: &str = "anchor";
+
 fn spawn(claim: &Claim, pages: &Pages) -> ExitCode {
     let Some(address) = claim.at.label(pages) else {
         eprintln!("tally: that address has no page name");
@@ -154,15 +162,53 @@ fn spawn(claim: &Claim, pages: &Pages) -> ExitCode {
         login_shell: true,
         labels: &labels,
     }) {
-        Ok(id) => {
-            println!("spawned {id} on {address}");
-            ExitCode::SUCCESS
-        }
+        Ok(id) => adopt_or_report(claim, &id, &address),
         Err(e) => {
             eprintln!("tally: {e}");
             ExitCode::FAILURE
         }
     }
+}
+
+/// Hand this pane over to the session just created, or print and return.
+///
+/// **Nothing execs before the claim is accepted.** Every refusal above —
+/// a bad address, a held pad, an unreachable anchord — has already
+/// returned with the shell alive. By the time control reaches here the
+/// session exists, so replacing the shell is the thing that was asked for
+/// (`docs/15-views.md#adoption-tally-spawn-from-a-pane`).
+fn adopt_or_report(claim: &Claim, id: &str, address: &str) -> ExitCode {
+    // Outside tmux there is nothing to adopt: a bare terminal running
+    // `anchor attach` is a perfectly good view and a completely unfindable
+    // one, so a pad press could never focus it and would open a second
+    // view onto the same session. Falling back is the smaller change and
+    // the honest one.
+    let pane = (!claim.detach)
+        .then(|| {
+            std::env::var("TMUX")
+                .ok()
+                .and(std::env::var("TMUX_PANE").ok())
+        })
+        .flatten();
+    let Some(pane) = pane.filter(|p| !p.is_empty()) else {
+        println!("spawned {id} on {address}");
+        return ExitCode::SUCCESS;
+    };
+
+    // Tagging is fatal, and on purpose: an untagged pane running the
+    // attach is a view no pad can find, which is worse than not adopting.
+    if let Err(e) = tally::jump::adopt(&pane, id) {
+        eprintln!("tally: could not claim this pane: {e}");
+        eprintln!("tally: spawned {id} on {address}; press its pad to open it");
+        return ExitCode::FAILURE;
+    }
+
+    let err = Command::new(ANCHOR_BIN).arg("attach").arg(id).exec();
+    // `exec` only returns on failure. The session is already running, so
+    // say where it went rather than leaving it sounding lost.
+    eprintln!("tally: could not run `{ANCHOR_BIN} attach {id}`: {err}");
+    eprintln!("tally: it is spawned on {address}; press its pad to open it");
+    ExitCode::FAILURE
 }
 
 /// What to call a state in a sentence. The pad says it in colour; this
