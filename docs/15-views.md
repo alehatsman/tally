@@ -176,11 +176,9 @@ to a pane you actually *closed*, not to one whose agent merely died.
 
 ## Adoption: `tally spawn` from a pane
 
-> ⚠️ **Held.** This section is designed, not cleared — see
-> [What is cleared to build](#what-is-cleared-to-build). It is written
-> against `page:row:col`, and
-> [#8](https://github.com/alehatsman/tally/issues/8) may replace that
-> address format one-way.
+> ✅ **Cleared by [16](16-the-queue.md).** Addressing stays
+> `page:row:col`, declared, so there is no one-way migration to build
+> this twice against.
 
 Spawning from a shell means standing somewhere on purpose. `tally spawn`
 run **inside tmux** adopts the pane it was invoked in.
@@ -229,11 +227,10 @@ Adoption does not change what a shell-spawned session knows about itself.
 
 ## The return trip
 
-> ⚠️ **Held, and one rule below is contradicted.**
-> [`docs/13` §5](13-layout-review.md) already decided what a second tap on
-> a pad means — *"a second tap still jumps"*. Rule 3 gives that press a
-> third meaning. See
-> [What is cleared to build](#what-is-cleared-to-build).
+> ✅ **Cleared by [16](16-the-queue.md), with rule 3 replaced.** The
+> return gesture is `◄` on the top row, not a second press on a pad — it
+> gets its own button, with an affordance, and no tap is overloaded. The
+> other three rules below are unchanged and are what `◄` is built on.
 
 A jump is one-directional today because `jump` (`src/jump.rs:314`) switches
 the client without first reading where it was. The information exists for
@@ -468,8 +465,13 @@ tracked as [#8](https://github.com/alehatsman/tally/issues/8).
 | step | closes | cleared | why |
 |---|---|---|---|
 | 1. identity to the pane | **#2** | ✅ | nothing in any layout changes whether a pane closes when its command exits |
-| 2. adoption | #1 | ⬜ | built on `page:row:col`, which #8 may replace one-way |
-| 3. the return trip | #3 | ⬜ | `13` §5 already spent the second tap |
+| 2. adoption | #1 | ✅ | [16](16-the-queue.md) keeps addressing declared and unchanged |
+| 3. the return trip | #3 | ✅ | [16](16-the-queue.md) gives it `◄`, its own button |
+
+> **All three are cleared as of [16](16-the-queue.md).** What follows is
+> the record of why two of them were held, kept because the reasoning is
+> the useful part — a spec validated against the code and not against the
+> other specs will do this again.
 
 **The #3 conflict is the one worth stating plainly.** The return gesture
 was proposed here as *no new button, no new colour* — and that was true
@@ -506,6 +508,7 @@ Three steps, in dependency order, each shippable alone:
 #2 asked whether it should be fixed first or together with #1. First — and
 not as a compromise: it is the step the other two are built on.
 
-Steps 2 and 3 are held behind
-[#8](https://github.com/alehatsman/tally/issues/8). Their design above
-stands; their clearance does not.
+Steps 2 and 3 were held behind
+[#8](https://github.com/alehatsman/tally/issues/8) and are released by
+[16](16-the-queue.md). Step 3's gesture is `◄`, not the second pad press
+proposed above.
