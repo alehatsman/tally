@@ -483,6 +483,22 @@ impl Tmux {
     }
 }
 
+/// Claim `pane` as the view for `session`: tag it, and make it outlive
+/// the command about to replace this process.
+///
+/// Used by `tally spawn` to adopt the pane it was run in. It is a free
+/// function rather than a [`Jump`] method because the caller has no grid,
+/// no origin table and nothing to jump *to* — it is already standing
+/// where the view is going (`docs/15-views.md`).
+///
+/// # Errors
+/// Whatever tmux said. The caller must treat a failure as fatal **before**
+/// it execs: a pane that runs the attach without carrying the tag is a
+/// view no pad can ever find.
+pub fn adopt(pane: &str, session: &str) -> Result<(), Error> {
+    Tmux::tag(pane, session)
+}
+
 /// The session a pane views, if it is a view at all.
 fn session_of(listing: &str, pane: &str) -> Option<String> {
     listing.lines().find_map(|line| {

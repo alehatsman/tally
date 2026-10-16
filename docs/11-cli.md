@@ -32,7 +32,7 @@ file.
 ## `tally spawn`
 
 ```text
-tally spawn     <row:col | page:row:col> [-- command [args…]]
+tally spawn     [--detach] <row:col | page:row:col> [-- command [args…]]
 tally attention <on | off>
 ```
 
@@ -52,6 +52,27 @@ spawned 01M53KR… on work:3:4
 | command | defaults to `claude` | the thing this grid is for |
 | cwd | **always `$PWD`** | the entire point; there is no `--cwd`, `cd` is the flag |
 | login shell | always | you want your `PATH`, and a spawn that cannot find `claude` is not useful |
+| pane | **adopted**, unless `--detach` | you navigated here on purpose ([15](15-views.md#adoption-tally-spawn-from-a-pane)) |
+
+**Inside tmux, `spawn` does not return.** The pane you ran it in becomes
+the view: the shell is replaced by `anchor attach`, and the pad focuses
+that pane rather than a window under `tally`. Navigate to it with normal
+tmux keys or press its pad — same pane, either way.
+
+Nothing execs before the claim is accepted. Every refusal below happens
+with the shell still alive; by the time the pane is handed over, the
+session exists.
+
+| where | what |
+|---|---|
+| inside tmux | adopts `$TMUX_PANE`, execs |
+| inside tmux, `--detach` | prints and returns |
+| outside tmux | prints and returns |
+
+**Outside tmux it falls back rather than adopting the terminal.** A bare
+terminal running `anchor attach` is a perfectly good view and a completely
+unfindable one — no pane to tag, so a pad press could never focus it and
+would open a second view onto the same session.
 
 **No `--cwd` is deliberate.** A flag would re-admit the thing we are
 removing — a directory typed by hand — and the shell has a perfectly good
