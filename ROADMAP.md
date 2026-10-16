@@ -313,6 +313,8 @@ holding them behind:
 Exit, for step 1:
 - ⬜ kill a session while focused on its view: still attached, corpse
   readable, layout intact — and the same when an agent exits on its own
+  (every live view is now pane-tagged with `remain-on-exit`, migrated in
+  place by ordinary pad presses, so the fix is armed and waiting on a kill)
 - ⬜ kill the only live session and the `tally` session survives, with no
   stray shell window reintroduced
 - ⬜ a detach leaves the pad green and the next press revives the view in
@@ -365,9 +367,12 @@ state tallyd already holds — `Journal::asking` keys slots to their original
 rise time, which #7 made durable and which turns out to be the queue.
 
 Exit:
-- ⬜ `►` amber reads as *there is work* and not as *this page wants you*
-- ⬜ the round trip is ten seconds: `►`, answer, `◄`
-- ⬜ losing the current-page readout is not missed
+- ✅ `►` amber reads as *there is work* and not as *this page wants you*
+- ✅ the round trip is ten seconds: `►`, answer, `◄` — measured at **1.1 s**
+  between the `►` that moved you and the `◄` that brought you home
+- ⬜ losing the current-page readout is not missed — and `▲▼` now scroll a
+  row at a time rather than cutting to a page, which is most of why it is
+  not
 - ⬜ a week of `kind: "nav"` lines: how often `next` was used instead of a
   pad, how deep the queue was, and whether you answered something younger
   than the head
@@ -384,6 +389,20 @@ Exit:
 > are on. This deletes it. The defence is one number — **pages used, 70 :
 > 2** — and if pages ever become load-bearing this is the first decision to
 > revisit.
+
+
+> **The instrument caught the spec, not the code.** `◄` shipped dark: the
+> origin rule said never record a view pane, which assumed you jump *from*
+> nvim. Every pane this grid is used from is an anchor session, so nothing
+> was ever recorded. Two `{"via":"back","ok":false}` lines an hour after
+> shipping said so — written by the journalling added in the same commit,
+> for exactly this. The spec was validated against the code and against the
+> other specs; nothing but use could have checked it against the desk.
+
+> **One number to watch.** Every `next` press so far reports `queued: 1` —
+> one thing waiting, no choice to make. If that holds for a week, the 61%
+> that justified this milestone was an artefact of one unusual hour, and
+> #8's grouping argument deserves its second look.
 
 ---
 
