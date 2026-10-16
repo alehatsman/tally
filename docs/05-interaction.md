@@ -11,8 +11,8 @@ and it rules out more than a handful of states.
 | state | colour | mode | reads as |
 |---|---|---|---|
 | nothing here | off | — | — |
-| working | 21 green | **pulsing** | alive, producing output |
-| quiet | 21 green | static | alive, idle |
+| working | 21 green | static | alive |
+| quiet | 21 green | static | alive |
 | **needs an answer** | 9 amber | **pulsing** | **look at me** |
 | ended badly | 5 red | static | go and look |
 | lost | 7 dark red | static | the daemon cannot account for it |
@@ -53,11 +53,36 @@ That is tolerable because a *failed* one does not, and because an
 interactive agent rarely exits at all — Claude Code sits at a prompt when
 it is done, so "alive and idle" is the common resting state, not "exited".
 
-### Nothing blinks
+### Nothing blinks, and only attention moves
 
-Two things move and **both breathe** — the device's two-beat ramp. What
-separates them is **hue, not rhythm**: green is alive, amber wants you, and
-amber is reserved so nothing else on the surface is ever that colour.
+**One thing moves**, and it breathes — the device's two-beat ramp. Amber
+is reserved, so nothing else on the surface is ever that colour, and
+nothing else on the surface ever moves.
+
+⚠️ **Working and quiet used to differ, and the table above was changed.**
+Green pulsed for *producing output* and sat still for idle. The pulse was
+reported as **tiring** after a day beside it, and the diagnosis is worth
+keeping:
+
+- **Five working agents is five pads in motion**, carrying something
+  nobody ever acts on. The surface was busiest exactly when nothing
+  needed anything.
+- **The tempo is one global clock** ([17](17-the-tempo.md)). A single pad
+  waiting fifteen minutes drove *every unrelated green pulse* to 140 bpm,
+  where a breath cycle is 0.86 s. Urgency was being broadcast onto pads
+  that had none — measured at **19% of a 10-hour day** in the 120-140
+  band, against 61% at the calm floor.
+- The distinction is still **known** — it is what the attention signal is
+  derived from ([04](04-signals.md)) — it just stopped being **shown**.
+
+The cost, stated plainly: you can no longer see which agents are actively
+producing output. That turns out to be information you watch rather than
+act on, and the pad you act on is amber.
+
+This is the second time this section has been rewritten by *a day beside
+the thing*, and both times in the same direction: **less motion**. The
+measurement below took a few hours; this one took a day; both found that
+what reads well at a glance wears badly by the afternoon.
 
 An earlier version of this section argued the opposite, and it is worth
 recording why it was wrong. It said *movement is the alphabet* and gave
@@ -68,8 +93,9 @@ which is a different measurement that only a few hours beside the thing can
 take. A surface you sit next to all day has a constraint a surface you
 glance at does not.
 
-So the alphabet is colour. Breathing says *something is happening here*;
-the hue says what, and only one hue is ever a request. Checked both ways
+So the alphabet is colour. Breathing no longer says *something is
+happening here* — it says **something is asking**, which is the one thing
+worth interrupting for, and the only hue that was ever a request. Checked both ways
 after the change, because gentler is only an improvement if it still works:
 **calmer, and still catches the eye** from a screen.
 
@@ -83,7 +109,8 @@ unreachable anchord, so **dark red means the daemon had a problem, wherever
 you see it**.
 
 A muted slot ([04](04-signals.md#the-state-a-pad-renders)) renders the state
-*underneath* its attention — green, pulsing or not. It does not get a colour
+*underneath* its attention — green, which is now all that alive looks
+like. It does not get a colour
 of its own: another thing competing for the eye is exactly what this section
 refuses, and you muted it to stop looking at it.
 
@@ -154,11 +181,15 @@ not just an optimisation: a host-driven blink drifts, stutters under load,
 and keeps blinking for one frame after the state changed. The hardware's
 does not.
 
-**How fast they breathe is a signal of its own** — the age of the oldest
+**How fast it breathes is a signal of its own** — the age of the oldest
 thing waiting, carried by MIDI clock ([17](17-the-tempo.md)). The ramp
 stays on the device, so none of the above is given back; only the beat
-boundary becomes the host's. Hue says *what*, motion says *something is
-happening*, and tempo says *how long it has been*.
+boundary becomes the host's.
+
+Hue says *what*, motion says **something is asking**, and tempo says *how
+long it has been*. The global clock stopped being a flaw the moment green
+went still: it now modulates only the pads that are actually waiting,
+which is what it always claimed to measure.
 
 ### The logo is the health light
 

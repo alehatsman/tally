@@ -6,14 +6,27 @@
 //! (working, quiet, exited-clean) and failed on the second count: you could
 //! see the difference and could not recall which was which.
 //!
-//! So the rule is one sentence. **Green means alive**; motion inside green
-//! means producing output. Anything not green is gone, and the pad that
-//! wants you is the only amber thing on the surface.
+//! So the rule is one sentence. **Green means alive**, anything not green
+//! is gone, and the pad that wants you is the only amber thing on the
+//! surface.
 //!
-//! **Nothing blinks.** Everything that moves breathes -- the device's
-//! two-beat ramp -- because this is a surface somebody sits beside all day,
-//! and a hard 50% flash reads as urgent for a minute and as stressful by
-//! the afternoon. Urgency is carried by hue, which does not get tiring.
+//! **Nothing blinks**, and now almost nothing moves. Everything that does
+//! breathes -- the device's two-beat ramp -- because this is a surface
+//! somebody sits beside all day, and a hard 50% flash reads as urgent for
+//! a minute and as stressful by the afternoon.
+//!
+//! Green used to move too: a pulse meant *producing output*. That cost
+//! more than it bought and was reported as **tiring** after a day beside
+//! it, which is the same measurement that killed the hard amber flash and
+//! the only one that can be taken by sitting there. Five working agents
+//! put five pads in motion carrying something nobody acts on, and the
+//! surface was busiest exactly when nothing needed anything. Worse, the
+//! tempo is one global clock, so an unrelated pad waiting fifteen minutes
+//! drove every green pulse to 140 bpm -- urgency broadcast onto pads with
+//! none.
+//!
+//! **Motion now means one thing: something wants you.** Which is what
+//! this module always claimed and, until green went still, was not true.
 
 use crate::chord::Action;
 use crate::model::{Consequence, Effect};
@@ -25,8 +38,11 @@ use crate::surface::Cell;
 pub fn slot(state: SlotState) -> Cell {
     match state {
         SlotState::Empty => Cell::Off,
-        SlotState::Working => Cell::Pulse(GREEN),
-        SlotState::Quiet => Cell::Static(GREEN),
+        // One colour for alive. The working/quiet distinction is still
+        // *known* -- it drives the attention signal and the overview's
+        // ranking -- it just stopped being *shown*, because showing it
+        // cost the only thing motion had left to say (module header).
+        SlotState::Working | SlotState::Quiet => Cell::Static(GREEN),
         // Breathing, not blinking. A hard 50% flash reads as urgent for
         // about a minute and as stressful for an afternoon, and this is a
         // surface someone sits next to all day. The pulse is a two-beat
@@ -254,10 +270,10 @@ mod tests {
     /// Two things move, and both breathe. What separates them is hue, not
     /// rhythm -- green for alive, amber for wanting you.
     #[test]
-    fn only_two_slot_states_move_and_both_breathe() {
+    fn only_attention_moves_and_it_breathes() {
         let moving: Vec<_> = ALL.into_iter().filter(|&s| animated(slot(s))).collect();
-        assert_eq!(moving.len(), 2, "{moving:?}");
-        assert_eq!(slot(SlotState::Working), Cell::Pulse(GREEN));
+        assert_eq!(moving.len(), 1, "{moving:?}");
+        assert_eq!(slot(SlotState::Working), Cell::Static(GREEN));
         assert_eq!(
             slot(SlotState::NeedsAnswer {
                 source: Source::Derived
@@ -376,11 +392,24 @@ mod tests {
         assert_eq!(slot(SlotState::Lost { reclaimable: false }), unreachable);
     }
 
-    /// Every state is visually distinct from every other.
+    /// Every state is visually distinct from every other, with **one
+    /// deliberate exception**.
+    ///
+    /// `Working` and `Quiet` are both plain green now. The distinction is
+    /// still known — it is what the attention signal is derived from —
+    /// but it stopped being drawn, because drawing it cost a pulse on
+    /// every busy pad all day and that was reported as tiring (the module
+    /// header). The exception is written here rather than removed from
+    /// the invariant, so that collapsing a *second* pair still fails.
     #[test]
     fn no_two_states_share_a_cell() {
+        let collapsed = [SlotState::Working, SlotState::Quiet];
         for (i, &a) in ALL.iter().enumerate() {
             for &b in &ALL[i + 1..] {
+                if collapsed.contains(&a) && collapsed.contains(&b) {
+                    assert_eq!(slot(a), slot(b), "alive is one colour now");
+                    continue;
+                }
                 assert_ne!(slot(a), slot(b), "{a:?} and {b:?} look identical");
             }
         }

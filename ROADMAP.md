@@ -431,11 +431,27 @@ Exit:
   measured with `examples/clock.rs` against a live grid, 60/150/60 bpm
   between two silent baselines. *"It breathes slower and faster, it
   works."* The first time one of these perceptual gates has come back yes
-- ⬜ 60 bpm reads as calm and not as broken; 140 as *this is getting old*
-  and not as *alarm*
-- ⬜ a day beside the quickening without it becoming tiring — the
-  measurement the hard amber flash failed
+- ✅ 60 bpm reads as calm and not as broken — 61% of a 10-hour day sits
+  there, and it is not what anyone complained about
+- ❌ **a day beside the quickening without it becoming tiring — FAILED.**
+  *"the constant breathing of the buttons does make me tired"*. The same
+  gate the hard amber flash failed, for the same reason: legible at a
+  glance, wearing by the afternoon
 - ⬜ a wedged `tallyd` is visibly frozen rather than quietly stale
+
+**The fix was not in the tempo.** Time-weighted over 10.1 h the mapping
+behaved as designed — 61% at the floor, 19% in the 120-140 band — so the
+number of beats was right and the **number of pads** was wrong. `docs/17`
+had explicitly defended driving four working agents at 140 bpm because one
+unrelated pad had been ignored; that paragraph is the thing that made it
+tiring, and it is now marked as such.
+
+Green stopped moving. Motion is spent only on amber, so the surface is
+still unless something is asking, and the one global clock now modulates
+only the pads that are actually waiting. The cost: working and quiet look
+identical, and *which agent is producing output* is no longer visible —
+information it turned out you watch rather than act on
+([docs/05](docs/05-interaction.md#nothing-blinks-and-only-attention-moves)).
 
 > **It trades "set once and forget" for one byte, forever.** `docs/02`
 > sells the palette animations on *no timer, no repaint loop, no drift*,

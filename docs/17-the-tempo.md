@@ -92,6 +92,23 @@ not calm — something has been ignored for eleven minutes — and the surface
 should not pretend otherwise just because the thing being ignored occupies
 one pad.
 
+⚠️ **That last paragraph was wrong, and it is the thing that made the
+quickening tiring.** It defends the exact behaviour a day of use reported
+as wearing: four unrelated pads driven to 140 bpm, where a breath cycle is
+0.86 s, by one pad nobody had answered.
+
+The argument is not wrong about the *room*. It is wrong about **where to
+say it**. "Something has been ignored for eleven minutes" is one fact and
+it was being painted onto five pads, four of which could do nothing about
+it. The fix was not to make the clock per-pad — this section is right that
+there must not be one — but to stop green from animating at all
+([05](05-interaction.md#nothing-blinks-and-only-attention-moves)).
+
+What is left is better than what was defended here: one clock, driving
+only the pads that are actually waiting. The aggregate mood survives,
+because the amber *is* the room's mood, and the four working agents go
+quiet while it does.
+
 ## The cost: a clock is a loop
 
 **This trades "set it once and forget" for one byte, forever.** MIDI clock
@@ -213,10 +230,18 @@ time the hardware said **yes**.
 
 - [x] **the device honours MIDI clock on the port we already open** —
       confirmed, see above
-- [ ] 60 bpm reads as calm and not as broken
 - [ ] 140 bpm reads as *something is getting old* and not as *alarm*
-- [ ] a day beside it without the quickening becoming tiring — the
-      measurement the hard amber flash failed, which only hours can take
+- [x] 60 bpm reads as calm and not as broken — 61% of a 10-hour day sits
+      there, and it is not what anyone complained about
+- [✗] **a day beside it without the quickening becoming tiring — FAILED**,
+      the same measurement the hard amber flash failed and for the same
+      reason: legible at a glance, wearing by the afternoon. *"the
+      constant breathing of the buttons does make me tired"*.
+      Time-weighted over 10.1 h: 61% at the calm floor, **19% in the
+      120-140 band**. Fixed by stopping green from moving, not by changing
+      a number here — the tempo mapping was never the problem, the number
+      of pads it animated was
+      ([05](05-interaction.md#nothing-blinks-and-only-attention-moves))
 - [ ] a wedged `tallyd` is visibly frozen rather than quietly stale
 
 ## Rejected
