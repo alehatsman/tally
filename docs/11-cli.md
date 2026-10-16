@@ -83,6 +83,22 @@ A failed or lost pad refusing is the deliberate half: red has one job, which
 is *go and look*, and spawning over it would erase the only sign. Purge it
 from the grid, then spawn.
 
+**The check is advisory, and knowing why matters.** It is a list, a
+decision, then a create (`src/bin/tally.rs:80`), with nothing holding the
+address in between, and anchor puts no uniqueness constraint on label
+values — so two spawns racing for the same pad both succeed, and both
+sessions carry the same `tl.slot`. The grid then draws the newest and only
+the newest (`src/model.rs:84`), which makes the loser a running `claude` in
+a real repo that no pad shows, no chord reaches and no amber can report:
+you find out when the work never arrives. That is not fixable from this
+side. It is a property of the protocol, and the design already accepts
+*newest wins* everywhere else ([03](03-model.md#limits)) rather than
+pretend a pad can be held. What the check buys is the case you actually hit
+— you forgot that pad was taken — not the case where you and a script reach
+for `1:1` in the same second. When a session goes missing, `anchor ls
+--label tl.slot=1:1:1` is the only thing that shows it, and killing it by
+id is the only way to end it.
+
 ## What it does not do
 
 - **No socket to tallyd.** [08-lifecycle.md](08-lifecycle.md#one-process-no-socket)
