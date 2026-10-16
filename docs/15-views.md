@@ -332,6 +332,7 @@ visible mess for an invisible one.
 | find a view | `list-panes -a -F '#{pane_id} #{@tally_session} #{pane_dead}'` |
 | tag a pane | `set-option -p -t <pane> @tally_session <id>` |
 | hold the corpse | `set-option -p -t <pane> remain-on-exit on` |
+| label the corpse | `set-option -p -t <pane> remain-on-exit-format '… #{@tally_session} …'` ([19](19-the-dead-pane.md)) |
 | clear a legacy tag | `set-option -uw -t <window> @tally_session` |
 | revive in place | `respawn-pane -t <pane> '<anchor> attach <id>'` |
 | create a view | `new-window -d -P -F '#{pane_id}' -t tally: -n <name> '<anchor> attach <id>'` |

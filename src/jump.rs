@@ -204,6 +204,45 @@ fn remain_on_exit_args(pane: &str) -> Vec<String> {
     ]
 }
 
+/// What a dead view says about itself.
+///
+/// tmux draws a line on the last row of a pane whose command has exited;
+/// since 3.2 its text is the `remain-on-exit-format` pane option. The
+/// default — `Pane is dead (status 0, …)` — is the last thing a view ever
+/// tells you, and it does not name the session it was
+/// (`docs/19-the-dead-pane.md`).
+///
+/// **The id is read from the tag, not baked in here.** A literal would go
+/// stale the moment the pane is rebound to another session; `#{@…}`
+/// expands at draw time, so the line is right by construction.
+///
+/// The id goes early because the line is truncated at pane width — a
+/// narrow split loses the tail, never the payload. `attach exit` is named
+/// for what it is: the pane runs `anchor attach`, so the status is the
+/// attach client's, not the agent's.
+fn dead_pane_format() -> String {
+    format!("tally · anchor attach #{{{PANE_OPTION}}} · attach exit #{{pane_dead_status}}")
+}
+
+/// Args giving `pane` a dead-line that names its session.
+///
+/// Pane-scoped for the same reason as [`remain_on_exit_args`]: an adopted
+/// view sits among panes that are yours.
+///
+/// **Set long before any death.** Setting this on an already-dead pane
+/// does not repaint it — measured, tmux 3.6b — so it belongs with the
+/// other options in [`Tmux::tag`], not on the kill path.
+fn dead_pane_format_args(pane: &str) -> Vec<String> {
+    vec![
+        "set-option".into(),
+        "-p".into(),
+        "-t".into(),
+        pane.into(),
+        "remain-on-exit-format".into(),
+        dead_pane_format(),
+    ]
+}
+
 /// Args clearing a legacy window-scoped tag.
 ///
 /// Views created before the identity moved to the pane carry the option on
@@ -439,8 +478,11 @@ impl Tmux {
     /// command. Idempotent, so it runs on every resolve and repairs views
     /// created before either rule existed.
     fn tag(pane: &str, session: &str) -> Result<(), Error> {
+        // The tag first: the dead-line format reads `@tally_session`, and
+        // a pane that has not got one yet would die saying nothing.
         let _opt = Self::run("set-option", &set_option_args(pane, session))?;
         let _roe = Self::run("set-option", &remain_on_exit_args(pane))?;
+        let _fmt = Self::run("set-option", &dead_pane_format_args(pane))?;
         Ok(())
     }
 
@@ -675,6 +717,7 @@ mod tests {
         for args in [
             set_option_args("%7", SESSION),
             remain_on_exit_args("%7"),
+            dead_pane_format_args("%7"),
             respawn_pane_args("%7", SESSION, "anchor"),
             kill_pane_args("%7"),
             clear_window_option_args("@7"),
@@ -729,6 +772,32 @@ mod tests {
         let args = remain_on_exit_args("%7");
         assert!(args.contains(&"-p".to_owned()));
         assert_eq!(args.last().map(String::as_str), Some("on"));
+    }
+
+    /// The dead-line must read the tag, not a literal: a pane rebound to
+    /// another session would otherwise die naming the previous one.
+    #[test]
+    fn the_dead_line_names_the_session_through_the_tag() {
+        let args = dead_pane_format_args("%7");
+        assert!(args.contains(&"-p".to_owned()));
+        let fmt = args.last().expect("a format").clone();
+        assert!(
+            fmt.contains(&format!("#{{{PANE_OPTION}}}")),
+            "{fmt} expands the tag at draw time"
+        );
+        assert!(
+            !fmt.contains(SESSION),
+            "a baked-in id would be stale on a rebind"
+        );
+    }
+
+    /// `attach exit` is the attach client's status, not the agent's. The
+    /// agent's exit is on the pad; calling this one `exit` would be a lie
+    /// on every kill (`docs/19-the-dead-pane.md`).
+    #[test]
+    fn the_dead_line_does_not_claim_the_agents_exit() {
+        let fmt = dead_pane_format();
+        assert!(fmt.contains("attach exit #{pane_dead_status}"), "{fmt}");
     }
 
     #[test]
