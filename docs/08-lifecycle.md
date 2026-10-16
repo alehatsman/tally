@@ -170,7 +170,7 @@ things that appear without telling us.
 | anchord restarted | slots go dark red (`lost`) | truthful — anchor lost track of them ✅ seen |
 | tmux server gone | jump recreates it | spawn a view window on demand |
 | a watcher dropped | nothing | supervisor restarts it from `scanned_to` |
-| tallyd itself dies | lights freeze, then stale | next start repaints from anchor's labels |
+| tallyd itself dies | lights freeze, then stale | next start repaints from anchor's labels ✅ seen |
 
 | config file edited | changes appear next tick | re-reads `slots.toml`; a file that fails to parse is logged and the **previous** config is kept |
 
@@ -220,6 +220,22 @@ tallyd &                              # finds it by the same XDG rule
 anchor create --label tl.slot=1:2:2 -- sleep 3600
 kill -9 %1                            # and leave it dead
 ```
+
+✅ **The last row, tested by `SIGKILL`.** No restore ran, so the device was
+left in programmer mode holding a stale frame — the genuinely unrecoverable
+case this document admits to. Then the world was changed underneath it: one
+session terminated, another created, while nothing was watching.
+
+On restart `tallyd` rebuilt all three pads correctly — the survivor still
+green, the terminated one red (it recorded exit 1), the new one green — and
+repainted all 81 LEDs so no ghost of the old frame survived. The logo was
+dark, which is its own small confirmation: anchord reachable with nothing
+off-page wanting you is the health light correctly saying nothing.
+
+Nothing was carried across the kill. The grid was reconstructed entirely
+from `anchor list`, which is the whole argument for putting the binding in
+a label rather than in a sidecar database
+([03](03-model.md#where-the-binding-lives)).
 
 The row that matters is the last one. **tallyd holds no state that cannot be
 rebuilt from `anchor list` plus a config file**

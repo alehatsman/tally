@@ -89,7 +89,9 @@ Exit:
   `CoreMIDI` sends into a void without error — so liveness is a readback
   heartbeat, which also catches the replugged device coming back in Live
   mode
-- ⬜ kill `tallyd` mid-run and restart: the last row of that table
+- ✅ `SIGKILL` `tallyd` mid-run, change the sessions underneath it, restart:
+  all pads rebuilt correctly from `anchor list` with no ghosts of the old
+  frame. Nothing was carried across the kill
 - ⬜ **a week of real use, and a number out of `attention.jsonl`** — how
   many ambers sent you to a session that did not want anything. Counted,
   not remembered ([09](docs/09-testing.md#what-a-green-suite-does-not-prove)).
