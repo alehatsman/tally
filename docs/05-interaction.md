@@ -102,13 +102,26 @@ colours so the grid never has to be read for them:
 | button | resting | held / active |
 |---|---|---|
 | page, holds no session | off | — |
-| page, holds sessions | 37 turquoise, static | 3 white — the page you are on |
+| page, holds sessions | 1 dark grey, static | 3 white — the page you are on |
 | page, off-screen attention | 9 amber, **pulsing** | — |
 | action button (right column) | 45 blue, static | 3 white while held |
 
-Page buttons use turquoise and action buttons blue because they must not be
-mistakable for *any* slot state at a glance. Nothing in the slot palette is
-near either.
+**Exactly one page button is bright, and it is always the one you are on.**
+That is the rule, and it was learned the hard way: the row used to light
+the current page white and occupied pages turquoise, which failed exactly
+as the [three greens](#why-it-is-one-sentence) did. Both were perfectly
+legible; neither said *which is which*. The report from the desk was *"I
+am confused which one is selected, the white one or the turquoise one"* —
+two bright colours, two meanings, and no way to tell them apart without
+remembering a table.
+
+So **brightness answers "where am I" before hue answers anything**. One
+bright thing, some dim things, and the dim ones say "there is work over
+there". Hue on this row is then spent only on the thing that is urgent —
+amber, the same amber as everywhere else, meaning the same thing.
+
+Action buttons stay blue because they must not be mistakable for *any*
+slot state at a glance, and nothing in the slot palette is near it.
 
 An amber-pulsing page button says **which** page wants you; the logo says
 **that some page does**. Both, deliberately: the logo is visible from

@@ -344,7 +344,7 @@ pub fn needs_watcher<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::surface::palette::{AMBER, DARK_RED, GREEN, RED, TURQUOISE, WHITE};
+    use crate::surface::palette::{AMBER, DARK_GREY, DARK_RED, GREEN, RED, WHITE};
     use crate::surface::Cell;
 
     const NOW: i64 = 1_760_000_000_000;
@@ -807,7 +807,7 @@ mod tests {
         );
         assert_eq!(
             f.get(Button::Page(2)),
-            Cell::Static(TURQUOISE),
+            Cell::Static(DARK_GREY),
             "but its button says it holds work"
         );
         assert_eq!(

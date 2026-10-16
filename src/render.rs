@@ -18,7 +18,7 @@
 use crate::chord::Action;
 use crate::model::Effect;
 use crate::signal::SlotState;
-use crate::surface::palette::{AMBER, BLUE, DARK_GREY, DARK_RED, GREEN, RED, TURQUOISE, WHITE};
+use crate::surface::palette::{AMBER, BLUE, DARK_GREY, DARK_RED, GREEN, RED, WHITE};
 use crate::surface::Cell;
 
 /// How one slot is lit.
@@ -53,6 +53,18 @@ pub struct Page {
 }
 
 /// How a page button in the top row is lit.
+///
+/// **Exactly one bright thing, and it is always where you are.** An
+/// earlier version lit the current page white and occupied pages
+/// turquoise, which failed the same way the three greens did: both were
+/// perfectly legible and neither said *which is which*. Asked what was
+/// selected, the answer from the desk was "I am confused which one is
+/// selected, the white one or the turquoise one".
+///
+/// Brightness answers "where am I" before hue answers anything, so the
+/// row is read in one glance instead of recalled from a table. Hue is
+/// spent on the one thing that is urgent rather than on a distinction
+/// that brightness already makes.
 pub fn page(p: Page) -> Cell {
     if p.current {
         // You are looking at it, so there is no off-screen attention to
@@ -61,7 +73,7 @@ pub fn page(p: Page) -> Cell {
     } else if p.attention {
         Cell::Pulse(AMBER)
     } else if p.occupied {
-        Cell::Static(TURQUOISE)
+        Cell::Static(DARK_GREY)
     } else {
         Cell::Off
     }
@@ -340,7 +352,7 @@ mod tests {
                 occupied: true,
                 ..Page::default()
             }),
-            Cell::Static(TURQUOISE)
+            Cell::Static(DARK_GREY)
         );
         let wants = Page {
             occupied: true,
@@ -426,11 +438,49 @@ mod tests {
         assert_eq!(action(Some(Action::Kill), true), Cell::Static(WHITE));
     }
 
+    /// The failure this guards is the one that was hit: white for "you
+    /// are here" and turquoise for "has sessions" were equally bright,
+    /// and the row could not be read without recalling which was which.
+    #[test]
+    fn exactly_one_page_button_is_bright() {
+        let bright = |c: Cell| matches!(c, Cell::Static(e) if e != crate::surface::palette::OFF && e != DARK_GREY);
+        let here = page(Page {
+            current: true,
+            occupied: true,
+            attention: false,
+        });
+        assert!(bright(here));
+        // Every other resting state is dim or dark.
+        for elsewhere in [
+            Page::default(),
+            Page {
+                occupied: true,
+                ..Page::default()
+            },
+        ] {
+            assert!(!bright(page(elsewhere)), "{elsewhere:?}");
+        }
+    }
+
+    /// Dim is not dark: a page holding work still has to be visible as
+    /// different from an empty one, or the row answers only half a
+    /// question.
+    #[test]
+    fn a_page_holding_work_is_not_the_same_as_an_empty_one() {
+        assert_ne!(
+            page(Page {
+                occupied: true,
+                ..Page::default()
+            }),
+            page(Page::default())
+        );
+    }
+
     /// Controls must not be mistakable for any slot state at a glance.
     #[test]
     fn control_colours_are_disjoint_from_slot_colours() {
         let slot_entries: Vec<Cell> = ALL.into_iter().map(slot).collect();
-        for control in [action(Some(Action::Kill), false), Cell::Static(TURQUOISE)] {
+        for control in [action(Some(Action::Kill), false), Cell::Static(DARK_GREY)] {
             assert!(
                 !slot_entries.contains(&control),
                 "{control:?} collides with a slot colour"
