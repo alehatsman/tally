@@ -160,10 +160,15 @@ fn main() -> ExitCode {
 
     let mut chords = Chords::default();
     let watchers = Watchers::new(anchor.clone());
-    let mut journal = Journal::default();
-    // Best effort: a grid that lights up matters more than a log nothing
-    // reads back. If it cannot be opened, say so once and carry on.
+    // Best effort: a grid that lights up matters more than a log. If it
+    // cannot be opened, say so once and carry on.
     let journal_path = journal::default_path();
+    // Read back who was already asking when we last stopped. Without this
+    // a restart writes a second rising edge for a slot that never stopped
+    // asking, and times it from the restart rather than from the question
+    // (`docs/14-attention.md`). The one number M1 exists to produce is a
+    // count of these, so it has to count them once.
+    let mut journal = Journal::resumed(&journal_path, &pages);
     let mut journal_out = journal_path
         .parent()
         .map_or(Ok(()), std::fs::create_dir_all)

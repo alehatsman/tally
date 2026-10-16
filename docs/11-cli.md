@@ -32,7 +32,8 @@ file.
 ## `tally spawn`
 
 ```text
-tally spawn <row:col | page:row:col> [-- command [args…]]
+tally spawn     <row:col | page:row:col> [-- command [args…]]
+tally attention <on | off>
 ```
 
 ```sh
@@ -115,8 +116,45 @@ id is the only way to end it.
 - **No pad-picking.** It will not find you a free slot. The address is how
   you build muscle memory, and a grid that assigns addresses is one you look
   up rather than know.
-- **No other subcommands.** `anchor ls` already lists, `$EDITOR` already
-  edits. `spawn` exists because nothing else could do it.
+- **No other subcommands** beyond the one below. `anchor ls` already lists,
+  `$EDITOR` already edits. Each subcommand here exists because nothing else
+  could do it.
+
+## `tally attention on|off`
+
+The second subcommand, and it arrived the same way the first one did: a gap
+that was measured rather than guessed.
+
+```text
+tally attention on          set    tl.attention=1 on the calling session
+tally attention off         remove tl.attention  from the calling session
+```
+
+It is written for exactly one caller — a Claude Code hook — because the
+derived attention signal does not fire against that agent at all
+([14](14-attention.md)). `docs/04` had the hook call `anchor label` directly
+and it could not: **`anchor label` needs a session id, and nothing in a
+hook's environment has one.** The `$ANCHOR_SESSION` the recipe used is set
+by nothing.
+
+So the job is the lookup, not the label. It walks its own process ancestry
+until it finds a pid anchord recorded, which is the only key that works when
+two agents are running in one repo — the normal case on this grid.
+
+**Not under anchor is success.** The hook fires on every turn of every
+Claude Code session on this machine, and almost none of them are on the
+grid; an error there would put a line in the user's agent on every turn for
+a surface that is not even watching. Nothing on stdout, ever — stdout
+belongs to the agent's transcript.
+
+| | |
+|---|---|
+| exit `0` | written, **or** not under anchor |
+| exit `1` | anchord refused, or the socket is gone — one line on stderr |
+| exit `2` | usage: anything that is not exactly `on` or `off` |
+
+It takes no address. The session is wherever the hook is, which is the same
+principle `spawn` is built on: **the shell already knows**.
 
 ## Errors
 

@@ -27,25 +27,27 @@ in.
 
 ## Status
 
-**Design and a verified hardware surface. No implementation.** The protocol
-in [docs/02-surface.md](docs/02-surface.md) was read out of Novation's
-programmer's reference manual and then **checked against a real Launchpad
-Mini MK3 on 2026-10-16** ([M0](ROADMAP.md#m0--prove-the-manual)).
+**Shipped and driving a real desk.** Six milestones, 213 tests, and a
+Launchpad Mini MK3 on the desk reporting five agent sessions as you read
+this. The hardware protocol in [docs/02-surface.md](docs/02-surface.md) was
+read out of Novation's manual and verified against the device
+([M0](ROADMAP.md#m0--prove-the-manual)); the grid, the jump, the chords,
+the pages and `tally spawn` followed
+([M1](ROADMAP.md#m1--the-grid-tells-the-truth)–[M5](ROADMAP.md#m5--tally-spawn)).
 
-The manual turned out to be accurate: port names, addressing, device
-inquiry and all three worked examples came back exactly as written, a
-press round-trips in ~1.9 ms, and a full-surface repaint arrives in one
-SysEx. The two claims that were wrong were ours, not Novation's — the port
-is **not** exclusive on macOS, and the byte budget was off by one per
-frame. Every [M0](ROADMAP.md#m0--prove-the-manual) exit criterion is met; what
-little residue remains is in
-[docs/10](docs/10-open-questions.md#verified-against-hardware-2026-10-16)
-and none of it blocks M1.
+**The thing worth reading is what a day of use found.** The amber — the
+signal this whole product is a bet on — never fired once against the agent
+it was built for. Not a tuning problem: Claude Code does not ring the
+terminal bell at all, so the detector was correct, the suite was green, and
+there was nothing to detect. The attention half now comes from hooks the
+agent calls ([M6](ROADMAP.md#m6--the-amber-exists),
+[docs/14](docs/14-attention.md)).
 
-**M1 is the next milestone, and it writes code.**
-
-The design is in [docs/](docs/). The sequencing is in
-[ROADMAP.md](ROADMAP.md). M0 is the first milestone that writes code.
+That is the fifth time here that a surface fact only showed up on the
+surface, and the list is kept on purpose: the three greens, the hard amber
+flash, the title scroll, the top row, and now the bell that was never rung.
+What remains is the only exit criterion that cannot be hurried — **a week
+of `attention.jsonl`, and a number out of it.**
 
 ## The name
 
@@ -100,6 +102,9 @@ is a product.
 | [docs/09-testing.md](docs/09-testing.md) | testing a thing whose output is light |
 | [docs/10-open-questions.md](docs/10-open-questions.md) | what is asserted here but not proven |
 | [docs/11-cli.md](docs/11-cli.md) | `tally spawn`, for when the folder comes from you |
+| [docs/12-layout-proposal.md](docs/12-layout-proposal.md) | a proposal: rows are projects — **not design** |
+| [docs/13-layout-review.md](docs/13-layout-review.md) | the review of it, and a narrower counter-proposal |
+| [docs/14-attention.md](docs/14-attention.md) | the bell that is never rung, and the hooks that replace it |
 
 ## License
 

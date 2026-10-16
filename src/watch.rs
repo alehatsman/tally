@@ -147,6 +147,7 @@ mod tests {
             lost_reason: None,
             labels,
             output_bytes: 0,
+            pid: None,
         }
     }
 

@@ -14,6 +14,7 @@ use std::collections::BTreeMap;
 use std::process::ExitCode;
 
 use tally::anchor::{Client, Spawn};
+use tally::attention::Ancestry;
 use tally::cli::{self, Claim, Request, USAGE};
 use tally::config::Config;
 use tally::model;
@@ -44,10 +45,63 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Ok(Request::Spawn(claim)) => spawn(&claim, pages),
+        Ok(Request::Attention(on)) => attention(on),
         Err(e) => {
             eprint!("{USAGE}");
             eprintln!("\ntally: {e}");
             ExitCode::from(USAGE_ERROR)
+        }
+    }
+}
+
+/// Set or remove `tl.attention` on whichever session we are inside.
+///
+/// **Not being under anchor is success**, and that is the whole shape of
+/// this function. It is called from a Claude Code hook, which fires on
+/// every turn of every agent on this machine; all but a handful are not on
+/// the grid. An error there would put a line in the user's own agent, every
+/// turn, for a surface that is not even watching it.
+///
+/// Nothing is ever written to stdout. stdout belongs to the agent's
+/// transcript, and this is not something the agent said.
+fn attention(on: bool) -> ExitCode {
+    let client = Client::new(Client::default_path());
+    let sessions = match client.list() {
+        Ok(sessions) => sessions,
+        // A real failure, and the one case that says anything. With anchord
+        // down we cannot tell "not under anchor" from "could not look", so
+        // we report rather than guess — see `docs/11-cli.md` for why the
+        // hook line ends in `|| true` regardless.
+        Err(e) => {
+            eprintln!("tally: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let ancestry = Ancestry::read();
+    let me = std::process::id().cast_signed();
+    let Some(session) = tally::attention::owning_session(&sessions, me, &ancestry) else {
+        return ExitCode::SUCCESS;
+    };
+
+    let mut set = BTreeMap::new();
+    let remove: &[&str] = if on {
+        let _on = set.insert(tally::anchor::LABEL_ATTENTION.to_owned(), "1".to_owned());
+        &[]
+    } else {
+        &[tally::anchor::LABEL_ATTENTION]
+    };
+    match client.label(&session.id, &set, remove) {
+        Ok(()) => ExitCode::SUCCESS,
+        // The session ended between the list and the write. Nothing to
+        // label, nothing wrong: a pad for a session that is gone is a pad
+        // that renders its exit.
+        Err(tally::anchor::Error::Refused { ref code, .. }) if code == "not_found" => {
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("tally: {e}");
+            ExitCode::FAILURE
         }
     }
 }

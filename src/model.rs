@@ -443,6 +443,7 @@ mod tests {
             lost_reason: None,
             labels,
             output_bytes: 10,
+            pid: None,
         }
     }
 

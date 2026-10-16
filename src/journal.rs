@@ -7,14 +7,21 @@
 //! deciding whether the rest of the roadmap is worth building.
 //!
 //! Transitions only, so it is a few lines a day rather than a log. It is
-//! the one thing `tallyd` writes that cannot be rebuilt from `anchor list`,
-//! which is acceptable precisely because **nothing reads it back**.
+//! the one thing `tallyd` writes that cannot be rebuilt from `anchor list`.
+//!
+//! It **is** read back, at startup and only at startup. The first draft
+//! said nothing would, and that was the bug: who-is-asking lived in memory,
+//! so a restart forgot it and the next tick wrote a second rising edge for
+//! a slot that had never stopped asking — three rises against one fall in
+//! the file as shipped, with `after_ms` measured from the wrong one
+//! (`docs/14-attention.md`). The instrument has to be right more than it
+//! has to be write-only.
 
 use std::collections::BTreeMap;
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::model::Resolved;
 use crate::signal::{SlotState, Source};
@@ -38,6 +45,57 @@ pub fn default_path() -> PathBuf {
 }
 
 impl Journal {
+    /// Rebuild who is asking from a journal written before a restart.
+    ///
+    /// Replays the file in order and keeps, per slot, whichever transition
+    /// came last. A slot whose last line is `needs_answer` is still asking
+    /// — with **its original timestamp**, which is the half that makes
+    /// `after_ms` true rather than merely making the rise count once.
+    ///
+    /// Unparsable lines are skipped rather than refused. The file is
+    /// append-only and a truncated last line is what a `SIGKILL` mid-write
+    /// leaves behind; losing one transition is a smaller error than
+    /// refusing to recover at all.
+    ///
+    /// A missing file is an empty journal, not a failure: the first run
+    /// has no history and that is the normal case, not an exception.
+    #[must_use]
+    pub fn resumed(path: &Path, pages: &Pages) -> Self {
+        let Ok(text) = std::fs::read_to_string(path) else {
+            return Self::default();
+        };
+        Self::replay(&text, pages)
+    }
+
+    /// The parsing half of [`Self::resumed`], separated so it can be tested
+    /// against a string rather than a file.
+    #[must_use]
+    pub fn replay(text: &str, pages: &Pages) -> Self {
+        let mut asking = BTreeMap::new();
+        for line in text.lines() {
+            let Ok(entry) = serde_json::from_str::<Line>(line) else {
+                continue;
+            };
+            let Some(slot) = parse_address(&entry.slot, pages) else {
+                continue;
+            };
+            match entry.to.as_str() {
+                "needs_answer" => {
+                    let _rise = asking.insert(slot, (entry.session, entry.ms));
+                }
+                "answered" => {
+                    let _fall = asking.remove(&slot);
+                }
+                // A verb written by a newer binary. Leaving the slot as it
+                // was is the conservative answer: the worst case is one
+                // duplicate rise, which is the bug we are already fixing,
+                // rather than a fall we invented.
+                _ => {}
+            }
+        }
+        Self { asking }
+    }
+
     /// Write a line for every slot that started or stopped asking.
     ///
     /// # Errors
@@ -152,6 +210,20 @@ struct Answered<'a> {
     after_ms: i64,
 }
 
+/// Enough of any journal line to replay it.
+///
+/// Deliberately not [`Asked`] or [`Answered`]: reading needs three fields
+/// that both shapes share, and a reader that insists on the rest would
+/// reject the oldest lines in the file — which predate `title` — for
+/// carrying less than the current writer emits.
+#[derive(Debug, Deserialize)]
+struct Line {
+    ms: i64,
+    session: String,
+    slot: String,
+    to: String,
+}
+
 /// One line, newline-terminated — the journal is JSON Lines.
 ///
 /// Serialising these structs cannot fail on its own (no non-string map
@@ -170,6 +242,33 @@ fn write_line(out: &mut impl Write, line: &impl Serialize) -> io::Result<()> {
 fn address(slot: Slot, pages: &Pages) -> String {
     slot.label(pages)
         .unwrap_or_else(|| format!("{}:{}:{}", slot.page, slot.row, slot.col))
+}
+
+/// The inverse of [`address`], and it lives here for that reason.
+///
+/// [`crate::slot::parse`] alone is not enough: this file writes a bare page
+/// *number* when the page has no name, which is not a `tl.slot` value and
+/// must not become one. Both spellings have to read back or a restart
+/// rebuilds half the map.
+///
+/// A page renamed in `slots.toml` between runs stops matching, and that is
+/// correct — it is a different address, and inventing a slot for it would
+/// put a transition on a pad that never asked.
+fn parse_address(text: &str, pages: &Pages) -> Option<Slot> {
+    if let Some(slot) = crate::slot::parse(text, pages) {
+        return Some(slot);
+    }
+    let mut parts = text.split(':');
+    let page: u8 = parts.next()?.parse().ok()?;
+    let row: u8 = parts.next()?.parse().ok()?;
+    let col: u8 = parts.next()?.parse().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    let ok = (1..=crate::slot::PAGES).contains(&page)
+        && (1..=8).contains(&row)
+        && (1..=8).contains(&col);
+    ok.then_some(Slot { page, row, col })
 }
 
 #[cfg(test)]
@@ -201,6 +300,122 @@ mod tests {
             .lines()
             .map(str::to_owned)
             .collect()
+    }
+
+    /// The bug from #7, reproduced from the real file: three rising edges
+    /// against one fall for the same session, because each restart began
+    /// with an empty map. Replaying the first line is what stops the
+    /// second one being written.
+    #[test]
+    fn a_restart_does_not_re_ask_a_slot_that_never_stopped() {
+        let slot = Slot {
+            page: 1,
+            row: 3,
+            col: 3,
+        };
+        let pages = Pages::default();
+        let written = r#"{"ms":1792158972550,"session":"01M52FZ9","slot":"1:3:3","to":"needs_answer","source":"derived"}"#;
+
+        let mut j = Journal::replay(written, &pages);
+        assert_eq!(j.asking(), 1, "the rise in the file was not replayed");
+
+        let mut out = Vec::new();
+        j.record(
+            &asking_at(slot, "01M52FZ9"),
+            &pages,
+            1_792_159_460_320,
+            &mut out,
+        )
+        .expect("write");
+        assert!(
+            lines(&out).is_empty(),
+            "wrote a second rising edge: {:?}",
+            lines(&out)
+        );
+    }
+
+    /// The other half, and the one that makes the number mean something:
+    /// `after_ms` has to span the question, not the downtime.
+    #[test]
+    fn after_ms_is_measured_from_the_original_question() {
+        let pages = Pages::default();
+        let rise = 1_000_000;
+        let written =
+            format!(r#"{{"ms":{rise},"session":"01J","slot":"1:3:3","to":"needs_answer"}}"#);
+
+        let mut j = Journal::replay(&written, &pages);
+        let mut out = Vec::new();
+        j.record(&BTreeMap::new(), &pages, rise + 90_347, &mut out)
+            .expect("write");
+
+        let line = lines(&out).pop().expect("a falling edge");
+        assert!(line.contains(r#""after_ms":90347"#), "{line}");
+        assert_eq!(j.asking(), 0);
+    }
+
+    /// An answered slot must not come back as asking, or every restart
+    /// resurrects every question ever asked.
+    #[test]
+    fn the_last_transition_per_slot_is_the_one_that_counts() {
+        let pages = Pages::default();
+        let written = concat!(
+            r#"{"ms":1,"session":"A","slot":"1:3:3","to":"needs_answer"}"#,
+            "\n",
+            r#"{"ms":2,"session":"A","slot":"1:3:3","to":"answered","after_ms":1}"#,
+            "\n",
+            r#"{"ms":3,"session":"B","slot":"1:6:2","to":"needs_answer"}"#,
+            "\n",
+        );
+        let j = Journal::replay(written, &pages);
+        assert_eq!(j.asking(), 1, "only 1:6:2 is still asking");
+    }
+
+    /// A SIGKILL mid-write leaves a half line. Losing one transition beats
+    /// refusing to recover.
+    #[test]
+    fn a_truncated_last_line_is_skipped_not_fatal() {
+        let pages = Pages::default();
+        let written = concat!(
+            r#"{"ms":1,"session":"A","slot":"1:3:3","to":"needs_answer"}"#,
+            "\n",
+            r#"{"ms":2,"session":"B","slot":"1:6:"#,
+        );
+        assert_eq!(Journal::replay(written, &pages).asking(), 1);
+    }
+
+    /// Both spellings `address` can write have to read back, or a restart
+    /// rebuilds half the map. Named pages and bare numbers.
+    #[test]
+    fn both_address_spellings_replay() {
+        let named = Pages::new(["work".to_owned()]);
+        let written = r#"{"ms":1,"session":"A","slot":"work:3:3","to":"needs_answer"}"#;
+        assert_eq!(Journal::replay(written, &named).asking(), 1);
+
+        let numbered = r#"{"ms":1,"session":"A","slot":"1:3:3","to":"needs_answer"}"#;
+        assert_eq!(Journal::replay(numbered, &Pages::default()).asking(), 1);
+    }
+
+    /// Off the grid is ignored, not clamped — the same rule a `tl.slot`
+    /// label follows (`docs/03-model.md#limits`).
+    #[test]
+    fn an_address_off_the_grid_is_ignored() {
+        let pages = Pages::default();
+        for slot in ["9:1:1", "1:9:1", "1:1:0", "1:2:3:4", "nope"] {
+            let written =
+                format!(r#"{{"ms":1,"session":"A","slot":"{slot}","to":"needs_answer"}}"#);
+            assert_eq!(
+                Journal::replay(&written, &pages).asking(),
+                0,
+                "{slot} was accepted"
+            );
+        }
+    }
+
+    /// No file is the first run, which is normal rather than an error.
+    #[test]
+    fn a_missing_journal_resumes_empty() {
+        let missing = Path::new("/nonexistent/tally/attention.jsonl");
+        assert_eq!(Journal::resumed(missing, &Pages::default()).asking(), 0);
     }
 
     #[test]

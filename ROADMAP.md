@@ -232,11 +232,66 @@ Exit:
 
 ---
 
+---
+
+## M6 — The amber exists
+
+Not an ergonomics milestone. **M1's risk came back in the negative** and
+this is the answer to it.
+
+M1 said *if the attention signal is not trustworthy, stop*. It is not
+untrustworthy — it is **absent**. 1012 `0x07` bytes across 6.6 MB of real
+sessions, every one an OSC title terminator, **zero in GROUND state**. The
+bell detector is correct, the tests are green, and there has never been
+anything to detect ([#4](https://github.com/alehatsman/tally/issues/4)).
+Every `needs_answer` line in `attention.jsonl` belongs to a synthetic
+session.
+
+Scope: `tally attention on|off`, resolving its session by walking its own
+process ancestry because `$ANCHOR_SESSION` is set by nothing; hooks on
+**both** edges; the journal read back at startup
+([docs/14](docs/14-attention.md)).
+
+Exit:
+- ✅ a hook inside a slotted session turns its pad amber, and answering
+  turns it green — confirmed end to end against the live daemon from
+  inside a real session, with the first `"source":"declared"` line this
+  grid has ever written
+- ✅ not being under anchor is **success**: silent, exit `0`, no label.
+  The hook fires on every turn of every agent on the machine and almost
+  none are on the grid
+- ✅ anchord unreachable is one line on stderr and exit `1`
+- ⬜ a week of `attention.jsonl` with a number in it — the criterion M1
+  has been carrying since it shipped, and the first week it is possible
+  to run
+
+> **The measurement that was not in the bug report.** #4 also claimed the
+> stream never falls silent, so `Quiet` was unreachable and the 2 s window
+> with it. That is false for Claude Code: a `claude` at its main prompt
+> emits **0 bytes in 92 s**, and the live session on pad `1:1` held **42 s
+> flat** between turns. The ~2 Hz repaint was `isayes`'s footer and cursor
+> blink — the wrapper's UI, not the agent's.
+>
+> So `Working` versus `Quiet` is honest and was nearly deleted on the
+> strength of a measurement taken through the wrong lens. The fifth time
+> this project has learned that a surface fact only shows up on the
+> surface, and the first time the lesson arrived as *we were about to
+> throw away something that works*.
+
+> **A second thing the code had outgrown.** `docs/04` promised tallyd would
+> clear `tl.attention` on output. It was never built — a reader, a
+> constant, a test, and nothing that removes it. A hook shipped against the
+> old binary would have stuck a pad amber permanently. Found by grep while
+> writing the spec, not by the suite, because there was no test for a
+> feature nobody had written.
+
+---
+
 ## Later, unscheduled
 
-- the `settings.json` line for the `Notification` hook — the `tl.attention`
-  label and the `Declared` variant ship in M1 either way
-  ([04](docs/04-signals.md#4-a-hook--it-told-us))
+- ~~the `settings.json` line for the `Notification` hook~~ — **M6**. It was
+  never *later*; it was the only thing that could make the attention half
+  of this product exist
 - teleport URL as a secondary jump target
 - a second device — only with a second device in the room
 
@@ -251,4 +306,10 @@ M2  jump              ← the payoff gesture
 M3  spawn + chords    ← the launcher half
 M4  pages             ← ergonomics
 M5  tally spawn       ← the folder comes from a shell, not a file
+M6  the amber exists  ← M1's risk, answered: the signal was absent
 ```
+
+M6 is out of order on purpose. It is M1's work, and it is here rather than
+there because the thing that proved M1 incomplete was a day of real use —
+which is the only instrument that could have found it, and the only one M1
+had not yet run.
