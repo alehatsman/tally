@@ -110,13 +110,24 @@ buttons on the device.
 
 ```text
   ▲      ▼      ◄      ►   │  ·    ·    ·    ·  │  ◈
- page   page   back   next │      unassigned    │ health
+ row    row    back   next │      unassigned    │ health
   up    down               │
 ```
 
+**`▲▼` scroll by one row, not by one page.** The grid is an eight-row
+window onto a sixty-four-row space, and it slides. A page boundary is not
+a thing you can feel; a row is — you watch the layout move under your
+finger instead of being cut to a different screen, and adjacent projects
+stay adjacent across what used to be a hard edge.
+
+Pages did not go away. They are still how an address is written, still
+what `slots.toml` declares, and still what `tl.slot` carries. They stopped
+being a thing you *jump between*, which is the only part that was costing
+anything.
+
 | button | dark when | lit | press |
 |---|---|---|---|
-| `▲` `▼` | there is no page that way | 1 dark grey, static | change page |
+| `▲` `▼` | there is no row that way | 1 dark grey, static | scroll one row |
 | `◄` back | no origin recorded | 3 white, static | return to where you were standing |
 | `►` next | the queue is empty | **9 amber, pulsing** | jump to the longest-waiting |
 | 4 others | always | — | nothing |
@@ -129,8 +140,10 @@ and nothing else. `next` reuses the
 reserved amber and means what amber means everywhere else on the surface —
 *look at me* — which is why it does not need a fifth colour.
 
-**`next` crosses pages**, and switches the visible page to wherever it
-landed so the grid stays coherent with where you are. That is what makes
+**`next` crosses pages**, and scrolls the grid the smallest amount that
+brings the pad it landed on into view — minimal, not centred, because `►`
+is already moving your terminal and the grid lurching further than it must
+is a second thing changing under you for no reason. That is what makes
 losing the per-page amber indicator affordable: it told you *which page*
 wants you so you could go there, and now you do not navigate to attention,
 attention navigates to you. The logo still says *some page does*
@@ -178,15 +191,32 @@ this document:
 ```text
 Origin: client name -> pane id
 recorded  when a client is about to be switched
-          AND its current pane is not a view pane
-one deep, never overwritten by a view -> view move
+          AND no trip is already open for it
+          AND it is not already standing on the destination
+one deep, first jump wins, cleared by `◄`
 ```
 
-So `next → next → next → back` lands you in nvim, not three agents deep.
-**The queue is a trip; home is one press.** Chained jumps were `13`'s and
-#3's hardest open question and the queue answers it by construction: there
-is no reason to walk back through agents when the only place you want is
-the one you started from.
+So `next → next → next → back` lands where you started, not three agents
+deep. **The queue is a trip; home is one press.** Chained jumps were `13`'s
+and #3's hardest open question and the queue answers it by construction:
+there is no reason to walk back through agents when the only place you
+want is the one you started from.
+
+⚠️ **The first version of this rule said "and its current pane is not a
+view pane", and it was wrong.** It assumed the place you jump *from* is
+nvim. It is not: every pane this grid is used from is an anchor session,
+so every candidate origin was a view, nothing was ever recorded, and `◄`
+was dark forever.
+
+Measured within an hour of shipping, by the `kind:"nav"` lines added for
+exactly this purpose — two `{"via":"back","ok":false}` in a row, which is
+what pressing a dead button twice looks like in a log. The instrument
+caught the thing it was built to catch, on its first day, about its own
+author's spec.
+
+What that rule was protecting — walking back through agents one at a time
+— is held by *first jump wins* instead, which does not care what kind of
+pane you started in.
 
 If the origin pane is gone, `◄` goes dark and the press does nothing.
 Landing somewhere arbitrary is worse than not moving.
@@ -281,6 +311,10 @@ lies. The CC mapping is untouched — `Top(1)` is still `CC91`.
 - the head is the longest-waiting, not the most recent
 - a muted slot is never the head
 - the slot you are viewing is never the head, and two clients get two heads
+- a view *is* a valid origin — the regression above, held by a test
+- a pad and an address round-trip through the window at every offset
+- scrolling crosses a page boundary with nothing special happening
+- `►` scrolls the least it can to show where it landed
 - an empty queue is `None`, not an error
 - `►` is dark exactly when `head` is `None` — one predicate, read by the
   renderer and by the press, the rule `src/act.rs` already holds for chords

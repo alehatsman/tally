@@ -21,8 +21,14 @@ use crate::surface::{Button, Frame};
 pub struct View<'a> {
     /// Declared page names, in top-row order.
     pub pages: &'a Pages,
-    /// Which page is on the grid, 1-8.
-    pub current: u8,
+    /// How far the eight-row window is scrolled down the stacked row
+    /// space, `0..=`[`slot::MAX_OFFSET`].
+    ///
+    /// **Rows, not pages.** `▲▼` move this by one, so the grid slides
+    /// rather than cutting — a page boundary is not a thing you can feel
+    /// and a row is. Pages still name addresses; they stopped being a
+    /// thing you jump between (`docs/16-the-queue.md#the-top-row`).
+    pub offset: u8,
     /// Did the last `list` succeed? An unreachable anchord lights the logo
     /// and **leaves the grid alone**, because those sessions were there a
     /// moment ago and probably still are.
@@ -324,6 +330,44 @@ impl<'a> Pads<'a> {
     }
 }
 
+impl View<'_> {
+    /// Which grid row shows `at`, or `None` if it is scrolled off.
+    ///
+    /// The one place the window is turned into a position, so the renderer
+    /// and the press cannot disagree about which pad is which.
+    #[must_use]
+    pub fn display_row(&self, at: Slot) -> Option<u8> {
+        at.absolute_row()
+            .checked_sub(self.offset)
+            .filter(|row| (1..=8).contains(row))
+    }
+
+    /// The slot under grid row `row`, column `col`, or `None` past the end
+    /// of the address space.
+    #[must_use]
+    pub fn slot_at(&self, row: u8, col: u8) -> Option<Slot> {
+        Slot::at_absolute(self.offset.checked_add(row)?, col)
+    }
+
+    /// The window scrolled by the smallest amount that brings `at` into
+    /// view.
+    ///
+    /// Minimal, not centred: `►` already moves your terminal, and moving
+    /// the grid further than it has to is a second thing changing under
+    /// you for no reason.
+    #[must_use]
+    pub fn offset_showing(at: Slot, offset: u8) -> u8 {
+        let abs = at.absolute_row();
+        if abs <= offset {
+            return abs.saturating_sub(1);
+        }
+        if abs > offset + 8 {
+            return abs.saturating_sub(8);
+        }
+        offset
+    }
+}
+
 /// Build the frame, resolving and counting purgeable rows on the way.
 pub fn frame(
     sessions: &[Session],
@@ -341,39 +385,41 @@ pub fn frame(
 pub fn frame_from(pads: &Pads<'_>, view: &View<'_>) -> Frame {
     let resolved = pads.grid();
     let mut frame = Frame::dark();
-    let mut occupied = [false; slot::PAGES as usize];
-    let mut wants_you = [false; slot::PAGES as usize];
+    let mut offscreen = false;
 
     for r in resolved.values() {
-        if let Some(page) = usize::from(r.slot.page).checked_sub(1) {
-            if let Some(flag) = occupied.get_mut(page) {
-                *flag = true;
-            }
-            if matches!(r.state, SlotState::NeedsAnswer { .. }) {
-                if let Some(flag) = wants_you.get_mut(page) {
-                    *flag = true;
-                }
-            }
-        }
-        if r.slot.page == view.current && view.held.is_none() {
-            frame.set(r.slot.button(), render::slot(r.state));
+        let Some(row) = view.display_row(r.slot) else {
+            // Off the window. It still counts for the logo, which is the
+            // only thing that reports what you cannot see.
+            offscreen |= matches!(r.state, SlotState::NeedsAnswer { .. });
+            continue;
+        };
+        if view.held.is_none() {
+            frame.set(
+                Button::Grid {
+                    row,
+                    col: r.slot.col,
+                },
+                render::slot(r.state),
+            );
         }
     }
 
     // A held modifier replaces the grid with the answer to "what happens
-    // if I press this". Every pad on the page is asked, not just the lit
+    // if I press this". Every pad in the window is asked, not just the lit
     // ones: a dark pad can be a spawn or a pile of clean exits waiting to
     // be forgotten, and both are things the preview exists to reveal.
     if let Some(action) = view.held {
         for row in 1..=8 {
             for col in 1..=8 {
-                let at = Slot {
-                    page: view.current,
-                    row,
-                    col,
+                let Some(at) = view.slot_at(row, col) else {
+                    continue;
                 };
                 let pad = pads.at(at);
-                frame.set(at.button(), render::preview(action, effect(action, pad)));
+                frame.set(
+                    Button::Grid { row, col },
+                    render::preview(action, effect(action, pad)),
+                );
             }
         }
     }
@@ -381,8 +427,11 @@ pub fn frame_from(pads: &Pads<'_>, view: &View<'_>) -> Frame {
     // The top row: `▲ ▼ ◄ ► · · · ·` (`docs/16-the-queue.md`). Every
     // button here is self-describing — dark does nothing, lit does exactly
     // one thing — so there is no state to remember and no mode to be in.
-    frame.set(Button::Top(1), render::arrow(view.current > 1));
-    frame.set(Button::Top(2), render::arrow(view.current < slot::PAGES));
+    frame.set(Button::Top(1), render::arrow(view.offset > 0));
+    frame.set(
+        Button::Top(2),
+        render::arrow(view.offset < slot::MAX_OFFSET),
+    );
     frame.set(Button::Top(3), render::back(view.can_go_back));
     frame.set(Button::Top(4), render::next(view.queued > 0));
     for index in 5..=slot::PAGES {
@@ -400,11 +449,7 @@ pub fn frame_from(pads: &Pads<'_>, view: &View<'_>) -> Frame {
         );
     }
 
-    // Attention you cannot see, on a page that is not on the grid.
-    let offscreen = wants_you
-        .iter()
-        .enumerate()
-        .any(|(at, &w)| w && u8::try_from(at + 1).is_ok_and(|p| p != view.current));
+    // Attention you cannot see, because it is scrolled off the window.
     frame.set(
         Button::Logo,
         render::logo(Health {
@@ -461,7 +506,7 @@ mod tests {
     fn view(pages: &Pages) -> View<'_> {
         View {
             pages,
-            current: 1,
+            offset: 0,
             anchord_reachable: true,
             now: NOW,
             can_go_back: false,
@@ -912,6 +957,138 @@ mod tests {
             Cell::Static(DARK_GREY),
             "and somewhere to go below it"
         );
+    }
+
+    /// The grid is a window, and it slides. Page 2 row 3 is absolute row
+    /// 11, so it appears on the grid once the window has been scrolled
+    /// three rows — at grid row 8, then 7, then 6.
+    #[test]
+    fn a_slot_slides_into_the_window_a_row_at_a_time() {
+        let pages = Pages::default();
+        let sessions = [session("a", "running", Some("2:3:5"))];
+        for (offset, expected) in [
+            (0, None),
+            (2, None),
+            (3, Some(8)),
+            (4, Some(7)),
+            (5, Some(6)),
+        ] {
+            let v = View {
+                offset,
+                ..view(&pages)
+            };
+            let f = frame(&sessions, &BTreeMap::new(), &NO_SPECS, &v);
+            let lit: Option<u8> =
+                (1..=8).find(|&row| f.get(Button::Grid { row, col: 5 }) != Cell::Off);
+            assert_eq!(lit, expected, "offset {offset}");
+        }
+    }
+
+    /// Nothing special happens at a page boundary, because nothing special
+    /// is there: page 1 row 8 and page 2 row 1 are adjacent rows.
+    #[test]
+    fn scrolling_crosses_a_page_boundary_without_noticing() {
+        let pages = Pages::default();
+        let sessions = [
+            session("a", "running", Some("1:8:1")),
+            session("b", "running", Some("2:1:1")),
+        ];
+        let v = View {
+            offset: 7,
+            ..view(&pages)
+        };
+        let f = frame(&sessions, &BTreeMap::new(), &NO_SPECS, &v);
+        assert_ne!(f.get(Button::Grid { row: 1, col: 1 }), Cell::Off, "1:8:1");
+        assert_ne!(f.get(Button::Grid { row: 2, col: 1 }), Cell::Off, "2:1:1");
+    }
+
+    /// The renderer and the press ask the same two functions, so they
+    /// cannot disagree about which pad is which.
+    #[test]
+    fn a_pad_and_an_address_round_trip_through_the_window() {
+        let pages = Pages::default();
+        for offset in [0, 1, 7, 8, slot::MAX_OFFSET] {
+            let v = View {
+                offset,
+                ..view(&pages)
+            };
+            for row in 1..=8 {
+                let at = v.slot_at(row, 4).expect("inside the address space");
+                assert_eq!(v.display_row(at), Some(row), "offset {offset} row {row}");
+            }
+        }
+    }
+
+    /// Past the end there is no pad, and nothing happens. Clamping would
+    /// invent an address the finger did not land on.
+    #[test]
+    fn the_window_does_not_wrap_or_clamp_past_the_end() {
+        assert_eq!(Slot::at_absolute(slot::ROWS + 1, 1), None);
+        assert_eq!(Slot::at_absolute(0, 1), None);
+        assert_eq!(Slot::at_absolute(1, 9), None);
+    }
+
+    /// `►` already moves your terminal. Moving the grid further than it
+    /// has to is a second thing changing under you for no reason.
+    #[test]
+    fn next_scrolls_the_least_it_can_to_show_where_it_landed() {
+        let at = |page, row| Slot { page, row, col: 1 };
+        // Already visible: do not move at all.
+        assert_eq!(View::offset_showing(at(1, 3), 0), 0);
+        assert_eq!(View::offset_showing(at(2, 1), 1), 1);
+        // Below the window: bring it to the bottom row, not the middle.
+        assert_eq!(View::offset_showing(at(2, 2), 0), 2);
+        // Above the window: bring it to the top row.
+        assert_eq!(View::offset_showing(at(1, 1), 10), 0);
+    }
+
+    /// Attention scrolled off the window still reaches the logo — that is
+    /// the only thing reporting what you cannot see.
+    #[test]
+    fn attention_scrolled_off_the_window_reaches_the_logo() {
+        let pages = Pages::default();
+        let mut derived = BTreeMap::new();
+        let mut d = Derived::starting_at(NOW);
+        d.feed(b"ready?\x07", NOW);
+        let _previous = derived.insert("a".to_owned(), d);
+        let sessions = [session("a", "running", Some("4:1:1"))];
+        let v = View {
+            now: NOW + 5_000,
+            offset: 0,
+            ..view(&pages)
+        };
+        let f = frame(&sessions, &derived, &NO_SPECS, &v);
+        assert_eq!(f.get(Button::Logo), Cell::Pulse(AMBER));
+    }
+
+    /// Dark does nothing: at the top there is nothing above, at the bottom
+    /// nothing below.
+    #[test]
+    fn the_arrows_go_dark_at_the_ends_of_the_row_space() {
+        let pages = Pages::default();
+        let top = frame(
+            &[],
+            &BTreeMap::new(),
+            &NO_SPECS,
+            &View {
+                offset: 0,
+                ..view(&pages)
+            },
+        );
+        assert_eq!(top.get(Button::Top(1)), Cell::Off, "nothing above row 1");
+        assert_ne!(top.get(Button::Top(2)), Cell::Off, "somewhere below");
+
+        let bottom = frame(
+            &[],
+            &BTreeMap::new(),
+            &NO_SPECS,
+            &View {
+                offset: slot::MAX_OFFSET,
+                ..view(&pages)
+            },
+        );
+        assert_ne!(bottom.get(Button::Top(1)), Cell::Off, "somewhere above");
+        assert_eq!(bottom.get(Button::Top(2)), Cell::Off, "nothing below");
     }
 
     /// The four buttons that carry nothing stay dark, in every state. A

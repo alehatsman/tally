@@ -16,6 +16,18 @@ use crate::surface::Button;
 /// How many pages the top row can select.
 pub const PAGES: u8 = 8;
 
+/// Every row the address space has, stacked: eight pages of eight.
+///
+/// The grid is an **eight-row window onto this**, scrolled a row at a time
+/// (`docs/16-the-queue.md#the-top-row`). Pages did not go away — they are
+/// still how an address is written and what `slots.toml` declares — but
+/// they stopped being a thing you jump between, because a page boundary is
+/// not a thing you can feel and a row is.
+pub const ROWS: u8 = PAGES * 8;
+
+/// The furthest the window can be scrolled and still be full.
+pub const MAX_OFFSET: u8 = ROWS - 8;
+
 /// A resolved address: a page *index*, and a position on it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Slot {
@@ -28,6 +40,33 @@ pub struct Slot {
 }
 
 impl Slot {
+    /// Where this slot sits in the stacked row space, 1-[`ROWS`].
+    ///
+    /// Page 1 row 1 is row 1; page 2 row 1 is row 9. The grid shows eight
+    /// consecutive rows of this, which is why scrolling can cross a page
+    /// boundary without anything special happening — nothing special does.
+    #[must_use]
+    pub fn absolute_row(self) -> u8 {
+        (self.page.saturating_sub(1)) * 8 + self.row
+    }
+
+    /// The slot at absolute row `abs` and column `col`.
+    ///
+    /// Returns `None` past the end of the address space rather than
+    /// clamping: a window scrolled off the bottom shows nothing there, and
+    /// nothing is the honest answer.
+    #[must_use]
+    pub fn at_absolute(abs: u8, col: u8) -> Option<Self> {
+        if abs == 0 || abs > ROWS || col == 0 || col > 8 {
+            return None;
+        }
+        Some(Self {
+            page: (abs - 1) / 8 + 1,
+            row: (abs - 1) % 8 + 1,
+            col,
+        })
+    }
+
     /// The `tl.slot` value for this address — what a label carries and
     /// what a human types into a shell script.
     ///

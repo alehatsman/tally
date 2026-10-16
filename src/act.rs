@@ -361,7 +361,7 @@ spec = "claude"
             &ctx.pads,
             &View {
                 pages: &pages,
-                current: 1,
+                offset: 0,
                 anchord_reachable: true,
                 now: 0,
                 can_go_back: false,

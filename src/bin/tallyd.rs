@@ -226,7 +226,7 @@ fn main() -> ExitCode {
         .ok();
     let mut sessions = Vec::new();
     let mut reachable = false;
-    let mut current = 1u8;
+    let mut offset = 0u8;
     // The queue, as of the last tick: what the finger was looking at when
     // it landed. Recomputing on the press would act on a grid the eye
     // never saw.
@@ -291,14 +291,16 @@ fn main() -> ExitCode {
                         };
                         match gesture {
                             Gesture::PageUp | Gesture::PageDown => {
+                                // One row, not one page. A page boundary
+                                // is not a thing you can feel; a row is.
                                 let n = if gesture == Gesture::PageUp {
-                                    current.saturating_sub(1).max(1)
+                                    offset.saturating_sub(1)
                                 } else {
-                                    current.saturating_add(1).min(slot::PAGES)
+                                    offset.saturating_add(1).min(slot::MAX_OFFSET)
                                 };
-                                if n != current {
-                                    current = n;
-                                    eprintln!("tallyd: page {n}");
+                                if n != offset {
+                                    offset = n;
+                                    eprintln!("tallyd: rows {}-{}", n + 1, n + 8);
                                 }
                             }
                             Gesture::Next => {
@@ -315,7 +317,7 @@ fn main() -> ExitCode {
                                     // Follow the jump with the eyes: the
                                     // grid must show the page you are now
                                     // standing on.
-                                    current = h.at.page;
+                                    offset = View::offset_showing(h.at, offset);
                                     let now = tally::now_ms();
                                     log_nav(&mut journal_out, |out| {
                                         journal::nav_next(
@@ -342,10 +344,11 @@ fn main() -> ExitCode {
                                 Err(e) => eprintln!("tallyd: {e}"),
                             },
                             Gesture::Tap { row, col } | Gesture::Chord { row, col, .. } => {
-                                let at = Slot {
-                                    page: current,
-                                    row,
-                                    col,
+                                // The window turns a pad into an address.
+                                // Past the end of the address space there
+                                // is no pad, and nothing happens.
+                                let Some(at) = Slot::at_absolute(offset + row, col) else {
+                                    continue;
                                 };
                                 let ctx = Context {
                                     client: &anchor,
@@ -459,7 +462,7 @@ fn main() -> ExitCode {
 
         let view = View {
             pages: &pages,
-            current,
+            offset,
             anchord_reachable: reachable,
             now,
             can_go_back: tmux.can_go_back(),

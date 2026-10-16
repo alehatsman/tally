@@ -101,8 +101,8 @@ colours so the grid never has to be read for them:
 
 | button | resting | held / active |
 |---|---|---|
-| `▲` `▼` page, no page that way | off | — |
-| `▲` `▼` page, somewhere to go | 1 dark grey, static | — |
+| `▲` `▼` scroll, nothing that way | off | — |
+| `▲` `▼` scroll, somewhere to go | 1 dark grey, static | — |
 | `◄` back, no origin | off | — |
 | `◄` back, origin recorded | 3 white, static | — |
 | `►` next, queue empty | off | — |
@@ -183,7 +183,7 @@ kills a running agent, that matters more than the keystroke saving.
 |---|---|
 | tap unbound slot | spawn its spec |
 | tap bound slot | jump ([06-jump.md](06-jump.md)) |
-| tap `▲` `▼` (top row) | change page |
+| tap `▲` `▼` (top row) | scroll the grid one row |
 | tap `◄` (top row) | **back** — return to where you were standing |
 | tap `►` (top row) | **next** — jump to the longest-waiting amber |
 | hold `CC19` + tap slot | **kill** |

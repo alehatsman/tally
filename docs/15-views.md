@@ -250,11 +250,17 @@ Four rules, each answering one of #3's open questions:
    (`src/jump.rs:322`), so "where I was" is per client and never global.
    Two terminals jump to the same place from two different origins and both
    go home correctly.
-2. **One deep, and only non-views count.** Jump to pad A, then to pad B,
-   then back — you land on nvim, not on A. A chained jump never overwrites
-   the origin because a view pane is never recorded as one. A stack would
-   let you walk back through five agents, which is not a thing anybody has
-   wanted while holding a grid.
+2. **One deep, and the first jump of a trip wins.** Jump to pad A, then to
+   pad B, then back — you land where you started, not on A. A chained jump
+   never overwrites the origin because one is already recorded. A stack
+   would let you walk back through five agents, which is not a thing
+   anybody has wanted while holding a grid.
+
+   ⚠️ This rule first read *"only non-views count"*, which assumed you
+   jump from nvim. Every pane this grid is used from is an anchor session,
+   so nothing was ever recorded and `◄` was dark forever — caught by the
+   journal an hour after shipping. See
+   [16](16-the-queue.md#back-and-where-you-were).
 3. **The gesture is a second press on the pad you are already on.** No new
    button, no new colour, and the device already has the concept: the top
    row's rule is *one bright thing, and it is where you are*. Per client

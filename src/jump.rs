@@ -340,13 +340,25 @@ fn clients(listing: &str) -> Vec<(&str, &str)> {
 pub struct Tmux {
     /// Path to the `anchor` binary a view runs.
     anchor_bin: String,
-    /// Where each client was standing before it jumped.
+    /// Where each client was standing before it started this trip.
     ///
-    /// **One deep, per client, non-views only.** A jump switches every
-    /// attached client on purpose, so "where I was" is per client and never
-    /// global; and a view is never recorded as an origin, so
-    /// `next → next → next → back` lands where you started rather than
-    /// three agents deep (`docs/16-the-queue.md`).
+    /// **One deep, per client, first jump wins.** A jump switches every
+    /// attached client on purpose, so "where I was" is per client and
+    /// never global; and a jump made while a trip is already open does not
+    /// overwrite it, so `next → next → next → back` lands where you
+    /// started rather than three agents deep.
+    ///
+    /// ⚠️ **It used to refuse to record a view, and that was wrong.**
+    /// `docs/16` assumed the place you jump *from* is nvim — a pane that
+    /// is not a view. It is not: every pane this user works in is an
+    /// anchor session, so every candidate origin was a view and `◄` never
+    /// had anywhere to go. Measured within an hour of shipping, from the
+    /// `kind:"nav"` lines written for exactly this purpose: two
+    /// `{"via":"back","ok":false}` in a row.
+    ///
+    /// What that rule was protecting — walking back through agents one at
+    /// a time — is held by *first jump wins* instead, which does not care
+    /// what kind of pane you started in.
     ///
     /// In memory, so a `tallyd` restart loses it — and the degradation is
     /// that `◄` goes dark until you jump again, which is honest.
@@ -468,17 +480,21 @@ impl Tmux {
         Ok(pane)
     }
 
-    /// Remember where each client is standing, unless it is standing in a
-    /// view.
-    fn record_origins(&self, views: &str, clients: &[(String, String)]) {
+    /// Remember where each client is standing, if a trip is not already
+    /// open for it.
+    fn record_origins(&self, clients: &[(String, String)], destination: &str) {
         let Ok(mut origin) = self.origin.lock() else {
             return;
         };
         for (client, pane) in clients {
-            if is_view(views, pane) {
+            // A jump to where you already are starts no trip and must not
+            // record an origin that would send you nowhere.
+            if pane == destination {
                 continue;
             }
-            let _prev = origin.insert(client.clone(), pane.clone());
+            // `or_insert`, never `insert`: the first jump of a trip is the
+            // one you want to come back from.
+            let _kept = origin.entry(client.clone()).or_insert_with(|| pane.clone());
         }
     }
 }
@@ -510,14 +526,6 @@ fn session_of(listing: &str, pane: &str) -> Option<String> {
     })
 }
 
-/// Is `pane` a view — that is, does it carry a non-empty tag?
-fn is_view(listing: &str, pane: &str) -> bool {
-    listing.lines().any(|line| {
-        let mut f = line.split_whitespace();
-        f.next() == Some(pane) && f.nth(2).is_some_and(|tag| !tag.is_empty())
-    })
-}
-
 /// The macOS app to bring forward after switching.
 ///
 /// `switch-client` moves tmux's idea of where you are; it does nothing
@@ -545,7 +553,7 @@ impl Jump for Tmux {
     fn jump(&self, session: &str, at: &str) -> Result<(), Error> {
         let pane = self.view_pane(session, at)?;
         let clients = Tmux::client_panes();
-        self.record_origins(&Tmux::panes(), &clients);
+        self.record_origins(&clients, &pane);
 
         // Switch **every** client. A jump means "put this in front of me",
         // and which terminal "me" is sitting at is not knowable from here.
@@ -758,13 +766,18 @@ mod tests {
         assert!(clients("/dev/ttys000\n").is_empty(), "a pane is required");
     }
 
+    /// `viewing()` rests on this: a pane maps back to the session it
+    /// shows, and an untagged one maps to nothing.
     #[test]
-    fn a_pane_is_a_view_only_when_it_carries_a_tag() {
-        assert!(is_view(LISTING, "%3"));
-        assert!(is_view(LISTING, "%4"), "a dead view is still a view");
-        assert!(!is_view(LISTING, "%1"), "untagged");
-        assert!(!is_view(LISTING, "%5"), "untagged");
-        assert!(!is_view(LISTING, "%404"), "not on the server at all");
+    fn a_pane_maps_back_to_the_session_it_shows() {
+        assert_eq!(session_of(LISTING, "%3").as_deref(), Some(SESSION));
+        assert_eq!(
+            session_of(LISTING, "%4").as_deref(),
+            Some("01M52MXB4WQTA79K5FTHMXZ8YN"),
+            "a dead view still shows a session"
+        );
+        assert_eq!(session_of(LISTING, "%1"), None, "untagged");
+        assert_eq!(session_of(LISTING, "%404"), None, "not on the server");
     }
 
     /// The address leads, because that is the part you know: it is where
@@ -819,27 +832,40 @@ mod tests {
         let t = Tmux::default();
         assert!(!t.can_go_back(), "nothing has jumped yet");
         t.record_origins(
-            LISTING,
             &[
                 ("/dev/ttys000".to_owned(), "%1".to_owned()),
                 ("/dev/ttys003".to_owned(), "%5".to_owned()),
             ],
+            "%3",
         );
         let o = t.origin.lock().expect("lock");
         assert_eq!(o.get("/dev/ttys000").map(String::as_str), Some("%1"));
         assert_eq!(o.get("/dev/ttys003").map(String::as_str), Some("%5"));
     }
 
+    /// The bug the journal caught an hour after shipping. `docs/16`
+    /// assumed you jump *from* nvim; every pane this grid is used from is
+    /// an anchor session, so every candidate origin was a view and `◄`
+    /// never had anywhere to go.
+    #[test]
+    fn standing_in_a_view_still_counts_as_somewhere_to_come_back_to() {
+        let t = Tmux::default();
+        // %3 is a view, and it is where the client is standing.
+        t.record_origins(&[("c".to_owned(), "%3".to_owned())], "%4");
+        assert!(t.can_go_back(), "a view is a place you were");
+        let o = t.origin.lock().expect("lock");
+        assert_eq!(o.get("c").map(String::as_str), Some("%3"));
+    }
+
     /// `next → next → next → back` must land where you started, not three
-    /// agents deep. A view is never an origin, so a chained jump cannot
-    /// overwrite one.
+    /// agents deep. Held by *first jump wins* rather than by refusing to
+    /// record views, which is what made `◄` useless.
     #[test]
     fn a_chained_jump_does_not_overwrite_where_you_started() {
         let t = Tmux::default();
-        t.record_origins(LISTING, &[("c".to_owned(), "%1".to_owned())]);
-        // now standing in a view, and jumping again
-        t.record_origins(LISTING, &[("c".to_owned(), "%3".to_owned())]);
-        t.record_origins(LISTING, &[("c".to_owned(), "%4".to_owned())]);
+        t.record_origins(&[("c".to_owned(), "%1".to_owned())], "%3");
+        t.record_origins(&[("c".to_owned(), "%3".to_owned())], "%4");
+        t.record_origins(&[("c".to_owned(), "%4".to_owned())], "%5");
         let o = t.origin.lock().expect("lock");
         assert_eq!(
             o.get("c").map(String::as_str),
@@ -848,10 +874,12 @@ mod tests {
         );
     }
 
+    /// Pressing a pad you are already looking at starts no trip, so it
+    /// must not record an origin that would send you nowhere.
     #[test]
-    fn a_client_standing_in_a_view_records_no_origin() {
+    fn jumping_to_where_you_already_are_records_nothing() {
         let t = Tmux::default();
-        t.record_origins(LISTING, &[("c".to_owned(), "%3".to_owned())]);
+        t.record_origins(&[("c".to_owned(), "%3".to_owned())], "%3");
         assert!(!t.can_go_back());
     }
 
@@ -861,7 +889,7 @@ mod tests {
     fn back_is_offered_only_when_there_is_somewhere_to_go() {
         let t = Tmux::default();
         assert!(!t.can_go_back());
-        t.record_origins(LISTING, &[("c".to_owned(), "%1".to_owned())]);
+        t.record_origins(&[("c".to_owned(), "%1".to_owned())], "%3");
         assert!(t.can_go_back());
     }
 }
