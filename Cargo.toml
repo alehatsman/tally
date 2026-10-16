@@ -1,0 +1,16 @@
+[package]
+name = "tally"
+version = "0.0.0"
+edition = "2021"
+license = "MIT"
+description = "A hardware grid that spawns, watches and jumps to agent sessions"
+publish = false
+
+[[bin]]
+name = "tallyd"
+path = "src/bin/tallyd.rs"
+
+# No dependencies yet, by decision. The dependency budget is argued in
+# docs/02-surface.md and docs/08-lifecycle.md; nothing is added before the
+# milestone that needs it (ROADMAP.md).
+[dependencies]
