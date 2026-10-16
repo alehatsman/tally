@@ -28,6 +28,18 @@ pub struct Slot {
 }
 
 impl Slot {
+    /// The `tl.slot` value for this address — what a label carries and
+    /// what a human types into a shell script.
+    ///
+    /// `None` if the page has no name, which cannot happen for an address
+    /// that [`parse`] produced: parsing is what proved the page declared.
+    /// It can happen for one built by hand, and a spawn that would write
+    /// an unreadable label must not happen at all.
+    pub fn label(self, pages: &Pages) -> Option<String> {
+        let page = pages.name_of(self.page)?;
+        Some(format!("{page}:{}:{}", self.row, self.col))
+    }
+
     /// The button this slot occupies when its page is on the grid.
     pub fn button(self) -> Button {
         Button::Grid {
@@ -117,6 +129,26 @@ fn coordinate(text: &str) -> Option<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Round-trip: what a spawn writes is what a reconcile reads back.
+    /// A break here is a pad that lights once and never again.
+    #[test]
+    fn a_label_parses_back_to_the_slot_that_wrote_it() {
+        let pages = Pages::new(["work".to_owned(), "infra".to_owned()]);
+        for page in 1..=2 {
+            for (row, col) in [(1, 1), (3, 5), (8, 8)] {
+                let at = Slot { page, row, col };
+                let label = at.label(&pages).expect("declared page");
+                assert_eq!(parse(&label, &pages), Some(at), "{label}");
+            }
+        }
+        assert_eq!(
+            Slot { page: 1, row: 3, col: 5 }.label(&pages).as_deref(),
+            Some("work:3:5")
+        );
+        // A page past the declared ones has no name to write.
+        assert_eq!(Slot { page: 7, row: 1, col: 1 }.label(&pages), None);
+    }
 
     fn named() -> Pages {
         Pages::new(["work".to_owned(), "infra".to_owned()])

@@ -18,14 +18,17 @@ workspace = true
 name = "tallyd"
 path = "src/bin/tallyd.rs"
 
-# No dependencies yet, by decision. The dependency budget is argued in
-# docs/02-surface.md and docs/08-lifecycle.md; nothing is added before the
-# milestone that needs it (ROADMAP.md).
+# The dependency budget is argued in docs/02-surface.md and
+# docs/08-lifecycle.md; nothing is added before the milestone that needs it
+# (ROADMAP.md). `toml` arrives with M3, which is the first milestone with a
+# config file: a hand-rolled subset parser would accept valid TOML it had
+# not implemented and report it as a syntax error, in a file edited by hand.
 [dependencies]
 libc = "0.2.190"
 midir = "0.11.1"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+toml = "0.9"
 
 # Fleet lint block, from alehatsman/rust-quality `lints.toml`.
 # Not hand-maintained: `rq/lints-check` reports drift against that file.

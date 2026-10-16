@@ -5,7 +5,10 @@
 //! not. The hardware protocol in `docs/02-surface.md` was verified against
 //! a real device in M0; this crate implements it.
 
+pub mod act;
 pub mod anchor;
+pub mod chord;
+pub mod config;
 pub mod device;
 pub mod journal;
 pub mod jump;

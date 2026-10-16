@@ -6,9 +6,10 @@
 //! it holds no state that cannot be rebuilt from a `list` and a config file
 //! (`docs/08-lifecycle.md`).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::anchor::Session;
+use crate::chord::Action;
 use crate::render::{self, Health, Page};
 use crate::signal::{slot_state, Derived, SessionState, SlotState};
 use crate::slot::{self, Pages, Slot};
@@ -27,6 +28,19 @@ pub struct View<'a> {
     pub anchord_reachable: bool,
     /// Milliseconds since the epoch.
     pub now: i64,
+    /// The modifier being held, if exactly one is
+    /// (`crate::chord::Chords::modifier`). The grid recolours to show
+    /// what it would do.
+    pub held: Option<Action>,
+    /// Slots `slots.toml` can spawn into.
+    pub spawnable: &'a BTreeSet<Slot>,
+    /// Slots with at least one session anchord would agree to forget.
+    pub purgeable: &'a BTreeSet<Slot>,
+    /// Every action button physically down — which is **not** the same as
+    /// [`Self::held`]: two buttons down lights both white and previews
+    /// neither, so a fumble is visible rather than merely inert
+    /// (`crate::chord::Chords::modifier`).
+    pub pressed: &'a BTreeSet<Action>,
 }
 
 /// What a session resolved to, once.
@@ -40,6 +54,12 @@ pub struct Resolved {
     pub title: Option<String>,
     /// What that pad renders.
     pub state: SlotState,
+    /// Carries `tl.mute`. Not part of [`SlotState`] on purpose: a muted
+    /// slot renders the state *underneath* its attention, so muting is
+    /// invisible until you hold the mute button and ask.
+    pub muted: bool,
+    /// The spec name from `tl.spec`, if it was spawned with one.
+    pub spec: Option<String>,
 }
 
 /// Resolve every session to a slot, newest wins, invalid ignored.
@@ -88,10 +108,121 @@ pub fn resolve(
                 session: session.id.clone(),
                 title,
                 state,
+                muted: session.muted(),
+                spec: session.labels.get(crate::anchor::LABEL_SPEC).cloned(),
             },
         );
     }
     taken
+}
+
+/// Every session anchord would agree to forget, by the pad that claims it.
+///
+/// **Not the same set `resolve` draws.** A clean exit keeps its `tl.slot`
+/// and its log but renders as nothing, so a pad can be dark and still have
+/// a dozen rows behind it. Those are exactly what the purge chord is for,
+/// and the only way to see them is to hold it
+/// (`docs/03-model.md#exited-rows-accumulate-and-purge-is-the-answer`).
+///
+/// Newest first, because that is the order anchord lists in and the order
+/// you would delete them by hand.
+pub fn purgeable(sessions: &[Session], pages: &Pages) -> BTreeMap<Slot, Vec<String>> {
+    let mut by_slot: BTreeMap<Slot, Vec<String>> = BTreeMap::new();
+    for session in sessions {
+        // Running and closing are not purgeable; anchord refuses them
+        // with `already_exited`, which reads backwards and is its name to
+        // choose (`anchor/src/session/manager.rs:416-422`).
+        if !matches!(
+            session.lifecycle(),
+            SessionState::Exited | SessionState::Lost
+        ) {
+            continue;
+        }
+        let Some(slot) = session.slot_label().and_then(|l| slot::parse(l, pages)) else {
+            continue;
+        };
+        by_slot.entry(slot).or_default().push(session.id.clone());
+    }
+    by_slot
+}
+
+/// What a held gesture would do to one pad.
+///
+/// **This is read twice**: once to colour the pad while the modifier is
+/// held, once to decide what the tap actually does. One function, so the
+/// preview cannot promise something the press does not deliver — which is
+/// the whole claim `docs/05` makes for putting a destructive action on a
+/// button with no label.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Effect {
+    /// It will act on this pad.
+    Acts,
+    /// Mute only: `tl.mute` is set and the tap would clear it.
+    Unmutes,
+    /// Something is here and this gesture does not apply to it. Dim.
+    Skips,
+    /// Nothing here for this gesture. Dark.
+    None,
+}
+
+/// One pad, as a gesture sees it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Pad {
+    /// What is rendered there, or `None` for a dark pad.
+    pub state: Option<SlotState>,
+    /// It carries `tl.mute`.
+    pub muted: bool,
+    /// Something can be spawned here — a `[[slot]]` in `slots.toml`, or a
+    /// `tl.spec` label on the session that is there.
+    pub spec: bool,
+    /// anchord holds at least one row for this pad that it would forget.
+    /// Includes rows that are **not drawn**: a clean exit keeps its
+    /// `tl.slot` and its log, and its pad is dark
+    /// (`docs/03-model.md#exited-rows-accumulate-and-purge-is-the-answer`).
+    pub purgeable: bool,
+}
+
+impl Pad {
+    /// Alive: working, quiet, or asking. The three states a kill ends and
+    /// a mute is about.
+    fn alive(self) -> bool {
+        matches!(
+            self.state,
+            Some(SlotState::Working | SlotState::Quiet | SlotState::NeedsAnswer { .. })
+        )
+    }
+}
+
+/// What `action` would do to `pad`.
+pub fn effect(action: Action, pad: Pad) -> Effect {
+    let occupied = pad.state.is_some();
+    let skip = if occupied { Effect::Skips } else { Effect::None };
+    match action {
+        Action::Kill if pad.alive() => Effect::Acts,
+        // Respawn needs somewhere to put the new session and something to
+        // put there. It deliberately does **not** touch `lost`: a lost
+        // session may still be running and orphaned, and a second agent on
+        // the same address gives you two processes and one pad to watch
+        // them with. Purge first -- the purge is the act of deciding it is
+        // really gone.
+        Action::Respawn
+            if pad.spec && matches!(pad.state, None | Some(SlotState::Failed { .. })) =>
+        {
+            Effect::Acts
+        }
+        // A dark pad can still be purgeable, and that is the point: clean
+        // exits pile up behind one invisibly. Holding purge is how you see
+        // them.
+        Action::Purge if pad.purgeable && !pad.alive() => Effect::Acts,
+        Action::Mute if pad.alive() => {
+            if pad.muted {
+                Effect::Unmutes
+            } else {
+                Effect::Acts
+            }
+        }
+        Action::Kill | Action::Respawn | Action::Purge | Action::Mute => skip,
+    }
 }
 
 /// Build the frame.
@@ -117,8 +248,33 @@ pub fn frame_from(resolved: &BTreeMap<Slot, Resolved>, view: &View<'_>) -> Frame
                 }
             }
         }
-        if r.slot.page == view.current {
+        if r.slot.page == view.current && view.held.is_none() {
             frame.set(r.slot.button(), render::slot(r.state));
+        }
+    }
+
+    // A held modifier replaces the grid with the answer to "what happens
+    // if I press this". Every pad on the page is asked, not just the lit
+    // ones: a dark pad can be a spawn or a pile of clean exits waiting to
+    // be forgotten, and both are things the preview exists to reveal.
+    if let Some(action) = view.held {
+        for row in 1..=8 {
+            for col in 1..=8 {
+                let at = Slot {
+                    page: view.current,
+                    row,
+                    col,
+                };
+                let r = resolved.get(&at);
+                let pad = Pad {
+                    state: r.map(|r| r.state),
+                    muted: r.is_some_and(|r| r.muted),
+                    spec: view.spawnable.contains(&at)
+                        || r.is_some_and(|r| r.spec.is_some()),
+                    purgeable: view.purgeable.contains(&at),
+                };
+                frame.set(at.button(), render::preview(action, effect(action, pad)));
+            }
         }
     }
 
@@ -135,7 +291,12 @@ pub fn frame_from(resolved: &BTreeMap<Slot, Resolved>, view: &View<'_>) -> Frame
     }
 
     for row in 1..=8 {
-        frame.set(Button::Action(row), render::action(false));
+        let button = Button::Action(row);
+        let carries = Action::of(button);
+        frame.set(
+            button,
+            render::action(carries, carries.is_some_and(|a| view.pressed.contains(&a))),
+        );
     }
 
     // Attention you cannot see, on a page that is not on the grid.
@@ -173,7 +334,7 @@ pub fn needs_watcher<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::surface::palette::{AMBER, DARK_RED, GREEN, TURQUOISE, WHITE};
+    use crate::surface::palette::{AMBER, DARK_RED, GREEN, RED, TURQUOISE, WHITE};
     use crate::surface::Cell;
 
     const NOW: i64 = 1_760_000_000_000;
@@ -193,14 +354,25 @@ mod tests {
         }
     }
 
+    /// The resting view: nothing held, nothing spawnable, nothing to
+    /// purge. Tests that care about those build on top of it.
     fn view(pages: &Pages) -> View<'_> {
         View {
             pages,
             current: 1,
             anchord_reachable: true,
             now: NOW,
+            held: None,
+            spawnable: &EMPTY_SLOTS,
+            purgeable: &EMPTY_SLOTS,
+            pressed: &NO_BUTTONS,
         }
     }
+
+    static EMPTY_SLOTS: std::sync::LazyLock<BTreeSet<Slot>> =
+        std::sync::LazyLock::new(BTreeSet::new);
+    static NO_BUTTONS: std::sync::LazyLock<BTreeSet<Action>> =
+        std::sync::LazyLock::new(BTreeSet::new);
 
     #[test]
     fn a_labelled_session_lights_its_pad() {
@@ -223,6 +395,238 @@ mod tests {
         });
     }
 
+    fn pad(state: Option<SlotState>) -> Pad {
+        Pad {
+            state,
+            ..Pad::default()
+        }
+    }
+
+    const ALIVE: [SlotState; 3] = [
+        SlotState::Working,
+        SlotState::Quiet,
+        SlotState::NeedsAnswer {
+            source: crate::signal::Source::Derived,
+        },
+    ];
+
+    #[test]
+    fn kill_acts_on_everything_alive_and_nothing_else() {
+        for state in ALIVE {
+            assert_eq!(effect(Action::Kill, pad(Some(state))), Effect::Acts, "{state:?}");
+        }
+        for dead in [SlotState::Failed { code: 1 }, SlotState::Lost] {
+            assert_eq!(effect(Action::Kill, pad(Some(dead))), Effect::Skips, "{dead:?}");
+        }
+        assert_eq!(effect(Action::Kill, pad(None)), Effect::None);
+    }
+
+    /// A lost session may still be running and orphaned, so respawning it
+    /// would give you two agents in one repo and one pad to watch them
+    /// with. Purge is the act of deciding it is really gone.
+    #[test]
+    fn respawn_refuses_a_lost_pad_even_with_a_spec() {
+        let with_spec = |state| Pad {
+            state,
+            spec: true,
+            ..Pad::default()
+        };
+        assert_eq!(effect(Action::Respawn, with_spec(None)), Effect::Acts);
+        assert_eq!(
+            effect(Action::Respawn, with_spec(Some(SlotState::Failed { code: 1 }))),
+            Effect::Acts
+        );
+        assert_eq!(
+            effect(Action::Respawn, with_spec(Some(SlotState::Lost))),
+            Effect::Skips
+        );
+        for state in ALIVE {
+            assert_eq!(effect(Action::Respawn, with_spec(Some(state))), Effect::Skips);
+        }
+    }
+
+    /// Without a spec there is nothing to run, so a dark pad stays dark
+    /// under respawn rather than lighting and then doing nothing.
+    #[test]
+    fn respawn_needs_something_to_run() {
+        assert_eq!(effect(Action::Respawn, pad(None)), Effect::None);
+    }
+
+    /// The case the colour language cannot show any other way: rows pile
+    /// up behind a dark pad, and holding purge is how you see them.
+    #[test]
+    fn purge_lights_a_dark_pad_that_has_rows_behind_it() {
+        let hidden = Pad {
+            state: None,
+            purgeable: true,
+            ..Pad::default()
+        };
+        assert_eq!(effect(Action::Purge, hidden), Effect::Acts);
+        assert_eq!(effect(Action::Purge, pad(None)), Effect::None);
+    }
+
+    /// anchord refuses a running session with `already_exited`, so the
+    /// preview must not offer it — the press would fail, visibly, for a
+    /// reason the surface never hinted at.
+    #[test]
+    fn purge_never_offers_a_live_session() {
+        for state in ALIVE {
+            let live = Pad {
+                state: Some(state),
+                purgeable: true,
+                ..Pad::default()
+            };
+            assert_eq!(effect(Action::Purge, live), Effect::Skips, "{state:?}");
+        }
+    }
+
+    #[test]
+    fn mute_toggles_and_says_which_way() {
+        for state in ALIVE {
+            let on = Pad {
+                state: Some(state),
+                ..Pad::default()
+            };
+            assert_eq!(effect(Action::Mute, on), Effect::Acts);
+            assert_eq!(
+                effect(
+                    Action::Mute,
+                    Pad {
+                        muted: true,
+                        ..on
+                    }
+                ),
+                Effect::Unmutes
+            );
+        }
+        // A dead session cannot ring, so there is nothing to silence.
+        assert_eq!(
+            effect(Action::Mute, pad(Some(SlotState::Failed { code: 1 }))),
+            Effect::Skips
+        );
+    }
+
+    /// `Unmutes` is mute's alone. Nothing else on the surface toggles,
+    /// so nothing else may claim the variant that says which way.
+    #[test]
+    fn only_mute_ever_reports_a_toggle() {
+        let every_pad = [None, Some(SlotState::Working), Some(SlotState::Quiet),
+            Some(SlotState::Failed { code: 1 }), Some(SlotState::Lost)];
+        for action in [Action::Kill, Action::Respawn, Action::Purge] {
+            for state in every_pad {
+                for muted in [false, true] {
+                    for spec in [false, true] {
+                        for rows in [false, true] {
+                            let p = Pad { state, muted, spec, purgeable: rows };
+                            assert_ne!(effect(action, p), Effect::Unmutes, "{action:?} {p:?}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Holding a modifier replaces the grid. The pad that was green is
+    /// now the colour of what would happen to it.
+    #[test]
+    fn a_held_modifier_recolours_the_grid() {
+        let pages = Pages::default();
+        let sessions = [session("a", "running", Some("1:3:5"))];
+        let resting = frame(&sessions, &BTreeMap::new(), &view(&pages));
+        assert_eq!(resting.get(Button::Grid { row: 3, col: 5 }), Cell::Static(GREEN));
+
+        let held = View {
+            held: Some(Action::Kill),
+            ..view(&pages)
+        };
+        let f = frame(&sessions, &BTreeMap::new(), &held);
+        assert_eq!(
+            f.get(Button::Grid { row: 3, col: 5 }),
+            Cell::Static(RED),
+            "the pad that would be killed is red"
+        );
+        assert_eq!(
+            f.get(Button::Grid { row: 1, col: 1 }),
+            Cell::Off,
+            "an empty pad stays dark"
+        );
+    }
+
+    /// The health light and the top row are not part of the question the
+    /// preview asks, so they must not answer it.
+    #[test]
+    fn the_preview_leaves_the_top_row_and_the_logo_alone() {
+        let pages = Pages::default();
+        let sessions = [session("a", "running", Some("1:3:5"))];
+        let resting = frame(&sessions, &BTreeMap::new(), &view(&pages));
+        let held = frame(
+            &sessions,
+            &BTreeMap::new(),
+            &View {
+                held: Some(Action::Purge),
+                ..view(&pages)
+            },
+        );
+        assert_eq!(resting.get(Button::Logo), held.get(Button::Logo));
+        for page in 1..=slot::PAGES {
+            assert_eq!(
+                resting.get(Button::Page(page)),
+                held.get(Button::Page(page)),
+                "page {page}"
+            );
+        }
+    }
+
+    /// Two buttons down lights both white and previews neither, so the
+    /// fumble is visible instead of merely inert.
+    #[test]
+    fn two_pressed_buttons_light_without_a_preview() {
+        let pages = Pages::default();
+        let sessions = [session("a", "running", Some("1:3:5"))];
+        let pressed: BTreeSet<Action> = [Action::Kill, Action::Purge].into_iter().collect();
+        let f = frame(
+            &sessions,
+            &BTreeMap::new(),
+            &View {
+                held: None, // what `Chords::modifier` reports for two
+                pressed: &pressed,
+                ..view(&pages)
+            },
+        );
+        assert_eq!(
+            f.get(Button::Grid { row: 3, col: 5 }),
+            Cell::Static(GREEN),
+            "the grid is untouched"
+        );
+        for action in [Action::Kill, Action::Purge] {
+            assert_eq!(
+                f.get(action.button()),
+                Cell::Static(WHITE),
+                "{action:?} reads as held"
+            );
+        }
+    }
+
+    /// `purgeable` is deliberately not the set `resolve` draws.
+    #[test]
+    fn purgeable_includes_rows_that_nothing_draws() {
+        let pages = Pages::default();
+        let mut clean = session("done", "exited", Some("1:2:2"));
+        clean.exit_code = Some(0);
+        let sessions = [clean, session("live", "running", Some("1:1:1"))];
+
+        let drawn = resolve(&sessions, &BTreeMap::new(), &pages, NOW);
+        let at = Slot { page: 1, row: 2, col: 2 };
+        assert!(!drawn.contains_key(&at), "a clean exit is not drawn");
+
+        let rows = purgeable(&sessions, &pages);
+        assert_eq!(rows.get(&at).map(Vec::len), Some(1), "but it is purgeable");
+        assert!(
+            !rows.contains_key(&Slot { page: 1, row: 1, col: 1 }),
+            "a running session is not"
+        );
+    }
+
     #[test]
     fn a_malformed_slot_is_ignored_not_clamped() {
         let pages = Pages::default();
@@ -230,8 +634,9 @@ mod tests {
             let sessions = [session("x", "running", Some(bad))];
             let f = frame(&sessions, &BTreeMap::new(), &view(&pages));
             let lit = Button::all().filter(|&b| f.get(b) != Cell::Off).count();
-            // Only the controls: the current page button and 8 actions.
-            assert_eq!(lit, 9, "{bad:?} lit a pad");
+            // Only the controls: the current page button, plus the four
+            // action buttons that carry a gesture. `CC49`-`CC79` are dark.
+            assert_eq!(lit, 5, "{bad:?} lit a pad");
         }
     }
 

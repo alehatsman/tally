@@ -48,6 +48,20 @@ pub enum Error {
     Unreachable(String),
     /// anchord answered, but not with something we understand.
     Protocol(String),
+    /// anchord understood and said no.
+    ///
+    /// Kept apart from [`Self::Protocol`] because the codes are a
+    /// contract and some of them are ordinary: `already_exited` from a
+    /// `purge` means the session is still running, which is a thing a
+    /// finger does, not a thing that is broken. Only `internal` is
+    /// anchord's fault and worth retrying
+    /// (anchor `docs/04-protocol.md`).
+    Refused {
+        /// anchor's error code — `not_found`, `already_exited`, …
+        code: String,
+        /// Its message, verbatim.
+        message: String,
+    },
 }
 
 impl fmt::Display for Error {
@@ -55,6 +69,7 @@ impl fmt::Display for Error {
         match self {
             Self::Unreachable(e) => write!(f, "anchord unreachable: {e}"),
             Self::Protocol(e) => write!(f, "anchord protocol: {e}"),
+            Self::Refused { code, message } => write!(f, "anchord refused: {code}: {message}"),
         }
     }
 }
@@ -189,6 +204,37 @@ struct ListReply {
     error: Option<ReplyError>,
 }
 
+/// What to run, and what to label it with.
+///
+/// Borrowed rather than owned: it is built from a config entry and a slot
+/// address, used once, and thrown away. Nothing here outlives the call.
+#[derive(Debug)]
+pub struct Spawn<'a> {
+    /// `argv[0]`.
+    pub command: &'a str,
+    /// `argv[1..]`.
+    pub args: &'a [String],
+    /// Absolute. **`~` is expanded before it gets here** — nothing between
+    /// the config file and the PTY is a shell.
+    pub cwd: Option<&'a Path>,
+    /// Extra environment for the child.
+    pub env: &'a BTreeMap<String, String>,
+    /// Run the command as a login shell.
+    pub login_shell: bool,
+    /// `tl.*` labels, applied at create time.
+    pub labels: &'a BTreeMap<String, String>,
+}
+
+/// The common shape of every control reply we send.
+#[derive(Debug, Deserialize)]
+struct OpReply {
+    ok: bool,
+    #[serde(default)]
+    session: Option<String>,
+    #[serde(default)]
+    error: Option<ReplyError>,
+}
+
 #[derive(Debug, Deserialize)]
 struct ReplyError {
     code: String,
@@ -295,6 +341,102 @@ impl Client {
             reader,
             offset: reply.offset,
         })
+    }
+
+    /// Spawn a session and claim a slot with it.
+    ///
+    /// The labels go on at **create time**, not in a `label` call
+    /// afterwards: a session that exists for even one tick without its
+    /// `tl.slot` is a session the next reconcile does not draw, and a pad
+    /// that blinks on a second after you pressed it looks like a bug
+    /// whether or not it is one.
+    ///
+    /// `cols`/`rows` are left to anchor's defaults on purpose — the view
+    /// window owns the size and `anchor attach` sets it
+    /// (`docs/03-model.md`).
+    ///
+    /// # Errors
+    /// [`Error::Refused`] with `invalid_spec` or `spawn_failed` if the
+    /// command is not runnable; [`Error::Unreachable`] if anchord is down.
+    pub fn create(&self, spawn: &Spawn<'_>) -> Result<String, Error> {
+        let request = serde_json::json!({
+            "id": 1,
+            "op": "create",
+            "spec": {
+                "command": spawn.command,
+                "args": spawn.args,
+                "cwd": spawn.cwd,
+                "env": spawn.env,
+                "login_shell": spawn.login_shell,
+            },
+            "labels": spawn.labels,
+        });
+        let reply = self.op(&request)?;
+        reply.session.ok_or_else(|| {
+            Error::Protocol("create said ok and named no session".to_owned())
+        })
+    }
+
+    /// End a session.
+    ///
+    /// anchor makes this synchronous to terminal state: when it answers,
+    /// the child is dead *and* the exit is recorded
+    /// (anchor `docs/04-protocol.md`). That is what lets the pad go red at
+    /// the moment it is actually dead rather than when we asked.
+    ///
+    /// # Errors
+    /// [`Error::Refused`] with `not_found`; [`Error::Unreachable`].
+    pub fn terminate(&self, session: &str) -> Result<(), Error> {
+        let request = serde_json::json!({"id": 1, "op": "terminate", "session": session});
+        self.op(&request).map(|_reply| ())
+    }
+
+    /// Forget a session — its row, its labels and its output.
+    ///
+    /// # Errors
+    /// [`Error::Refused`] with `already_exited` if it is still running
+    /// (anchor's name for "it has not exited", which reads backwards and
+    /// is theirs to name), or `not_found` for an id that never existed.
+    pub fn purge(&self, session: &str) -> Result<(), Error> {
+        let request = serde_json::json!({"id": 1, "op": "purge", "session": session});
+        self.op(&request).map(|_reply| ())
+    }
+
+    /// Set and remove labels in one call.
+    ///
+    /// One call rather than two because anchor applies a `label` op as a
+    /// unit, and a mute that is half-applied is a mute you cannot reason
+    /// about.
+    ///
+    /// # Errors
+    /// [`Error::Refused`] with `not_found` or `invalid_label`.
+    pub fn label(
+        &self,
+        session: &str,
+        set: &BTreeMap<String, String>,
+        remove: &[&str],
+    ) -> Result<(), Error> {
+        let request = serde_json::json!({
+            "id": 1, "op": "label", "session": session, "set": set, "remove": remove,
+        });
+        self.op(&request).map(|_reply| ())
+    }
+
+    /// One control call, with the ok/error split already decided.
+    fn op(&self, request: &serde_json::Value) -> Result<OpReply, Error> {
+        let line = self.call(&request.to_string())?;
+        let reply: OpReply =
+            serde_json::from_str(&line).map_err(|e| Error::Protocol(e.to_string()))?;
+        if reply.ok {
+            return Ok(reply);
+        }
+        Err(reply.error.map_or_else(
+            || Error::Protocol("not ok, and no error given".to_owned()),
+            |e| Error::Refused {
+                code: e.code,
+                message: e.message,
+            },
+        ))
     }
 
     fn call(&self, request: &str) -> Result<String, Error> {

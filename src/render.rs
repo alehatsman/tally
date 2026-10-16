@@ -15,8 +15,10 @@
 //! and a hard 50% flash reads as urgent for a minute and as stressful by
 //! the afternoon. Urgency is carried by hue, which does not get tiring.
 
+use crate::chord::Action;
+use crate::model::Effect;
 use crate::signal::SlotState;
-use crate::surface::palette::{AMBER, BLUE, DARK_RED, GREEN, RED, TURQUOISE, WHITE};
+use crate::surface::palette::{AMBER, BLUE, DARK_GREY, DARK_RED, GREEN, RED, TURQUOISE, WHITE};
 use crate::surface::Cell;
 
 /// How one slot is lit.
@@ -67,11 +69,44 @@ pub fn page(p: Page) -> Cell {
 
 /// A right-column action button. White while held, which is the only
 /// feedback that the modifier is actually down.
-pub fn action(held: bool) -> Cell {
-    if held {
-        Cell::Static(WHITE)
-    } else {
-        Cell::Static(BLUE)
+///
+/// `CC49`-`CC79` carry no gesture and are dark: a button lit like a live
+/// one that does nothing when you press it is worse than an unlit button,
+/// because you press it twice.
+pub fn action(button: Option<Action>, held: bool) -> Cell {
+    match (button, held) {
+        (None, _) => Cell::Off,
+        (Some(_), true) => Cell::Static(WHITE),
+        (Some(_), false) => Cell::Static(BLUE),
+    }
+}
+
+/// How a slot is lit while a modifier is held.
+///
+/// Three levels, and the middle one earns its keep: **dim** says "that
+/// session is there and this gesture will not touch it", which is the
+/// question you are actually asking. Off everywhere instead would leave
+/// two thirds of the grid blank and you guessing which half of the reason
+/// applied (`docs/05-interaction.md#the-held-preview`).
+///
+/// Each colour is the colour of the **consequence**, not of the button:
+/// kill reds the pads that are about to be red, respawn greens the ones
+/// about to be green. Nothing here pulses — a preview lasts as long as
+/// your thumb does, and motion on sixty pads for two seconds is noise.
+pub fn preview(action: Action, effect: Effect) -> Cell {
+    match effect {
+        Effect::None => Cell::Off,
+        Effect::Skips => Cell::Static(DARK_GREY),
+        // Mute is the only two-colour preview, because it is the only
+        // toggle. Blue and white are the *control* colours: you are about
+        // to change how tally treats the pad, not what is running on it.
+        Effect::Unmutes => Cell::Static(WHITE),
+        Effect::Acts => Cell::Static(match action {
+            Action::Kill => RED,
+            Action::Respawn => GREEN,
+            Action::Purge => DARK_RED,
+            Action::Mute => BLUE,
+        }),
     }
 }
 
@@ -155,8 +190,8 @@ mod tests {
                 attention: true,
                 ..Page::default()
             }),
-            action(true),
-            action(false),
+            action(Some(Action::Kill), true),
+            action(Some(Action::Kill), false),
         ] {
             assert!(!matches!(control, Cell::Flash { .. }), "{control:?} blinks");
         }
@@ -176,7 +211,8 @@ mod tests {
         {
             assert!(!amber(slot(other)), "{other:?} is amber too");
         }
-        assert!(!amber(action(false)) && !amber(action(true)));
+        assert!(!amber(action(Some(Action::Kill), false)));
+        assert!(!amber(action(Some(Action::Kill), true)));
     }
 
     /// Green means alive, and nothing else does. The failure this guards is
@@ -314,11 +350,89 @@ mod tests {
         assert!(animated(page(wants)));
     }
 
+    const EFFECTS: [Effect; 4] = [
+        Effect::Acts,
+        Effect::Unmutes,
+        Effect::Skips,
+        Effect::None,
+    ];
+
+    /// The one reservation the whole design rests on. A preview that
+    /// borrowed amber would put a second amber thing on a surface whose
+    /// promise is that there is only ever one.
+    #[test]
+    fn no_preview_is_ever_amber() {
+        for action in Action::all() {
+            for effect in EFFECTS {
+                assert_ne!(preview(action, effect), Cell::Static(AMBER));
+                assert_ne!(preview(action, effect), Cell::Pulse(AMBER));
+            }
+        }
+    }
+
+    /// A preview lasts as long as your thumb. Motion on sixty pads for
+    /// two seconds is noise, not information.
+    #[test]
+    fn nothing_in_a_preview_moves() {
+        for action in Action::all() {
+            for effect in EFFECTS {
+                assert!(!animated(preview(action, effect)), "{action:?}/{effect:?}");
+            }
+        }
+    }
+
+    /// Each colour is the colour of the consequence: kill reds the pads
+    /// that are about to be red, respawn greens the ones about to be green.
+    #[test]
+    fn a_preview_wears_the_colour_of_what_it_would_do() {
+        assert_eq!(preview(Action::Kill, Effect::Acts), Cell::Static(RED));
+        assert_eq!(preview(Action::Respawn, Effect::Acts), Cell::Static(GREEN));
+        assert_eq!(preview(Action::Purge, Effect::Acts), Cell::Static(DARK_RED));
+        assert_eq!(slot(SlotState::Failed { code: 1 }), preview(Action::Kill, Effect::Acts));
+        assert_eq!(slot(SlotState::Lost), preview(Action::Purge, Effect::Acts));
+    }
+
+    /// Three levels, and the middle one is the one that earns its keep.
+    #[test]
+    fn the_three_preview_levels_are_distinguishable() {
+        for action in Action::all() {
+            let acts = preview(action, Effect::Acts);
+            let skips = preview(action, Effect::Skips);
+            assert_eq!(skips, Cell::Static(DARK_GREY), "{action:?}");
+            assert_eq!(preview(action, Effect::None), Cell::Off, "{action:?}");
+            assert_ne!(acts, skips, "{action:?}");
+        }
+    }
+
+    /// Mute is the only two-colour preview, because it is the only
+    /// toggle — and both of its colours are control colours, not slot
+    /// colours: you are changing how tally treats the pad, not what is
+    /// running on it.
+    #[test]
+    fn mute_is_the_only_preview_that_says_which_way_it_goes() {
+        assert_eq!(preview(Action::Mute, Effect::Acts), Cell::Static(BLUE));
+        assert_eq!(preview(Action::Mute, Effect::Unmutes), Cell::Static(WHITE));
+        let slots: Vec<Cell> = ALL.into_iter().map(slot).collect();
+        for c in [Cell::Static(BLUE), Cell::Static(WHITE)] {
+            assert!(!slots.contains(&c), "{c:?} is also a slot colour");
+        }
+    }
+
+    /// An unassigned button lit like a live one is an invitation to press
+    /// it, and you press it twice before believing it does nothing.
+    #[test]
+    fn an_action_button_with_no_gesture_is_dark() {
+        assert_eq!(action(None, false), Cell::Off);
+        assert_eq!(action(None, true), Cell::Off);
+        assert_eq!(action(Some(Action::Kill), false), Cell::Static(BLUE));
+        assert_eq!(action(Some(Action::Kill), true), Cell::Static(WHITE));
+    }
+
     /// Controls must not be mistakable for any slot state at a glance.
     #[test]
     fn control_colours_are_disjoint_from_slot_colours() {
         let slot_entries: Vec<Cell> = ALL.into_iter().map(slot).collect();
-        for control in [action(false), Cell::Static(TURQUOISE)] {
+        for control in [action(Some(Action::Kill), false), Cell::Static(TURQUOISE)] {
             assert!(
                 !slot_entries.contains(&control),
                 "{control:?} collides with a slot colour"

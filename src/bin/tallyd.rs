@@ -13,14 +13,16 @@ use std::time::Duration;
 use std::fs::OpenOptions;
 use std::io::Write;
 
+use tally::act::{Context, Done};
 use tally::anchor::Client;
+use tally::chord::{Action, Chords, Gesture};
+use tally::config::Config;
 use tally::device::{Device, Error, Event};
 use tally::journal::{self, Journal};
 use tally::jump::{Jump, Tmux};
 use tally::lock::Lock;
 use tally::model::{self, View};
-use tally::slot::Pages;
-use tally::surface::Button;
+use tally::slot::{Pages, Slot};
 use tally::watch::Watchers;
 
 /// Set by the signal handler, read by the main loop. `0` means no signal.
@@ -72,6 +74,45 @@ fn reraise(signum: i32) -> ! {
     std::process::abort();
 }
 
+/// Carry out one gesture and say what happened.
+///
+/// A jump is tmux's and everything else is anchord's, which is the same
+/// split as `docs/06-jump.md`: `tally::act` never opens a terminal and
+/// `tally::jump` never opens a socket.
+///
+/// Errors are printed and dropped. The next reconcile redraws from a
+/// fresh `list`, so a kill that did not land shows as a pad that is still
+/// green — the truth, and better than an error state invented for the
+/// surface.
+fn perform(ctx: &Context<'_>, gesture: Gesture, at: Slot, pages: &Pages, tmux: &impl Jump) {
+    let (row, col) = (at.row, at.col);
+    match gesture {
+        Gesture::Tap { .. } => match ctx.tap(at, pages) {
+            // Occupied: this is a jump, and jumps are not anchord's.
+            Ok(None) => {
+                if let Some(r) = ctx.grid.get(&at) {
+                    eprintln!("tallyd: jump {}:{row}:{col} -> {}", at.page, r.session);
+                    if let Err(e) = tmux.jump(&r.session) {
+                        eprintln!("tallyd: {e}");
+                    }
+                }
+            }
+            Ok(Some(Done::Nothing)) => {}
+            Ok(Some(done)) => eprintln!("tallyd: {}:{row}:{col} {done}", at.page),
+            Err(e) => eprintln!("tallyd: spawn {}:{row}:{col}: {e}", at.page),
+        },
+        Gesture::Chord { action, .. } => match ctx.chord(action, at, pages) {
+            // The preview already said nothing would happen here, so the
+            // log stays quiet too: a line per dimmed pad you brushed is
+            // noise in the only file that is read after something broke.
+            Ok(Done::Nothing) => {}
+            Ok(done) => eprintln!("tallyd: {action:?} {}:{row}:{col} {done}", at.page),
+            Err(e) => eprintln!("tallyd: {action:?} {}:{row}:{col}: {e}", at.page),
+        },
+        Gesture::Page(_) => {}
+    }
+}
+
 fn main() -> ExitCode {
     install_handlers();
 
@@ -96,7 +137,30 @@ fn main() -> ExitCode {
     let mut device: Option<Device> = None;
     let mut last_device_try = Duration::ZERO;
 
-    let pages = Pages::default();
+    // A broken config is reported and then ignored. Refusing to start
+    // would take away the watching to punish a mistake in the spawning,
+    // and the watching is the half that is load-bearing.
+    let config_path = Config::default_path();
+    let config = Config::load(&config_path).unwrap_or_else(|e| {
+        eprintln!("tallyd: {}: {e}", config_path.display());
+        eprintln!("tallyd: running on defaults; no pad will spawn anything");
+        Config::default()
+    });
+    eprintln!(
+        "tallyd: {} pages, {} slots from {}",
+        config.pages().len(),
+        config.len(),
+        config_path.display()
+    );
+    let pages = config.pages().clone();
+    let spawnable: std::collections::BTreeSet<Slot> = (1..=tally::slot::PAGES)
+        .flat_map(|page| {
+            (1..=8).flat_map(move |row| (1..=8).map(move |col| Slot { page, row, col }))
+        })
+        .filter(|&at| config.launch(at).is_some())
+        .collect();
+
+    let mut chords = Chords::default();
     let watchers = Watchers::new(anchor.clone());
     let mut journal = Journal::default();
     // Best effort: a grid that lights up matters more than a log nothing
@@ -132,7 +196,12 @@ fn main() -> ExitCode {
         eprintln!("tallyd: no tmux server yet; a jump will start one");
     }
     // What was on the grid last tick, so a press knows what it hit.
-    let mut grid: std::collections::BTreeMap<tally::slot::Slot, model::Resolved> =
+    let mut grid: std::collections::BTreeMap<Slot, model::Resolved> =
+        std::collections::BTreeMap::new();
+    // Rows anchord would forget, including ones nothing draws: a clean
+    // exit keeps its `tl.slot` behind a dark pad, and the purge chord is
+    // the only way to see or clear it.
+    let mut purgeable: std::collections::BTreeMap<Slot, Vec<String>> =
         std::collections::BTreeMap::new();
     let started = std::time::Instant::now();
 
@@ -169,33 +238,35 @@ fn main() -> ExitCode {
         if let Some(d) = device.as_mut() {
             for event in d.poll().collect::<Vec<_>>() {
                 match event {
-                    Event::Press {
-                        button: Button::Page(n),
-                        down: true,
-                    } => {
-                        current = n;
-                        eprintln!("tallyd: page {n}");
-                    }
-                    // A bound slot jumps. An unbound one does nothing yet:
-                    // spawning is M3, and a press that silently starts a
-                    // process would be worse than one that does nothing.
-                    Event::Press {
-                        button: Button::Grid { row, col },
-                        down: true,
-                    } => {
-                        let at = tally::slot::Slot {
-                            page: current,
-                            row,
-                            col,
+                    Event::Press { button, down } => {
+                        let Some(gesture) = chords.feed(button, down) else {
+                            continue;
                         };
-                        if let Some(r) = grid.get(&at) {
-                            eprintln!("tallyd: jump {}:{row}:{col} -> {}", current, r.session);
-                            if let Err(e) = tmux.jump(&r.session) {
-                                eprintln!("tallyd: {e}");
+                        match gesture {
+                            Gesture::Page(n) => {
+                                current = n;
+                                eprintln!("tallyd: page {n}");
+                            }
+                            Gesture::Tap { row, col } | Gesture::Chord { row, col, .. } => {
+                                let at = Slot {
+                                    page: current,
+                                    row,
+                                    col,
+                                };
+                                let ctx = Context {
+                                    client: &anchor,
+                                    config: &config,
+                                    grid: &grid,
+                                    purgeable: &purgeable,
+                                };
+                                perform(&ctx, gesture, at, &pages, &tmux);
+                                // Whatever it was, the grid is now stale.
+                                // Pull the list forward rather than
+                                // leaving the pad wrong for two seconds.
+                                last_reconcile = Duration::ZERO;
                             }
                         }
                     }
-                    Event::Press { .. } => {}
                     Event::Reply(r) => {
                         last_reply = elapsed;
                         // It answered Live mode: it was power-cycled under
@@ -228,6 +299,9 @@ fn main() -> ExitCode {
                 d.abandon();
                 device = None;
                 repaint = true;
+                // The release for anything held went out with the cable.
+                // Without this the first tap after a replug is a kill.
+                chords.clear();
             }
         }
 
@@ -254,11 +328,21 @@ fn main() -> ExitCode {
             }
         }
 
+        purgeable = model::purgeable(&sessions, &pages);
+        let pressed: std::collections::BTreeSet<Action> = Action::all()
+            .into_iter()
+            .filter(|&a| chords.is_held(a))
+            .collect();
+        let with_rows: std::collections::BTreeSet<Slot> = purgeable.keys().copied().collect();
         let view = View {
             pages: &pages,
             current,
             anchord_reachable: reachable,
             now: tally::now_ms(),
+            held: chords.modifier(),
+            spawnable: &spawnable,
+            purgeable: &with_rows,
+            pressed: &pressed,
         };
         let resolved = model::resolve(&sessions, &watchers.snapshot(), &pages, view.now);
         grid.clone_from(&resolved);
@@ -293,6 +377,7 @@ fn main() -> ExitCode {
                     eprintln!("tallyd: Launchpad disconnected ({e})");
                     device = None;
                     repaint = true;
+                    chords.clear();
                 }
             }
         }

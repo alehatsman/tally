@@ -129,12 +129,14 @@ fn json_string(text: Option<&str>) -> String {
     out
 }
 
-/// `page:row:col`, using the page's name where it has one.
+/// `page:row:col`, falling back to the index for a page with no name.
+///
+/// The journal is read by an eye and by `jq`, so an unnamed page gets its
+/// number rather than being dropped — unlike a `tl.slot` label, which has
+/// to parse back ([`Slot::label`]).
 fn address(slot: Slot, pages: &Pages) -> String {
-    let page = pages
-        .name_of(slot.page)
-        .map_or_else(|| slot.page.to_string(), str::to_owned);
-    format!("{page}:{}:{}", slot.row, slot.col)
+    slot.label(pages)
+        .unwrap_or_else(|| format!("{}:{}:{}", slot.page, slot.row, slot.col))
 }
 
 #[cfg(test)]
@@ -154,6 +156,8 @@ mod tests {
                 state: SlotState::NeedsAnswer {
                     source: Source::Derived,
                 },
+                muted: false,
+                spec: None,
             },
         );
         m
