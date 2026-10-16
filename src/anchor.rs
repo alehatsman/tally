@@ -46,6 +46,27 @@ pub const LABEL_KILLED: &str = "tl.killed";
 /// How long to wait on anchord before calling the tick failed.
 const TIMEOUT: Duration = Duration::from_secs(2);
 
+/// Bytes in a frame header: u8 tag, u64 offset BE, u32 length BE.
+const HEADER_LEN: usize = 13;
+
+/// The largest frame anchord can legitimately send an observer.
+///
+/// Live output is one PTY chunk, 64 KiB. The frames right after an attach
+/// are catch-up, and those are bigger: anchord replays history one round
+/// at a time, and a round is one eighth of a subscriber's 8 MiB queue
+/// budget — 1 MiB (anchor `docs/03-pty.md`, `docs/04-protocol.md`).
+/// anchord's own client derives its cap from that same constant.
+///
+/// A cap at all, against a trusted local peer, because the `u32` on the
+/// wire is 4 GiB wide and we allocate on it before reading a byte of
+/// payload. anchord caps *inbound* frames at one chunk and drops the
+/// connection on the header alone, and argues it in the protocol doc: a
+/// length is an unverified claim even when the sender is not hostile. The
+/// claim we would be trusting is a desynchronised stream — terminal
+/// output read as if it were a header — which is a 4 GiB allocation and
+/// an abort instead of a watcher that quietly restarts.
+const MAX_FRAME_BYTES: usize = 1024 * 1024;
+
 /// Why a call did not produce sessions.
 #[derive(Debug)]
 pub enum Error {
@@ -183,14 +204,10 @@ impl Frames {
     /// falling behind all finish a watcher, and the supervisor starts a
     /// fresh one if the session is still live.
     pub fn next_frame(&mut self) -> Option<Frame> {
-        // u8 tag, u64 offset BE, u32 length BE. The exit payload inside is
-        // little-endian -- mixed, deliberately, and only the code says so.
-        let mut header = [0u8; 13];
+        let mut header = [0u8; HEADER_LEN];
         self.reader.read_exact(&mut header).ok()?;
-        let tag = *header.first()?;
-        let offset = u64::from_be_bytes(header.get(1..9)?.try_into().ok()?);
-        let len = u32::from_be_bytes(header.get(9..13)?.try_into().ok()?);
-        let mut payload = vec![0u8; usize::try_from(len).ok()?];
+        let (tag, offset, len) = decode_header(&header)?;
+        let mut payload = vec![0u8; len];
         self.reader.read_exact(&mut payload).ok()?;
         Some(match tag {
             0x01 => Frame::Output {
@@ -206,6 +223,26 @@ impl Frames {
             _ => Frame::Other,
         })
     }
+}
+
+/// Splits a frame header into tag, offset and payload length.
+///
+/// u8 tag, u64 offset BE, u32 length BE. The exit payload inside is
+/// little-endian -- mixed, deliberately, and only the code says so.
+///
+/// `None` means stop reading this connection, which is what the caller
+/// does with it: a length past [`MAX_FRAME_BYTES`] is a stream we are no
+/// longer in step with, and there is nothing to resynchronise on — the
+/// framing is the only boundary a stream has. Ending the watcher is the
+/// cheap recovery, because the supervisor already restarts one that ends
+/// (`src/watch.rs`), and it re-attaches from its last offset.
+///
+/// A free function so the decision is testable without a live daemon.
+fn decode_header(header: &[u8; HEADER_LEN]) -> Option<(u8, u64, usize)> {
+    let tag = *header.first()?;
+    let offset = u64::from_be_bytes(header.get(1..9)?.try_into().ok()?);
+    let len = usize::try_from(u32::from_be_bytes(header.get(9..13)?.try_into().ok()?)).ok()?;
+    (len <= MAX_FRAME_BYTES).then_some((tag, offset, len))
 }
 
 #[derive(Debug, Deserialize)]
@@ -329,6 +366,20 @@ impl Client {
     pub fn attach(&self, session: &str, from: u64) -> Result<Frames, Error> {
         let stream =
             UnixStream::connect(&self.path).map_err(|e| Error::Unreachable(e.to_string()))?;
+        // The handshake is request/response like any other control call, so
+        // it gets the same bound. Unbounded, a daemon that accepts the
+        // connection and then says nothing parks this thread forever -- and
+        // a parked thread is indistinguishable from a healthy watcher to the
+        // supervisor, which marks the session watched before the thread
+        // starts and only unmarks it when the thread ends (`src/watch.rs`).
+        // That pad loses bell detection for the life of the process, with no
+        // log line to say so.
+        stream
+            .set_read_timeout(Some(TIMEOUT))
+            .map_err(|e| Error::Unreachable(e.to_string()))?;
+        stream
+            .set_write_timeout(Some(TIMEOUT))
+            .map_err(|e| Error::Unreachable(e.to_string()))?;
         let request = serde_json::json!({
             "id": 1, "op": "attach", "session": session, "from": from, "control": false
         });
@@ -350,6 +401,18 @@ impl Client {
         if !reply.ok {
             return Err(Error::Protocol(format!("attach refused: {line}")));
         }
+        // Past the handshake the bound stops being correct and becomes a
+        // bug: the connection streams frames now, and silence is a healthy
+        // session whose agent is waiting on a human -- which is precisely
+        // the state the surface exists to show. Blocking indefinitely
+        // between frames is the intended behaviour
+        // ([`Frames::next_frame`]); a read timeout left in place would end
+        // every quiet watcher every two seconds. `None` is the blocking
+        // default, restored.
+        reader
+            .get_ref()
+            .set_read_timeout(None)
+            .map_err(|e| Error::Unreachable(e.to_string()))?;
         Ok(Frames {
             reader,
             offset: reply.offset,
@@ -488,6 +551,8 @@ impl Client {
 
 #[cfg(test)]
 mod tests {
+    use std::os::unix::net::UnixListener;
+
     use super::*;
 
     /// Captured verbatim from a live anchord (anchor 49e2f9d).
@@ -562,6 +627,169 @@ mod tests {
         for label in [LABEL_SLOT, LABEL_SPEC, LABEL_MUTE, LABEL_ATTENTION] {
             assert!(label.starts_with(PREFIX), "{label} is outside {PREFIX}");
         }
+    }
+
+    /// A socket of our own, named for the test that binds it.
+    fn scratch_socket(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join("tally-anchor-test");
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join(format!("{name}-{}.sock", std::process::id()));
+        // A socket file outlives the process that bound it, so a crashed
+        // earlier run would make `bind` fail with "address in use".
+        let _stale = std::fs::remove_file(&path);
+        path
+    }
+
+    /// One output frame on the wire, as anchord writes it.
+    fn output_frame(offset: u64, bytes: &[u8]) -> Vec<u8> {
+        let mut frame = vec![0x01u8];
+        frame.extend_from_slice(&offset.to_be_bytes());
+        frame.extend_from_slice(
+            &u32::try_from(bytes.len())
+                .expect("test frame fits")
+                .to_be_bytes(),
+        );
+        frame.extend_from_slice(bytes);
+        frame
+    }
+
+    /// A header with a length nobody could have meant.
+    fn header(tag: u8, offset: u64, len: u32) -> [u8; HEADER_LEN] {
+        let mut h = [0u8; HEADER_LEN];
+        if let Some(slot) = h.first_mut() {
+            *slot = tag;
+        }
+        if let Some(slot) = h.get_mut(1..9) {
+            slot.copy_from_slice(&offset.to_be_bytes());
+        }
+        if let Some(slot) = h.get_mut(9..13) {
+            slot.copy_from_slice(&len.to_be_bytes());
+        }
+        h
+    }
+
+    /// The whole point of the cap: a `u32` is 4 GiB wide and we allocate on
+    /// it sight unseen.
+    #[test]
+    fn a_header_claiming_more_than_anchord_can_send_is_refused() {
+        assert_eq!(
+            decode_header(&header(0x01, 7, 64 * 1024)),
+            Some((0x01, 7, 65536))
+        );
+        let cap = u32::try_from(MAX_FRAME_BYTES).expect("the cap fits a u32");
+        assert!(
+            decode_header(&header(0x01, 0, cap)).is_some(),
+            "a full replay round is legitimate"
+        );
+        assert_eq!(decode_header(&header(0x01, 0, cap + 1)), None);
+        assert_eq!(decode_header(&header(0x01, 0, u32::MAX)), None);
+    }
+
+    /// Refused has to mean *ended*, not panicked and not truncated: `None`
+    /// is the ending the supervisor already handles.
+    #[test]
+    fn an_oversized_header_ends_the_stream_instead_of_allocating() {
+        let (mut daemon, ours) = UnixStream::pair().expect("socketpair");
+        daemon
+            .write_all(&header(0x01, 0, u32::MAX))
+            .expect("write a bogus header");
+        let mut frames = Frames {
+            reader: BufReader::new(ours),
+            offset: 0,
+        };
+        assert_eq!(frames.next_frame(), None);
+    }
+
+    /// One PTY chunk is the common case and must still go through whole.
+    #[test]
+    fn a_full_pty_chunk_is_delivered_untruncated() {
+        let (mut daemon, ours) = UnixStream::pair().expect("socketpair");
+        let bytes = vec![b'x'; 64 * 1024];
+        let written = std::thread::spawn(move || {
+            daemon
+                .write_all(&output_frame(99, &bytes))
+                .expect("write a chunk");
+        });
+        let mut frames = Frames {
+            reader: BufReader::new(ours),
+            offset: 0,
+        };
+        match frames.next_frame() {
+            Some(Frame::Output { offset, bytes }) => {
+                assert_eq!(offset, 99);
+                assert_eq!(bytes.len(), 64 * 1024);
+            }
+            other => panic!("expected one output frame, got {other:?}"),
+        }
+        written.join().expect("writer");
+    }
+
+    /// A daemon that accepts and never answers is the shape that parks a
+    /// watcher forever, and a parked watcher holds its session's slot in
+    /// `Watchers::watching` for the life of the process -- so that pad goes
+    /// deaf and no reconcile ever replaces it.
+    #[test]
+    fn an_attach_that_is_never_answered_gives_up_rather_than_parking_forever() {
+        let path = scratch_socket("silent");
+        let listener = UnixListener::bind(&path).expect("bind");
+        // Hold the accepted connection open for the duration. Dropping it
+        // would close the socket and make this an EOF test, which passes
+        // with or without a timeout.
+        let server = std::thread::spawn(move || listener.accept().map(|(stream, _addr)| stream));
+
+        let client = Client::new(&path);
+        let started = std::time::Instant::now();
+        let result = client.attach("01M52D614H0SSH1WMB0PMA6YAD", 0);
+        assert!(
+            matches!(result, Err(Error::Unreachable(_))),
+            "a silent daemon must end the attach, not park on it"
+        );
+        assert!(
+            started.elapsed() < TIMEOUT * 4,
+            "the attach must give up on the order of the timeout, not eventually"
+        );
+        drop(server.join().expect("server thread"));
+        let _gone = std::fs::remove_file(&path);
+    }
+
+    /// The other half of the same change: the handshake bound must not
+    /// survive into the stream. An agent waiting on a human says nothing
+    /// for hours, and that is the session the surface exists to show --
+    /// dropping its watcher every two seconds would be the new bug.
+    #[test]
+    fn a_quiet_session_is_not_dropped_by_the_handshake_timeout() {
+        let path = scratch_socket("quiet");
+        let listener = UnixListener::bind(&path).expect("bind");
+        let server = std::thread::spawn(move || {
+            let (mut stream, _addr) = listener.accept().expect("accept");
+            let mut request = String::new();
+            BufReader::new(stream.try_clone().expect("clone"))
+                .read_line(&mut request)
+                .expect("read the attach request");
+            stream
+                .write_all(b"{\"id\":1,\"ok\":true,\"offset\":0}\n")
+                .expect("write the attach reply");
+            // Quiet for longer than the handshake bound, then speak.
+            std::thread::sleep(TIMEOUT + Duration::from_millis(500));
+            stream
+                .write_all(&output_frame(0, b"ding"))
+                .expect("write a frame");
+        });
+
+        let client = Client::new(&path);
+        let mut frames = client
+            .attach("01M52D614H0SSH1WMB0PMA6YAD", 0)
+            .expect("attach");
+        assert_eq!(
+            frames.next_frame(),
+            Some(Frame::Output {
+                offset: 0,
+                bytes: b"ding".to_vec(),
+            }),
+            "a frame after a long silence must still arrive"
+        );
+        server.join().expect("server thread");
+        let _gone = std::fs::remove_file(&path);
     }
 }
 
