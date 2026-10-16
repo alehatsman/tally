@@ -99,6 +99,7 @@ is a product.
 | [docs/08-lifecycle.md](docs/08-lifecycle.md) | who starts tallyd, and why Live mode must be restored |
 | [docs/09-testing.md](docs/09-testing.md) | testing a thing whose output is light |
 | [docs/10-open-questions.md](docs/10-open-questions.md) | what is asserted here but not proven |
+| [docs/11-cli.md](docs/11-cli.md) | `tally spawn`, for when the folder comes from you |
 
 ## License
 
