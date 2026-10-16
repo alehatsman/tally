@@ -221,6 +221,19 @@ anchor create --label tl.slot=1:2:2 -- sleep 3600
 kill -9 %1                            # and leave it dead
 ```
 
+✅ **Live mode genuinely restored, after it was genuinely broken.** The
+`SIGKILL` below left programmer mode on with no process alive to turn it
+off — the device's own buttons were under host control and its Setup menu
+was unreachable. After the next `tallyd` started and then exited on
+`SIGTERM`, a mode readback returned `0E 00` **and** the device's own mode
+buttons (Session / Drums / Keys / User) responded to presses again, which
+they cannot do in programmer mode.
+
+That is the argument below being load-bearing rather than rhetorical:
+recovering on start is worth more than exiting cleanly, because only one of
+the two is reliable, and here the clean exit that fixed it belonged to a
+*different process* from the one that broke it.
+
 ✅ **The last row, tested by `SIGKILL`.** No restore ran, so the device was
 left in programmer mode holding a stale frame — the genuinely unrecoverable
 case this document admits to. Then the world was changed underneath it: one
