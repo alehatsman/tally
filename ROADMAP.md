@@ -162,8 +162,24 @@ Exit:
 
 Scope: top-row pages; cross-page attention on the logo.
 
-Exit: eight pages of work, and you can tell from the logo that something
-off-screen wants you.
+Exit:
+- ✅ a session on a page you are not looking at reports itself **twice**,
+  deliberately: the page button says *which* page wants you, the logo
+  says *that* some page does. Both confirmed pulsing amber together,
+  from a bell derived on page 2 while sitting on page 1
+- ✅ walking onto the page is how you stop being told about it — the
+  logo goes dark the moment the attention is on-screen
+- ✅ the top row is readable at a glance, which took a second attempt
+
+> **The top row had to be rebuilt.** It lit the current page white and
+> occupied pages turquoise: both bright, both legible, and no way to tell
+> which was which without recalling a table. *"I am confused which one is
+> selected, the white one or the turquoise one."*
+>
+> The same failure as the three greens, and it is now stated as a rule
+> rather than a fix: **exactly one thing in the top row is bright, and it
+> is always where you are.** Brightness answers *where am I* before hue
+> answers anything; hue is then spent only on the thing that is urgent.
 
 > **The title scroll was cut**, after being built and run. Eight pads is
 > about two legible characters at a time, so a scrolling title is a
