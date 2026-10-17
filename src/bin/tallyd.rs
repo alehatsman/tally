@@ -340,10 +340,12 @@ fn launch_labels(at: Slot, pages: &Pages) -> std::collections::BTreeMap<String, 
     labels
 }
 
-/// Move along the reel, and say where it went.
+/// Start the reel at its first piece, and say so.
 ///
-/// `None` is both ends of the cycle: the working grid is what you get
-/// before the first press and after the last (`docs/21-the-arts.md`).
+/// Only ever reached from the working grid: once an art is up,
+/// [`art_press`] intercepts every button before `feed` can emit
+/// [`Gesture::Arts`] again, so the menu — not this — is what changes
+/// pieces (`docs/21-the-arts.md`).
 fn next_art(reel: &mut Option<Reel>) {
     *reel = Piece::after(reel.as_ref().map(Reel::piece)).map(Reel::new);
     match reel.as_ref() {
