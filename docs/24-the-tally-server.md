@@ -20,14 +20,11 @@ This document separates the two. **tally gets its own tmux server, its own
 terminal window, and a layout that is the grid**: a row is a session, a
 column is a **window** — a tab in that session.
 
-> ⚠️ **Amended.** This document first said a column is a *pane*, and the
-> measurements below were taken against that. It shipped, and eight
-> agents side by side turned out to be eight 23-column slivers reflowing
-> megabytes of scrollback. What was wrong was never the addressing — it
-> was that a split shows you all eight at once when the thing you do with
-> a row is read **one** of them. The pane rules are kept below rather
-> than deleted, for the same reason [15](15-views.md) keeps its adoption
-> section: the record of a reversal is worth more than a tidy document.
+**A column is a window and not a split**, and the reason is about reading
+rather than addressing. A row of eight agents split across one terminal is
+eight 23-column slivers reflowing megabytes of scrollback. A split shows
+you all eight at once; the thing you do with a row is read **one** of
+them.
 
 ## What was measured
 
@@ -43,24 +40,20 @@ still showed `dotfiles`, `main`, `provision` and nothing else.
 nothing while two clients were attached to the default one. This is the
 whole fix: `switch-client` cannot reach a client it cannot list.
 
-✅ **Panes can be inserted in column order.** `split-window -h -d -t %0`
-appends after; `split-window -hb -d -t %1` inserts before. Creating col 1,
-then col 4, then col 2 gave `pane_left` 0 / 27 / 54 in the order
-`1:7:1`, `1:7:2`, `1:7:4` — left-to-right by column, with gaps closed up.
+✅ **A window index is stable and is the column.** `new-window -t r07:3`
+lands at 3 whatever else the row holds, and indexes do not renumber when a
+sibling is killed. Jumping `1:4:1`, `1:4:4`, `1:4:2`, `1:7:1` produced
+sessions `r04` and `r07`, with `r04` holding its columns at their own
+indexes regardless of arrival order. A second jump to a view already open
+made no second window.
+
+✅ **A view whose command dies keeps its window, its tag and its index**,
+and the next jump respawns it in place.
 
 ✅ **`pane-border-format` is a pane option and reads a user option.**
 `set-option -p -t %1 pane-border-format ' #{@tally_slot} '` took, and the
-tag expands at draw time.
-
-✅ **The whole path, driven by this code against socket `tally-check`.**
-Jumping `1:4:1`, `1:4:4`, `1:4:2`, `1:7:1` in that order produced sessions
-`r04` and `r07`, with `r04` holding `c1 · 1:4:1`, `c2 · 1:4:2`,
-`c4 · 1:4:4` at `pane_left` 0 / 27 / 54 — **column order, not arrival
-order**. A second jump to a session already in view made no second pane.
-`tmux list-sessions` on the personal socket was unchanged throughout.
-
-✅ **A view whose command dies keeps its pane, its tag and its column**,
-and the next jump respawns it in place: same `%3`, same `pane_left`.
+tag expands at draw time. Unused while a column is a full window, and
+recorded because it is what a border would read if one is ever drawn.
 
 ⚠️ **An empty server has nothing to attach to.** `attach -t r01` on a
 fresh socket says `no sessions` and exits 1. The terminal window needs
@@ -134,18 +127,10 @@ and no placement rule to get wrong. `@tally_slot` still carries the
 address and is still what a jump reads back — the index is how a human
 reads the row, not how tally finds a view.
 
-~~⚠️ **Pane index is not the column.** `pane_index` renumbers when a pane
-is killed, and a user can move panes by hand. The column lives in
-`@tally_slot` and the ordering is a *placement* rule applied at creation,
-not an invariant anything reads back.~~ **Superseded.** This was true of
-panes and is the reason the pane layout needed an insertion rule at all.
-Window indexes do not renumber on kill, so the index can simply *be* the
-column. A user who drags a tab still jumps correctly, for the unchanged
-reason: the address is in `@tally_slot`, not in the position.
-
-~~**`select-layout even-horizontal` on creation only.**~~ **Gone with the
-split.** There is no layout to even when each column is a window of its
-own, and nothing resizes anything any more.
+**A dragged tab still jumps correctly.** The index is how a human reads
+the row; the address is `@tally_slot` and that is what a lookup matches.
+Position is never read back — which is also why nothing resizes anything,
+and why there is no placement rule to get wrong.
 
 **Window-scoped options are aimed at a pane.** `-t r07:` means *the
 current window of r07*, which was harmless when a row was one window and
@@ -159,11 +144,11 @@ might not exist yet, and `attach` to an empty server fails. The home
 session is one window, running your login shell, created only if nothing
 else is there.
 
-It is a stray shell, and the earlier rule against those
-(`new_session_args`, "`new-session -d -s tally` on its own leaves a stray
-shell window that nothing asked for") still holds **for views**. This one
-is asked for: it is the thing the terminal window shows when no agent is
-in front of you, and the thing `◄` lands on when there is no origin.
+It is a stray shell, and the rule against those (`new_session_args`:
+*a session created on its own leaves a shell window nothing asked for*)
+holds **for views**. This one is asked for: it is what the terminal window
+shows when no agent is in front of you, and what `◄` lands on when there
+is no origin.
 
 ## The terminal window
 
@@ -188,42 +173,28 @@ with provision, never hand-edited.
 
 ## What this costs
 
-**`tally spawn` stops adopting the pane you ran it from.** A pane on your
-personal server cannot be a view on tally's server, and keeping both would
-mean every jump probing two sockets and every pad carrying which one it
-meant. So `spawn` creates the session, places the view on tally's server
-at the pad's address, and leaves your shell exactly where it was standing.
+**`tally spawn` leaves your shell where it is.** A pane on your personal
+server cannot be a view on tally's, and supporting both would mean every
+jump probing two sockets and every pad carrying which one it meant. So
+`spawn` creates the session, places the view on tally's server at the
+pad's address, prints, and returns. The folder still comes from the shell
+you were standing in, which is the half worth having
+([11](11-cli.md#the-folder-is-the-problem)).
 
-That inverts the default settled in
-[15](15-views.md#adoption-tally-spawn-from-a-pane). The section in `15`
-is amended by this one, not quietly contradicted.
+**`--detach` means open no view at all.** The session runs, the pad
+lights, and the first press is what opens it.
 
-**`--detach` survives, and this document said it would not.** The
-original claim here was that the flag becomes the only behaviour and so
-retires. That is wrong, and it is worth saying why rather than quietly
-deleting it: *spawn and come back* was only ever half of what `--detach`
-meant. The other half — **do not put anything on the surface** — is
-still a choice once a view is a pane in a row session rather than the
-shell you are standing in. So the flag keeps its name and changes its
-meaning:
+| | what |
+|---|---|
+| `tally spawn 1:1` | creates it, opens the view in the row session, prints, returns |
+| `tally spawn --detach 1:1` | creates it, opens nothing, prints, returns |
+| `--count N`, `N > 1` | implies `--detach`: N sessions cannot be shown in one place, and the pads are where they are read |
 
-| | before | now |
-|---|---|---|
-| default | the pane you ran in becomes the view | the view opens in the row session; your shell is untouched |
-| `--detach` | do not hand this pane over | **open no view at all** — the session runs, the pad lights, the press is what opens it |
-
-`--count N` above 1 implies it, because N sessions cannot be shown in
-one place and the pads are where they are read.
-
-What adoption bought was *the folder is where you are standing*, and that
-is not lost: `spawn` still takes the cwd from the shell it ran in. What
-is lost is *and the view is this pane*, which was only ever true inside
-tmux and was never true for the 341 jumps that came from the grid.
-
-**Views on the old server are orphaned, once.** They are not migrated and
-not killed — a pad whose view tally can no longer find makes a new one on
-the new server, which is the already-shipped *absent* case. The old
-`tally` session on your personal socket is yours to close.
+**A view tally cannot find is simply made again.** That is the ordinary
+*absent* case ([15](15-views.md#recovery-respawn-in-place)), and it is why
+nothing had to be migrated when views moved sockets: the pads rebuilt
+themselves on first press. Any `tally` session left on a personal socket is
+yours to close.
 
 ## What does not change
 
@@ -253,10 +224,11 @@ the new server, which is the already-shipped *absent* case. The old
 
 ## Pressing a pad while an art is playing does nothing
 
-⚠️ **Not this document's behaviour, and the first thing to trip over.**
-While an art is on the surface, the grid is a **menu**: drums and the
-eight launchers pick a piece, and every other press — including every
-pad — is swallowed. `►` is the only way back.
+⚠️ **This is [21](21-the-arts.md)'s behaviour, and it is the first thing
+to trip over when testing this one.** While an art is on the surface the
+grid is a **menu**: `Drums` and the eight launchers pick a piece, and every
+other press — including every pad — is swallowed. `►` is the only way
+back.
 
 So a pad press cannot reach a jump at all while an art is up. Press `►`
 first, or you are testing the swallow and not the server. Recorded here

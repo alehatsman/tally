@@ -277,20 +277,6 @@ the fourth row without looking, because it measures the decision rather
 than a proxy for it. Counting rows only matters if rows are the answer, and
 the first thing to find out is whether they are the question.
 
-## What this unblocks
-
-[15](15-views.md#what-is-cleared-to-build) held two of M7's three steps
-behind #8. This clears both:
-
-| held on | because | now |
-|---|---|---|
-| step 3, the return trip | the second tap on a pad was already spoken for | `◄` is the gesture; no tap is overloaded |
-| step 2, adoption | `page:row:col` might be replaced one-way | addressing is unchanged and declared |
-
-Neither was blocked on grouping being a good idea. Both were blocked on not
-knowing, which is what an open layout question costs everything downstream
-of it.
-
 ## Edge cases
 
 | situation | behaviour |

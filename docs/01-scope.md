@@ -24,7 +24,7 @@ slot runs an *agent preset*, and presets live in anchor's callers, not here.
 **"Show the agent's output on the grid."** No. Eight by eight monochrome-ish
 pads is not a display. The grid says *which* session wants you; your
 terminal says what it wants. The one exception is
-[text scrolling](05-interaction.md#the-title-scroll--tried-and-abandoned),
+[text scrolling](05-interaction.md#the-pad-cannot-say-what-it-wants),
 which is a deliberate, transient, user-requested overlay and not a
 rendering target.
 

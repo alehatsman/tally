@@ -200,7 +200,7 @@ Exit:
 >
 > So the pad says *that* something wants you, and never *what*. The what
 > is one press away in a window with eighty columns and a font
-> ([05](docs/05-interaction.md#the-title-scroll--tried-and-abandoned)).
+> ([05](docs/05-interaction.md#the-pad-cannot-say-what-it-wants)).
 
 ---
 

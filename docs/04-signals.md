@@ -224,7 +224,7 @@ chunk-boundary-safe, with OSC 8 hyperlink extraction for Claude Code's
 resume id riding along. Port it.
 
 The title is what the
-[title scroll](05-interaction.md#the-title-scroll--tried-and-abandoned)
+[title scroll](05-interaction.md#the-pad-cannot-say-what-it-wants)
 displays, and it is the one place a pad can say something in words.
 
 Its own doc comment is the honest caveat, and it should be repeated here:
