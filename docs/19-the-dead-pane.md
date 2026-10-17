@@ -1,5 +1,11 @@
 # 19 — The dead pane says which session it was
 
+> **Amended by [26](26-the-claude-session-id.md).** The line still carries
+> anchor's id, and now leads with the *conversation* —
+> `claude --resume <uuid>` — because that is the id that resumes
+> something. The order below is 19's; 26 measured it at 80 columns and
+> moved the payload.
+
 A view pane outlives its command (`remain-on-exit on`,
 [15](15-views.md#a-view-pane-outlives-its-command)). So after a kill — or after an agent exits on
 its own — you are left looking at a corpse that shows its scrollback and

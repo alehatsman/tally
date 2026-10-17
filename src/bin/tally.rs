@@ -146,7 +146,42 @@ fn mute(at: Slot, on: bool, pages: &Pages) -> ExitCode {
     }
 }
 
-/// Set or remove `tl.attention` on whichever session we are inside.
+/// The environment variable Claude Code sets for every hook it runs.
+///
+/// Measured against `claude` 2.1.236: present on `SessionStart` and on
+/// `Stop`, and equal to the `session_id` in the JSON on stdin. The
+/// variable rather than the JSON because this process runs on every turn
+/// of every agent on the machine, and one `env::var` is cheaper than a
+/// stdin slurp and a parse (`docs/26-the-claude-session-id.md`).
+const CLAUDE_SESSION_ENV: &str = "CLAUDE_CODE_SESSION_ID";
+
+/// The conversation this hook is a turn of, if the caller is Claude Code
+/// at all.
+///
+/// An empty value is `None`: the variable being set to nothing is how a
+/// shell says it does not have one, and an empty `tl.claude` would put a
+/// `claude --resume` with no argument on the dead line.
+fn claude_session_id() -> Option<String> {
+    std::env::var(CLAUDE_SESSION_ENV)
+        .ok()
+        .filter(|id| !id.is_empty())
+}
+
+/// Whether `tl.claude` needs writing, and with what.
+///
+/// Pure, and split out from the hook for that reason: the rule is *write
+/// only what changed*, and the three cases it has to get right — not
+/// Claude at all, a conversation already recorded, a conversation that
+/// has been replaced by `/clear` — are three lines of test rather than
+/// three agents and a stopwatch.
+fn conversation_write(reported: Option<&str>, recorded: Option<&str>) -> Option<String> {
+    reported
+        .filter(|id| Some(*id) != recorded)
+        .map(ToOwned::to_owned)
+}
+
+/// Set or remove `tl.attention` on whichever session we are inside, and
+/// record which conversation it is running.
 ///
 /// **Not being under anchor is success**, and that is the whole shape of
 /// this function. It is called from a Claude Code hook, which fires on
@@ -156,6 +191,13 @@ fn mute(at: Slot, on: bool, pages: &Pages) -> ExitCode {
 ///
 /// Nothing is ever written to stdout. stdout belongs to the agent's
 /// transcript, and this is not something the agent said.
+///
+/// **Two facts, one hook.** `tl.claude` rides here rather than on a
+/// `SessionStart` hook of its own because the expensive half of this
+/// function is finding the session — a `ps -A` walk and an anchord
+/// `list` — and a second hook would pay it again, per turn, for a value
+/// that changes approximately never
+/// (`docs/26-the-claude-session-id.md`).
 fn attention(on: bool) -> ExitCode {
     let client = Client::new(Client::default_path());
     let sessions = match client.list() {
@@ -183,6 +225,12 @@ fn attention(on: bool) -> ExitCode {
     } else {
         &[tally::anchor::LABEL_ATTENTION]
     };
+    // Only when it changed. A `/clear` gives the same agent a new
+    // conversation and must be followed; a quiet turn must not cost a
+    // write that says what the label already says.
+    if let Some(id) = conversation_write(claude_session_id().as_deref(), session.claude()) {
+        let _conversation = set.insert(tally::anchor::LABEL_CLAUDE.to_owned(), id);
+    }
     match client.label(&session.id, &set, remove) {
         Ok(()) => ExitCode::SUCCESS,
         // The session ended between the list and the write. Nothing to
@@ -429,5 +477,46 @@ fn describe(state: SlotState) -> String {
         SlotState::Failed { code } => format!("failed, exit {code}"),
         SlotState::Lost { reclaimable: true } => "lost to an anchord restart".to_owned(),
         SlotState::Lost { reclaimable: false } => "lost, and may still be running".to_owned(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::conversation_write;
+
+    /// The ordinary turn: the label says what the hook says, so the hook
+    /// is a read and nothing else. This runs on every turn of every agent
+    /// on the machine (`docs/26-the-claude-session-id.md`).
+    #[test]
+    fn a_conversation_that_has_not_changed_is_not_written_again() {
+        assert_eq!(conversation_write(Some("c15"), Some("c15")), None);
+    }
+
+    /// `/clear` keeps the agent and replaces the conversation. The label
+    /// follows the conversation, because the label's whole job is to be
+    /// the argument to `claude --resume`.
+    #[test]
+    fn a_cleared_conversation_replaces_the_one_on_the_label() {
+        assert_eq!(
+            conversation_write(Some("c99"), Some("c15")),
+            Some("c99".to_owned())
+        );
+    }
+
+    #[test]
+    fn a_first_turn_records_the_conversation() {
+        assert_eq!(
+            conversation_write(Some("c15"), None),
+            Some("c15".to_owned())
+        );
+    }
+
+    /// Not Claude Code at all — a shell on a pad. Nothing reported means
+    /// nothing written, and in particular **not** a removal: tally does
+    /// not get to forget a conversation because something else ran a hook.
+    #[test]
+    fn nothing_reported_writes_nothing() {
+        assert_eq!(conversation_write(None, Some("c15")), None);
+        assert_eq!(conversation_write(None, None), None);
     }
 }

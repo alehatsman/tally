@@ -91,6 +91,14 @@ pub struct Resolved {
     pub muted: bool,
     /// The spec name from `tl.spec`, if it was spawned with one.
     pub spec: Option<String>,
+    /// The conversation it is running, from `tl.claude`.
+    ///
+    /// Carried here so the view can be tagged with it on a jump, which is
+    /// what puts it on the dead line
+    /// (`docs/26-the-claude-session-id.md`). Nothing on the grid renders
+    /// it: a pad is an address, and a UUID is not something you can see
+    /// in a colour.
+    pub claude: Option<String>,
 }
 
 /// Resolve every session to a slot, newest wins, invalid ignored.
@@ -149,6 +157,7 @@ pub fn resolve(
                 state,
                 muted: session.muted(),
                 spec: session.labels.get(crate::anchor::LABEL_SPEC).cloned(),
+                claude: session.claude().map(ToOwned::to_owned),
             },
         );
     }
