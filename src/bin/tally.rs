@@ -152,7 +152,7 @@ fn mute(at: Slot, on: bool, pages: &Pages) -> ExitCode {
 /// `Stop`, and equal to the `session_id` in the JSON on stdin. The
 /// variable rather than the JSON because this process runs on every turn
 /// of every agent on the machine, and one `env::var` is cheaper than a
-/// stdin slurp and a parse (`docs/26-the-claude-session-id.md`).
+/// stdin slurp and a parse (`docs/26-the-dead-pane.md`).
 const CLAUDE_SESSION_ENV: &str = "CLAUDE_CODE_SESSION_ID";
 
 /// The conversation this hook is a turn of, if the caller is Claude Code
@@ -197,7 +197,7 @@ fn conversation_write(reported: Option<&str>, recorded: Option<&str>) -> Option<
 /// function is finding the session — a `ps -A` walk and an anchord
 /// `list` — and a second hook would pay it again, per turn, for a value
 /// that changes approximately never
-/// (`docs/26-the-claude-session-id.md`).
+/// (`docs/26-the-dead-pane.md`).
 fn attention(on: bool) -> ExitCode {
     let client = Client::new(Client::default_path());
     let sessions = match client.list() {
@@ -486,7 +486,7 @@ mod tests {
 
     /// The ordinary turn: the label says what the hook says, so the hook
     /// is a read and nothing else. This runs on every turn of every agent
-    /// on the machine (`docs/26-the-claude-session-id.md`).
+    /// on the machine (`docs/26-the-dead-pane.md`).
     #[test]
     fn a_conversation_that_has_not_changed_is_not_written_again() {
         assert_eq!(conversation_write(Some("c15"), Some("c15")), None);

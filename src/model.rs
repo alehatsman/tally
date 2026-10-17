@@ -101,7 +101,7 @@ pub struct Resolved {
     ///
     /// Carried here so the view can be tagged with it on a jump, which is
     /// what puts it on the dead line
-    /// (`docs/26-the-claude-session-id.md`). Nothing on the grid renders
+    /// (`docs/26-the-dead-pane.md`). Nothing on the grid renders
     /// it: a pad is an address, and a UUID is not something you can see
     /// in a colour.
     pub claude: Option<String>,

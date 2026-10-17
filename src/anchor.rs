@@ -38,7 +38,7 @@ pub const LABEL_ATTENTION: &str = "tl.attention";
 ///
 /// The argument to `claude --resume`, and the only id that resumes
 /// anything: anchor's id names a PTY that is gone by the time you want
-/// it (`docs/26-the-claude-session-id.md`).
+/// it (`docs/26-the-dead-pane.md`).
 ///
 /// **Never removed.** A conversation outlives the PTY that ran it, which
 /// is the whole reason to want it, so the label stays on the dead row.
@@ -200,7 +200,7 @@ impl Session {
     ///
     /// `None` for anything that is not Claude Code, and for a Claude that
     /// has not reached its first turn — the hook that reports it is the
-    /// attention one (`docs/26-the-claude-session-id.md`).
+    /// attention one (`docs/26-the-dead-pane.md`).
     pub fn claude(&self) -> Option<&str> {
         self.labels.get(LABEL_CLAUDE).map(String::as_str)
     }

@@ -37,7 +37,7 @@ pub struct Head {
     /// Carried so that answering through `►` tags the view with it, the
     /// same as pressing the pad does — otherwise the one path you use
     /// when you are busy is the one that leaves the dead line short
-    /// (`docs/26-the-claude-session-id.md`).
+    /// (`docs/26-the-dead-pane.md`).
     pub claude: Option<String>,
 }
 
