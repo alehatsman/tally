@@ -61,6 +61,18 @@ pub const SLOT_OPTION: &str = "@tally_slot";
 /// pane option is not inherited by siblings.
 pub const PANE_OPTION: &str = "@tally_session";
 
+/// The **pane** option carrying the Claude Code session id of the
+/// conversation the viewed session is running.
+///
+/// Separate from [`PANE_OPTION`] because it answers a different question
+/// and is often not answerable at all: a view of a shell has no
+/// conversation, and a view of an agent has none until its first turn
+/// (`docs/26-the-claude-session-id.md`).
+///
+/// Pane-scoped for the same reason [`PANE_OPTION`] is: a window option is
+/// inherited by every pane in the window.
+pub const CLAUDE_OPTION: &str = "@tally_claude";
+
 /// Why a jump did not happen.
 #[derive(Debug)]
 pub enum Error {
@@ -90,6 +102,12 @@ impl std::error::Error for Error {}
 pub trait Jump {
     /// Focus the view for `session`, creating or reviving it if it is gone.
     ///
+    /// `claude` is the conversation that session is running, when tally
+    /// knows one. `None` means *not known*, never *none any more*: the
+    /// tag is left alone rather than cleared, so a view created by
+    /// `tally spawn` — before the agent has had a turn — keeps whatever
+    /// it had rather than having its dead line blanked.
+    ///
     /// `at` is the slot address the pad carries — `page:row:col` — and is
     /// what a view this creates is labelled with. `where_` is the same
     /// address as geometry, and says which row session and which column
@@ -99,7 +117,13 @@ pub trait Jump {
     ///
     /// # Errors
     /// Whatever stopped it.
-    fn jump(&self, session: &str, at: &str, where_: Place) -> Result<(), Error>;
+    fn jump(
+        &self,
+        session: &str,
+        claude: Option<&str>,
+        at: &str,
+        where_: Place,
+    ) -> Result<(), Error>;
 
     /// Put each client back where it was standing before it jumped.
     ///
@@ -307,6 +331,24 @@ fn set_slot_args(pane: &str, at: &str) -> Vec<String> {
     ]
 }
 
+/// Args tagging `pane` with the conversation it is running.
+///
+/// Only ever called with an id in hand: there is no "clear it" path,
+/// because *not knowing* is the ordinary state — `tally spawn` makes a
+/// view before the agent has had a turn — and a jump that blanked the
+/// tag would take the resume command off the dead line of a session that
+/// still has one (`docs/26-the-claude-session-id.md`).
+fn set_claude_args(pane: &str, claude: &str) -> Vec<String> {
+    vec![
+        "set-option".into(),
+        "-p".into(),
+        "-t".into(),
+        pane.into(),
+        CLAUDE_OPTION.into(),
+        claude.into(),
+    ]
+}
+
 /// Args giving `pane` a readable title: the column, the address, and a
 /// short tail of the session id.
 ///
@@ -358,8 +400,23 @@ fn remain_on_exit_args(pane: &str) -> Vec<String> {
 /// narrow split loses the tail, never the payload. `attach exit` is named
 /// for what it is: the pane runs `anchor attach`, so the status is the
 /// attach client's, not the agent's.
+///
+/// **The conversation goes first, ahead of the anchor id**
+/// (`docs/26-the-claude-session-id.md`). 19's rule was *payload early,
+/// because the tail is what truncation eats*; this is that rule applied
+/// to a longer line. Measured at 80 columns with the conversation second,
+/// the cut landed mid-UUID — `claude --resume c1567a67-d7e0` — and half
+/// an id resumes nothing, while half an anchor id costs nothing: it names
+/// a PTY that is gone by the time you are reading this line.
 fn dead_pane_format() -> String {
-    format!("tally · anchor attach #{{{PANE_OPTION}}} · attach exit #{{pane_dead_status}}")
+    // The conversation is conditional on itself: an **unset** user option
+    // takes the false branch, so a view of a plain shell keeps exactly
+    // the line it had before any of this existed. Measured, tmux 3.6b.
+    let conversation =
+        format!("#{{?#{{{CLAUDE_OPTION}}}, · claude --resume #{{{CLAUDE_OPTION}}},}}");
+    format!(
+        "tally{conversation} · anchor attach #{{{PANE_OPTION}}} · attach exit #{{pane_dead_status}}"
+    )
 }
 
 /// Args giving `pane` a dead-line that names its session.
@@ -635,10 +692,24 @@ impl Tmux {
     /// Mark `pane` as the view for `session`, and make it outlive its
     /// command. Idempotent, so it runs on every resolve and repairs views
     /// created before any of these rules existed.
-    fn tag(&self, pane: &str, session: &str, place: Place, at: &str) -> Result<(), Error> {
+    fn tag(
+        &self,
+        pane: &str,
+        session: &str,
+        claude: Option<&str>,
+        place: Place,
+        at: &str,
+    ) -> Result<(), Error> {
         // The tag first: the dead-line format reads `@tally_session`, and
         // a pane that has not got one yet would die saying nothing.
         let _opt = self.run("set-option", &set_option_args(pane, session))?;
+        // The conversation, on the same argument and before the format:
+        // both ids are read by the line, and both must be there before it
+        // can be. Skipped when unknown rather than cleared — see
+        // `set_claude_args`.
+        if let Some(claude) = claude {
+            let _conversation = self.run("set-option", &set_claude_args(pane, claude))?;
+        }
         let _roe = self.run("set-option", &remain_on_exit_args(pane))?;
         let _fmt = self.run("set-option", &dead_pane_format_args(pane))?;
         // The address and the title are for the eye. A failure here is a
@@ -661,14 +732,20 @@ impl Tmux {
     /// Three cases (`docs/15-views.md`): alive, use it; dead, respawn
     /// **in place**; absent, make one in the row session this slot
     /// belongs to (`docs/24-the-tally-server.md`).
-    fn view_pane(&self, session: &str, place: Place, at: &str) -> Result<String, Error> {
+    fn view_pane(
+        &self,
+        session: &str,
+        claude: Option<&str>,
+        place: Place,
+        at: &str,
+    ) -> Result<String, Error> {
         let listing = self.panes();
         if let Some(found) = view_for(&listing, session) {
             if found.dead {
                 let args = respawn_pane_args(found.pane, session, &self.anchor_bin);
                 let _revived = self.run("respawn-pane", &args)?;
             }
-            self.tag(found.pane, session, place, at)?;
+            self.tag(found.pane, session, claude, place, at)?;
             // After the pane owns the tag, never before: an inherited tag
             // is the only thing identifying a legacy view, and clearing it
             // first would lose the session mid-sequence.
@@ -676,7 +753,7 @@ impl Tmux {
             return Ok(found.pane.to_owned());
         }
         let pane = self.make_view(session, place)?;
-        self.tag(&pane, session, place, at)?;
+        self.tag(&pane, session, claude, place, at)?;
         Ok(pane)
     }
 
@@ -751,7 +828,10 @@ impl Tmux {
 /// way, and the next press makes the view.
 pub fn place(session: &str, at: &str, where_: Place) -> Result<(), Error> {
     let tmux = Tmux::default();
-    let _pane = tmux.view_pane(session, where_, at)?;
+    // No conversation: the agent has not had a turn, so no hook has
+    // reported one. The first press tags it
+    // (`docs/26-the-claude-session-id.md`).
+    let _pane = tmux.view_pane(session, None, where_, at)?;
     Ok(())
 }
 
@@ -840,8 +920,14 @@ fn open_terminal(socket: &str) {
 }
 
 impl Jump for Tmux {
-    fn jump(&self, session: &str, at: &str, where_: Place) -> Result<(), Error> {
-        let pane = self.view_pane(session, where_, at)?;
+    fn jump(
+        &self,
+        session: &str,
+        claude: Option<&str>,
+        at: &str,
+        where_: Place,
+    ) -> Result<(), Error> {
+        let pane = self.view_pane(session, claude, where_, at)?;
         // Before the clients are listed, not after: a jump with nothing
         // attached used to succeed invisibly, and the window it opens is
         // a client by the time the switch runs.
@@ -1109,6 +1195,55 @@ mod tests {
             !fmt.contains(SESSION),
             "a baked-in id would be stale on a rebind"
         );
+    }
+
+    /// The conversation is the id you can actually use after a kill:
+    /// anchor's names a PTY that is gone (`docs/26-the-claude-session-id.md`).
+    #[test]
+    fn the_dead_line_offers_the_conversation_as_a_resume_command() {
+        let fmt = dead_pane_format();
+        assert!(
+            fmt.contains(&format!("claude --resume #{{{CLAUDE_OPTION}}}")),
+            "{fmt} resumes the conversation by name"
+        );
+        assert!(
+            fmt.find(CLAUDE_OPTION) < fmt.find(PANE_OPTION),
+            "{fmt}: the id that resumes something survives the truncation"
+        );
+    }
+
+    /// A view of a shell has no conversation, and must read exactly as it
+    /// did before any of this existed. The false branch of the
+    /// conditional is empty, so an unset option costs the line nothing.
+    #[test]
+    fn a_view_with_no_conversation_says_nothing_about_one() {
+        let fmt = dead_pane_format();
+        assert!(
+            fmt.contains(&format!("#{{?#{{{CLAUDE_OPTION}}},")),
+            "{fmt} is conditional on the option being set"
+        );
+        assert!(
+            fmt.contains(&format!("#{{{CLAUDE_OPTION}}},}}")),
+            "{fmt} has an empty false branch"
+        );
+    }
+
+    /// Both ids are read at draw time, for the reason the session id is:
+    /// a literal would be stale the moment the pane is rebound.
+    /// Not an assertion — the string itself, so the end-to-end probe in
+    /// `docs/26` is run against what the binary actually produces rather
+    /// than a retyped copy of it. `cargo test -- --nocapture the_dead_line_as_shipped`.
+    #[test]
+    fn the_dead_line_as_shipped() {
+        println!("{}", dead_pane_format());
+    }
+
+    #[test]
+    fn the_conversation_tag_is_a_pane_option() {
+        let args = set_claude_args("%7", "c1567a67");
+        assert!(args.contains(&"-p".to_owned()), "{args:?} is pane-scoped");
+        assert!(args.contains(&CLAUDE_OPTION.to_owned()), "{args:?}");
+        assert!(args.last().is_some_and(|v| v == "c1567a67"), "{args:?}");
     }
 
     /// `attach exit` is the attach client's status, not the agent's. The

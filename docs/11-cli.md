@@ -265,6 +265,7 @@ that was measured rather than guessed.
 ```text
 tally attention on          set    tl.attention=1 on the calling session
 tally attention off         remove tl.attention  from the calling session
+                            …and either way, record tl.claude=<conversation>
 ```
 
 It is written for exactly one caller — a Claude Code hook — because the
@@ -292,6 +293,23 @@ belongs to the agent's transcript.
 
 It takes no address. The session is wherever the hook is, which is the same
 principle `spawn` is built on: **the shell already knows**.
+
+### It writes a second label
+
+`tl.claude`, the Claude Code session id — the argument to
+`claude --resume`, read from `CLAUDE_CODE_SESSION_ID` in the hook's own
+environment, and the id that is actually worth having when a pad dies
+([26](26-the-claude-session-id.md)).
+
+It rides this subcommand rather than one of its own because the expensive
+half here is the lookup — a `ps -A` walk and an anchord `list` — and a
+second hook would pay it again on every turn for a value that changes
+approximately never. The write is skipped entirely when the label already
+says what the environment says, so the ordinary turn is still a read.
+
+Nothing changes for the caller: the hook lines are the ones
+[14](14-attention.md) already asked for, and a caller that is not Claude
+Code simply has no variable to report.
 
 ## Errors
 

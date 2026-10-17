@@ -266,6 +266,7 @@ mod tests {
             state,
             muted,
             spec: spec.map(str::to_owned),
+            claude: None,
         }
     }
 

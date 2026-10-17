@@ -257,7 +257,7 @@ fn perform(ctx: &Context<'_>, gesture: Gesture, at: Slot, pages: &Pages, tmux: &
                     // happen for a slot that parsed, but an empty string
                     // is a legal name and falls back to the old form.
                     let label = at.label(pages).unwrap_or_default();
-                    if let Err(e) = tmux.jump(&r.session, &label, at.place()) {
+                    if let Err(e) = tmux.jump(&r.session, r.claude.as_deref(), &label, at.place()) {
                         eprintln!("tallyd: {e}");
                     }
                 }
@@ -574,7 +574,7 @@ fn navigate(
             };
             let at = h.at.label(pages).unwrap_or_default();
             eprintln!("tallyd: next -> {at} ({queued} waiting)");
-            if let Err(e) = tmux.jump(&h.session, &at, h.at.place()) {
+            if let Err(e) = tmux.jump(&h.session, h.claude.as_deref(), &at, h.at.place()) {
                 eprintln!("tallyd: {e}");
             }
             // Follow the jump with the eyes, by the smallest scroll that

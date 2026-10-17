@@ -32,6 +32,13 @@ pub struct Head {
     /// When it started asking. **The original moment**, preserved across a
     /// `tallyd` restart by the journal readback (#7).
     pub since: i64,
+    /// The conversation it is running, from the grid.
+    ///
+    /// Carried so that answering through `►` tags the view with it, the
+    /// same as pressing the pad does — otherwise the one path you use
+    /// when you are busy is the one that leaves the dead line short
+    /// (`docs/26-the-claude-session-id.md`).
+    pub claude: Option<String>,
 }
 
 /// The longest-waiting slot that is asking, is not muted, and is not
@@ -68,6 +75,7 @@ pub fn head(
             at: *at,
             session: session.clone(),
             since: *since,
+            claude: pads.grid().get(at).and_then(|r| r.claude.clone()),
         })
 }
 

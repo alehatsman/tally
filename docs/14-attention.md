@@ -1,5 +1,9 @@
 # 14 — Attention, measured
 
+> **Amended by [26](26-the-claude-session-id.md).** The hook this
+> document designs now reports a second fact on the same call: `tl.claude`,
+> the conversation the agent is running.
+
 **Status: spec.** It amends [04-signals.md](04-signals.md) and
 [11-cli.md](11-cli.md), and it exists because the signal the whole product
 rests on does not fire against the agent this grid actually runs

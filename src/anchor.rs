@@ -34,6 +34,15 @@ pub const LABEL_SPEC: &str = "tl.spec";
 pub const LABEL_MUTE: &str = "tl.mute";
 /// Set by a `Notification` hook to declare the agent is waiting.
 pub const LABEL_ATTENTION: &str = "tl.attention";
+/// The Claude Code session id, as that agent's own hook reported it.
+///
+/// The argument to `claude --resume`, and the only id that resumes
+/// anything: anchor's id names a PTY that is gone by the time you want
+/// it (`docs/26-the-claude-session-id.md`).
+///
+/// **Never removed.** A conversation outlives the PTY that ran it, which
+/// is the whole reason to want it, so the label stays on the dead row.
+pub const LABEL_CLAUDE: &str = "tl.claude";
 /// Set by tally immediately before it terminates a session.
 ///
 /// anchord records a terminate as an ordinary non-zero exit — there is
@@ -185,6 +194,15 @@ impl Session {
     /// ([#9](https://github.com/alehatsman/tally/issues/9)).
     pub fn lost_to_restart(&self) -> bool {
         self.lost_reason.as_deref() == Some("daemon_restart")
+    }
+
+    /// The conversation this session is running, if its hook has said.
+    ///
+    /// `None` for anything that is not Claude Code, and for a Claude that
+    /// has not reached its first turn — the hook that reports it is the
+    /// attention one (`docs/26-the-claude-session-id.md`).
+    pub fn claude(&self) -> Option<&str> {
+        self.labels.get(LABEL_CLAUDE).map(String::as_str)
     }
 
     /// Whether tally ended this session on purpose.
