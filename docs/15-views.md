@@ -9,6 +9,12 @@ same sentence being wrong.
 
 This document fixes the sentence.
 
+> ⚠️ **Adoption was removed by [24](24-the-tally-server.md).** Views live
+> on tally's own tmux server now, and a pane on your personal server
+> cannot be one. Everything else in this document — a view is a pane,
+> `remain-on-exit`, respawn in place, origin as a pane id — is unchanged
+> and is what `24` builds on.
+
 ## The claim
 
 **A view is a pane, not a window.**
