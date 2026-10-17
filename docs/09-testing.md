@@ -6,7 +6,7 @@ has to be named.
 
 ## The shape the suite ended up in
 
-359 tests, all of them in `#[cfg(test)]` modules beside the code, none of
+370 tests, all of them in `#[cfg(test)]` modules beside the code, none of
 them needing a device, a daemon or a socket. That is not discipline; it is
 a consequence of where the boundaries were drawn, and it is the property to
 protect:
@@ -14,9 +14,16 @@ protect:
 > **Every module that decides something is pure.** `chord` takes presses
 > and emits gestures. `model` takes a session list and emits a frame.
 > `queue` takes a map and emits a head. `tempo` takes an age and emits a
-> number. `render`, `slot`, `art`, `osc`, `signal` and `surface` are the
-> same shape. The three that touch the world — `anchor`, `device`, `jump` —
-> are tested on the **arguments they build**, not on the calls they make.
+> number. `effect`, `render`, `slot`, `art`, `osc`, `signal` and `surface`
+> are the same shape. The three that touch the world — `anchor`, `device`,
+> `jump` — are tested on the **arguments they build**, not on the calls
+> they make.
+
+`effect` is the newest of them and was carved out of `model`, where it had
+made `model` and `render` import each other — the one dependency cycle this
+crate has had ([29](29-what-the-loop-holds.md)). It is the vocabulary
+`model`, `render` and `act` share: what a held gesture would do to one pad,
+and nothing about where that pad is or what is drawn on it.
 
 The tests that cannot be written are the ones about what a colour looks
 like and what a day beside it feels like, and those are

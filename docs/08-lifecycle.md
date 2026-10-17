@@ -153,6 +153,25 @@ tick that could not `list` says nothing about whether a watcher is still
 receiving bytes; tearing them down on a failed poll would turn one slow
 response into a full re-attach storm.
 
+### What the loop holds while it does that
+
+Four of those steps need state that outlives a tick, and it has names:
+`Link` (the device, and the rules for losing one), `Beat` (the tempo and
+when the next pulse is due), `Waiting` (last tick's queue head and depth)
+and `Grip` (the gestures that need a clock, and the pad a held `Move` is
+carrying). They were twenty-three loose `let mut` in one scope, passed back
+to five helpers one field at a time; [29](29-what-the-loop-holds.md) is the
+argument for giving them names and the list of what deliberately stayed a
+local.
+
+The one worth knowing here is `Link`, because it owns the failure modes in
+the table below. A device leaves by exactly one path — a failed write and
+seven seconds of silence both reach it — and that path is what guarantees
+the two things the table promises: the next frame on any device is **total**,
+and the chord state is cleared, so the release that went out with the cable
+cannot leave a modifier held and turn the first tap after a replug into a
+kill.
+
 Two seconds is teleport's reconcile cadence for the same job
 (`anchor_watch.rs:31`). Presses are **not** on this loop — input is
 event-driven off the MIDI callback and renders immediately. The loop is for
