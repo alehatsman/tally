@@ -446,8 +446,10 @@ had explicitly defended driving four working agents at 140 bpm because one
 unrelated pad had been ignored; that paragraph is the thing that made it
 tiring, and it is now marked as such.
 
-Green stopped moving. Motion is spent only on amber, so the surface is
-still unless something is asking, and the one global clock now modulates
+Green stopped moving. Confirmed on the device — *"green are not pulsing
+no, orange yes"* — with four slots asking at the time, so the amber half
+was live and checked rather than assumed. Motion is spent only on amber,
+so the surface is still unless something is asking, and the one global clock now modulates
 only the pads that are actually waiting. The cost: working and quiet look
 identical, and *which agent is producing output* is no longer visible —
 information it turned out you watch rather than act on
