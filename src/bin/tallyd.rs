@@ -149,9 +149,17 @@ impl Corner {
             return false;
         }
         let held = self.down.take().map(|since| elapsed.saturating_sub(since));
-        // An aborted hold, or a hold that did something. Neither is a
-        // tap, and a long press must not leave a half-double behind for
-        // the next one to pair with.
+        // An aborted hold, a hold that did something, or a release whose
+        // press never arrived. None of them is a tap, and none may leave
+        // a half-double behind for the next one to pair with.
+        //
+        // The third is not hypothetical: an art swallows the **press**
+        // and not the release (`left_art` answers `false` for `!down`),
+        // so while a piece is playing this is handed a release with no
+        // matching press. `is_none_or` on `None` is what catches it, and
+        // the test below is what keeps that true — the alternative is a
+        // double-tap completing behind a plasma field, which is the bug
+        // 6039146 already cost us once.
         if self.used || held.is_none_or(|h| h > TAP) {
             self.tapped = None;
             return false;
@@ -1064,6 +1072,36 @@ mod tests {
         assert!(!c.feed(false, ms(2080)), "too late to pair");
         assert!(!c.feed(true, ms(2200)));
         assert!(c.feed(false, ms(2280)), "but it started a fresh pair");
+    }
+
+    /// A release whose press never arrived is not a tap.
+    ///
+    /// `left_art` swallows the press that exits an art but lets the
+    /// release through, so this is the real shape of pressing `CC19`
+    /// while a piece is playing. If it counted as a tap, the mode could
+    /// toggle behind an animation with nothing on the surface able to
+    /// report it — which is exactly the failure 6039146 fixed, arriving
+    /// by a second road.
+    #[test]
+    fn a_release_with_no_press_is_not_a_tap() {
+        let mut c = Corner::default();
+        assert!(!c.feed(false, ms(40)), "the art ate the press");
+        // And it must not have left half a pair behind for a later tap.
+        assert!(!c.feed(true, ms(100)));
+        assert!(!c.feed(false, ms(160)), "this is a first tap, not a second");
+        assert!(!c.feed(true, ms(200)));
+        assert!(c.feed(false, ms(260)), "the pair completes normally after");
+    }
+
+    /// The same, mid-pair: one real tap, then an art eats a press, then
+    /// its release arrives. The orphan must break the pair rather than
+    /// complete it.
+    #[test]
+    fn an_orphan_release_cannot_complete_a_pair() {
+        let mut c = Corner::default();
+        assert!(!c.feed(true, ms(0)));
+        assert!(!c.feed(false, ms(60)), "a genuine first tap");
+        assert!(!c.feed(false, ms(120)), "an orphan must not finish it");
     }
 
     /// A long press between two taps clears the half-pair. Otherwise an
