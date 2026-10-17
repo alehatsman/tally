@@ -10,7 +10,7 @@ work.
 
 > **A squad is a ledger file.** The row is where it is displayed, the
 > members are the panes it names, and the master is whoever is currently
-> reading it.
+> reading it. It is finished when every result it names exists.
 
 The first draft of this document said *a squad is a row*, with column 1 as
 the master. That was the furniture deciding the design. Three of the four
@@ -319,16 +319,75 @@ live from `claude agents --json`, so none of them are stored:
 | which slots are in this squad | nothing else groups them |
 | brief path, per member | the ask |
 | result path, per member | the deliverable |
-| the completion condition | what *done* means for this squad |
+| the paths a member owns | the only merge defence there is — below |
+| the completion condition | **only when it is not the default** — below |
 
 That is doc 08's rule applied to the new file: **a derivable fact is not
 written down.**
 
-**One writer per field.** A master that writes member status becomes a
-bottleneck while it lives and a liar when it dies, so it does not: **the
-member writes its own result path, the master writes only assignments.**
-No locking, no reconciliation, and a ledger that stays true through a dead
-master — which is the property the whole design rests on.
+### It is `attention.jsonl` again
+
+The format is not a new decision, because this repository already made it
+and shipped it. `src/journal.rs` is **append-only JSONL, replayed in
+order, last line per key wins, unparsable lines skipped, missing file is
+an empty one** — and every one of those properties is here for the same
+reason it is there.
+
+```jsonl
+{"kind":"squad","squad":"auth","row":7}
+{"kind":"assign","slot":"work:7:1","brief":"…/briefs/c1.md","result":"…/out/c1.md","owns":["src/anchor.rs"]}
+{"kind":"assign","slot":"work:7:2","brief":"…/briefs/c2.md","result":"…/out/c2.md","owns":["src/jump.rs"]}
+{"kind":"sent","slot":"work:7:1","ms":1760…}
+```
+
+`~/.local/state/tally/squads/<squad>.jsonl`, beside the journal, for the
+reason [24](24-the-tally-server.md) names row sessions by absolute row:
+**state that outlives a process does not live in config and does not live
+in a worktree.** A ledger inside a member's checkout would be a file the
+squad can commit to itself.
+
+**Append-only is about a dead master, not about concurrency.** A master
+killed mid-write leaves a torn last line, and `journal.rs` already decided
+what to do with one: skip it. Losing the last assignment is a smaller
+error than refusing to read the file.
+
+**The `done` field is usually absent.** Once doneness is a result file
+that exists, *every assignment has its result* is the default and is
+derivable — so writing it down would break the rule two paragraphs up.
+It is there for the squad whose finish line is narrower than its roster,
+which is a real case and not the common one.
+
+### One writer, full stop
+
+The first draft said *one writer per field* — the member writes its own
+result, the master writes only assignments — and congratulated itself for
+needing no locking. It still needed N appenders on one file, which is a
+concurrency claim dressed as a design rule.
+
+It is not needed, because **a member never writes the ledger at all**:
+
+> **Done is a result file that exists.**
+
+The member writes its deliverable to the path it was assigned. Nothing
+announces it. The master — or the next master — calls `stat`. Doneness
+was always derivable from the filesystem, and [08](08-lifecycle.md)'s rule
+says a derivable fact is not written down.
+
+**Write to a temp path, `rename` into place.** The one way a file's
+existence lies is a half-written one, and atomic rename is the boring
+primitive that has fixed this since the 1980s. It is a line in the brief,
+not a protocol.
+
+What this buys is larger than it looks:
+
+- **the ledger has exactly one writer**, so append atomicity across
+  processes is not a property anything depends on
+- **the member needs no tally awareness whatsoever.** It is told to write
+  a file. There is no client, no hook, no handshake, and a squad member
+  can be `codex`, `isayes`, or a person
+- **a dead master loses nothing.** The assignments are on disk and the
+  results are on disk; the master was only ever the thing holding the two
+  against each other
 
 **The master is the most replaceable part of a squad.** That inverts the
 intuition this started from — a master that hands out identities and holds
@@ -363,7 +422,7 @@ roughly linearly — three focused agents beating five unfocused ones. Eight
 is the capacity of the furniture, not a target.
 
 ```sh
-tally squad <row> [-n 4] [--brief <file>]
+tally squad new <row> -n 4 [--brief <file>]…
 ```
 
 **But `n` is the wrong variable and the ledger already measures the right
@@ -418,9 +477,9 @@ That rule was written about a `tallyd` control socket and it applies here
 without amendment. An MCP server survives it on **one** condition: it holds
 no state. A read is `anchor ls` — joined, for members, with
 `claude agents --json` — and nothing else; a write shells out to
-`tally spawn` / `tally purge` / `tally mute`, or to the four tmux commands
-of the injection rule. Four tools, no cache, no registry, nothing it is
-the only copy of:
+`tally spawn` / `tally purge` / `tally mute` / `tally squad send`, which is
+already the injection rule in one process. Four tools, no cache, no
+registry, nothing it is the only copy of:
 
 ```text
 tally_roster()           -> [{slot, cwd, command, state, status}]
@@ -467,6 +526,80 @@ start with their lead's permission settings — which, for four unattended
 agents at a desk you are not sitting at, is a different proposition than
 one agent you are watching. `squad` takes a narrower mode than the master
 runs in, and the default is the narrow one.
+
+### Isolation is half an answer, and the first draft stopped there
+
+Four worktrees stop four agents corrupting each other's edits. They do
+nothing about four sets of changes that have to become one, and a design
+that hands you four branches and walks away has moved the problem rather
+than solved it. The first draft said the ledger "probably should not grow
+a notion of a merge." That is still right, and it is not an excuse to say
+nothing.
+
+**The cheap half is prevention, and it happens before any agent runs.**
+Each assignment declares the paths that member owns. Two members claiming
+the same path is a **squad that refuses to spawn** — caught at creation,
+when the fix is editing one line, rather than at integration, when the fix
+is a human reading four diffs.
+
+```text
+c1  owns  src/anchor.rs
+c2  owns  src/jump.rs          ok — disjoint
+c3  owns  src/jump.rs          refused: already owned by c2
+```
+
+This is the same move [24](24-the-tally-server.md) made with column
+order: decide it at creation, where it is a placement rule, instead of
+maintaining it as an invariant something has to keep checking.
+
+**It does not catch everything, and the exceptions are known.** `Cargo.toml`,
+a lockfile, a module list — files every member touches and nobody owns.
+Declaring them owned by nobody is honest and is what the ledger records;
+it is also the set a human should expect to resolve by hand, which is a
+far smaller promise than *the squad merges itself*.
+
+**The landing order is serial, because serial always works.** Members land
+in ledger order, each rebasing on what is already in. Four rebases of a
+focused diff is boring, and boring is the whole brief
+([01](01-scope.md)). A squad that tried to land in parallel would be
+building a merge engine, which is the thing this document just said it
+would not do.
+
+**`tally squad land <row>` is a CLI verb and will never be a pad.** It
+rewrites history in a repository, and the Launchpad's claim is that it
+cannot lose anything ([05](05-interaction.md)). The same rule that keeps
+worktree reaping off the grid keeps this off it.
+
+## The command surface
+
+Five verbs, all of them shell. [11](11-cli.md) settled why: the folder
+comes from the shell you are standing in, and a squad needs a repo the
+same way `spawn` needs a directory.
+
+```text
+tally squad new   <row> -n 4 [--brief <file>]…   write the ledger, spawn the members
+tally squad send  <slot> <file>                  the injection rule, with its receipt
+tally squad status <row>                         who is busy, waiting, stalled, done
+tally squad land  <row>                          rebase each member's branch in ledger order
+tally squad reap  <row>                          remove worktrees; refuses dirty or unmerged
+```
+
+**`new` is the only one that is not re-runnable**, and it is the one that
+can refuse: overlapping `owns`, a row with live pads in the way, a repo
+with no clean base to branch from. Everything else reads the ledger and
+the grid, so running it twice is running it once.
+
+**`send` exists as a verb rather than only as an MCP tool** because the
+master drives panes with Bash first, and a four-command rule with two
+timing dependencies is exactly the thing not to re-type. It is one
+process that does the paste, the `Escape`, the `Enter` and the poll, and
+exits non-zero when the receipt never comes and the composer is not
+empty.
+
+**There is no `tally squad kill`.** Ending a squad is the row-end chord
+and `reap` — [below](#what-ends-a-squad) — because killing is reversible
+and reaping is not, and they belong on different surfaces for that
+reason.
 
 ## Compaction is the blunt instrument
 
@@ -532,12 +665,13 @@ garbage collection, not a verdict.
 A row of four live agents that nobody is coordinating looks exactly like a
 working squad. With the ledger it stops being ambiguous:
 
-> **unfinished briefs + every member `idle` = stalled**
+> **a result path that does not exist + every member `idle` = stalled**
 
-Both halves are readable without a master running — the ledger from disk,
-the statuses from `claude agents --json`. So *is anyone actually working*
-is a question with an answer, and the answer survives the master that was
-supposed to know it.
+Both halves are readable without a master running, and neither needs a
+member's cooperation — the assignments replay from the ledger, the
+results are a `stat`, and the statuses come from `claude agents --json`.
+So *is anyone actually working* is a question with an answer, and the
+answer survives the master that was supposed to know it.
 
 **`idle` is the right word only because `waiting` is a different one.** The
 three observed statuses separate the three cases a squad cares about, and
@@ -551,8 +685,9 @@ they separate them without a master:
 
 ⚠️ And `idle` is still overloaded within that last row: a member that
 finished its brief and one that never received it both read `idle`. The
-ledger is what tells them apart, which is the argument for the ledger
-restated.
+result file is what tells them apart — present means finished, absent
+means never worked — which is the argument for
+[the done rule](#one-writer-full-stop) restated.
 
 **It surfaces in the CLI, not on the grid.** `tally squad status <row>`.
 [16](16-the-queue.md) spent real effort keeping pad colour meaning exactly
@@ -631,12 +766,30 @@ than feel.
    `AskUserQuestion` and `permission prompt` for a tool dialog *and* a plan
    approval. A session on the startup trust dialog is absent from the array
    entirely, which is why none of this can be a liveness source.
-3. **How does a member tell the ledger it is done?** One writer per field
-   is the rule; the mechanism is not designed. A hook is the obvious
-   candidate, which is how the amber already works
-   ([04](04-signals.md#4-a-hook--it-told-us)) — and that is a second reason
-   the hooks question comes first.
-4. **What does a squad do when two members' worktrees conflict?** Isolation
-   stops them corrupting each other's edits; it does nothing about changes
-   that cannot both land. The ledger has no notion of a merge and probably
-   should not grow one.
+3. ~~**How does a member tell the ledger it is done?**~~ **It does not** —
+   [done is a result file that exists](#one-writer-full-stop). The question
+   assumed a protocol, and the answer was to delete the protocol: the
+   member writes its deliverable and the master calls `stat`. A hook would
+   have bought promptness only, and the master already polls for its
+   receipt.
+4. ~~**What does a squad do when two members' worktrees conflict?**~~
+   **Mostly it prevents them** — [assignments declare the paths a member
+   owns](#isolation-is-half-an-answer-and-the-first-draft-stopped-there),
+   overlap refuses at creation, and landing is serial. What survives is
+   narrower and is the real open question: **the files nobody owns.**
+   `Cargo.toml`, a lockfile, a module list — every member touches them, the
+   ledger records them as unowned, and a human resolves them. Whether that
+   set stays small enough to be a footnote or turns out to be where all the
+   work is, is the thing only running a squad can say.
+5. **Does a master need a brief of its own?** The ledger holds assignments
+   and results; nothing holds *why this squad exists*. A master that dies
+   is replaceable because the thread is on disk — but the thread is
+   currently four tasks with no statement of what they add up to. The
+   `done` condition in the squad line is a thin version of it and may not
+   be enough.
+6. **What happens on the second round?** Every verb here assumes one pass:
+   assign, work, land, reap. A real squad discovers that c2's result
+   changes what c3 should have been asked. Re-assigning into a live member
+   is just `send` with a new brief — but the ledger grows a second
+   `assign` line for the same slot, and *which result counts* becomes a
+   question the replay rule answers by accident rather than by design.
