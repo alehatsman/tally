@@ -112,7 +112,7 @@ Neither a ULID nor a `page:row:col` address can contain one.
 | dead pane at the slot, different session | **reclaimed** — this bug |
 | live pane at the slot, different session | fails as today, by decision above |
 | no pane at the slot | `make_view`, as today |
-| untagged pane (yours, adopted window) | never matches: an empty address is not an address |
+| untagged pane — anything tally did not create | never matches: an empty address is not an address |
 | two panes tagged with one address | first wins; cannot arise — a pane never moves windows, and only one pane can hold an index |
 | pane created before this shipped | has `@tally_slot` already (24); reclaim works on it |
 

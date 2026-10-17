@@ -86,9 +86,12 @@ reconcile would mean two `set-option` calls per view every 2s, forever, to
 fix something one press fixes — and you press that pad before you kill it
 anyway.
 
-Pane-scoped (`-p`), for the reason `remain_on_exit_args` already documents
-(`src/jump.rs`): an adopted view sits among panes that are yours,
-and tally does not get to change how those behave.
+Pane-scoped (`-p`), for the reason [15](15-views.md) establishes: a
+**window** option is inherited by every pane in the window, so a
+window-scoped format would be a claim about panes tally did not create.
+The original reason was that an adopted view sits among panes that are
+yours; adoption went with [24](24-the-tally-server.md) and the scope rule
+outlived it, because it was never really about adoption.
 
 ### The line
 
