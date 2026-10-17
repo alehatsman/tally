@@ -56,8 +56,8 @@ a second agent must not be on it.
 
 The goal is argv, not a flag. N is 1-8, it refuses rather than running
 past column 8 or wrapping, and it refuses before creating anything if
-any target is taken. N above 1 opens no view: one shell, N sessions,
-and each pad opens its own on the first press.
+any target is taken. N above 1 opens no views: N sessions, N pads
+lit, nothing on screen.
 
 attention   Say whether the calling session is waiting on a human.
 
@@ -123,7 +123,7 @@ pub struct Claim {
     ///
     /// It used to mean *do not hand this pane over*, and that is no
     /// longer a thing that can happen: views live on tally's own tmux
-    /// server and your shell is never adopted
+    /// server and your shell is never handed over
     /// (`docs/24-the-tally-server.md`). What is left to decline is the
     /// **view** — the session runs, the pad lights, and nothing opens
     /// until you press it.
