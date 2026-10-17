@@ -1,7 +1,16 @@
 # 23 — Every gesture we have, and the three we do not
 
 **Brainstorm, not design.** Nothing here is settled and nothing here is
-scheduled. It exists to answer three questions that arrived together —
+scheduled.
+
+> ⛔ **Part 4's wall was wrong, and [25](25-the-squad.md) measured it
+> down.** *"Broadcasting a goal to four already-running agents is out of
+> scope by construction"* assumed typing into a session needs anchord's
+> write lease. It does not: the bytes go to a **tmux pane**, which
+> forwards them to the attach client a keyboard would have used, and
+> `tallyd` is not in the path at all. `25` also spends `Top(8)` — the
+> button Part 5 expected to stay free — on `User + >`, a squad in a row.
+> The inventory below is otherwise current. It exists to answer three questions that arrived together —
 *fork a session from a session*, *sync two sessions*, *spawn four and give
 them a goal* — and the only honest way to answer them is to first write
 down what the surface already spends, what it has left, and which of the
@@ -30,7 +39,7 @@ spent a document rejecting.
 | `Top(5)` `Session` | dark grey, always | — | **the overview**: grid becomes 64 rows, tap = goto ([20](20-the-overview.md)) |
 | `Top(6)` `Drums` | dark, white while playing | next art / back to the grid ([21](21-the-arts.md)) | — |
 | `Top(7)` `Keys` | **off** | **nothing** | **nothing** |
-| `Top(8)` `User` | **off** | **nothing** | **nothing** |
+| `Top(8)` `User` | ~~off~~ | ~~nothing~~ | **squad in a row, with `>`** ([25](25-the-squad.md)) |
 | `Action(1..7)` `>` | dark grey if the row can inherit | launch into that row ([18](18-the-launch-column.md)) | — |
 | `Action(8)` `Stop` | red | — (double-tap reserved for Move, [22](22-the-mode-button.md)) | **kill alive / purge ended** |
 | `Logo` | health light | — | — |
@@ -76,7 +85,7 @@ and **releasing a modifier without tapping fires nothing**.
 | free | notes |
 |---|---|
 | `Top(7)` `Keys` | a whole button, tap or hold |
-| `Top(8)` `User` | a whole button, tap or hold |
+| `Top(8)` `User` | ~~a whole button~~ — **spent** by [25](25-the-squad.md) |
 | `Action(8)` third mode | [22](22-the-mode-button.md) refuses it: a cycle needs an order to remember |
 | pick-up-and-drop | one grammar, reusable by any verb that has a source and a destination |
 
@@ -252,18 +261,30 @@ Move exists precisely so the layout can be made to say it.
 - tally attaches as an **observer** and never holds the control lease, so
   it cannot type into a running session even if it had the text.
 
-So **broadcasting a goal to four already-running agents is out of scope by
-construction**, not by preference. It would need anchord to grow a write
-path and tally to take a lease, and that is the invariant the whole stack
-is built on.
+~~So **broadcasting a goal to four already-running agents is out of scope
+by construction**, not by preference. It would need anchord to grow a
+write path and tally to take a lease, and that is the invariant the whole
+stack is built on.~~
+
+⛔ **False, and [25](25-the-squad.md) measured it through
+`anchor attach`.** The second bullet is the bad one: *tally* never types
+into a session, and nothing proposed that it should. A **master agent**
+types, by driving tmux — the same privilege any shell on this machine
+has. anchord grows no write path, `tallyd` takes no lease, and the
+observer invariant is untouched because `tallyd` is not in the picture.
+
+What survives, and is the half worth keeping: **the goal never comes from
+the surface.** No clipboard button, no staged prompt, no invisible state.
+The human says it to a master in words; the master writes files.
 
 What *is* free: **argv**. A goal handed to a session at spawn time is just
 a command line. That splits the request cleanly:
 
-| want | verdict |
-|---|---|
-| four *new* sessions each starting on the same goal | **free** — it is `tally spawn … -- claude -p "<goal>"`, four times |
-| four *running* sessions redirected onto a goal | **forbidden** — needs the write lease |
+| want | verdict | measured |
+|---|---|---|
+| four *new* sessions each starting on the same goal | **free** — argv | free, though [25](25-the-squad.md) does not use argv |
+| four *running* sessions redirected onto a goal | ~~**forbidden**~~ | **free** — tmux, not anchord |
+| a goal typed on the grid | out of scope | **still out of scope**, and right |
 
 And if the text has to come from somewhere other than a shell, the
 candidates are a file (`goals/x.md`), the clipboard (`pbpaste`), or a
@@ -281,15 +302,21 @@ product.
    that fits a two-operand verb. Move, Fork and Pair are all the same
    gesture with different destinations. Building Move first is the way to
    find out whether the grammar survives a thumb.
-2. **Two free buttons, and A-iv spends only one.** If one modifier can
-   carry move / fork / pair by destination, `Top(8)` stays free and the
-   `Action(8)` mode toggle is never needed.
+2. ~~**Two free buttons, and A-iv spends only one.**~~ **One free button
+   now.** [25](25-the-squad.md) spends `Top(8)` on `User + >` — a squad in
+   a row — so A-iv's modifier has `Top(7)` and the surface has nothing
+   spare. The point stands in the form it was made: if one modifier can
+   carry move / fork / pair by destination, `Top(7)` is enough for all
+   three and the `Action(8)` mode toggle is never needed.
 3. **"Sync" has to be pinned down before it can be built**, and the cheap
    reading (one tmux view) and the expensive one (a group that the queue,
    the tempo and the logo all have to know about) share nothing but a word.
-4. **Half of request C is a shell command we could write this afternoon**,
-   and the other half is forbidden by the observer invariant. That is worth
-   saying out loud rather than designing around.
+4. ~~**Half of request C is a shell command we could write this
+   afternoon**, and the other half is forbidden by the observer
+   invariant.~~ **The forbidden half was not forbidden** — see the banner
+   at the top. The lesson is the one this project keeps relearning in the
+   other direction: an invariant quoted from memory is a claim, and this
+   one was never measured until [25](25-the-squad.md) measured it.
 5. **Nothing here has been on hardware**, which is the only instrument that
    has ever settled an argument in this project. Five times now a surface
    fact has only shown up on the surface.

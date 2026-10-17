@@ -9,16 +9,28 @@ that, and the thing it spends it on is not a feature — it is a unit of
 work.
 
 > **A squad is a ledger file.** The row is where it is displayed, the
-> members are the panes it names, and the master is whoever is currently
-> reading it. It is finished when every result it names exists.
+> members are the panes it names, and the master is the pad on the left
+> that you talk to. It is finished when every result it names exists.
 
-The first draft of this document said *a squad is a row*, with column 1 as
-the master. That was the furniture deciding the design. Three of the four
-questions it left open turned out to be the same question —
-*where does the squad actually live* — and the answer is not on the
-Launchpad. **The grid is an attention surface, not an orchestration
-surface**, which is what it has always been good at and what every other
-document here has assumed.
+This document has been wrong twice about the same thing, in opposite
+directions, and both corrections are kept because the middle is where it
+landed.
+
+**Draft one said *a squad is a row*, with column 1 as the master** — the
+furniture deciding the design. Three of its four open questions turned
+out to be one question, *where does the squad actually live*, and the
+answer was *in a file*.
+
+**Draft two over-corrected** and put the master outside the grid
+entirely, on the grounds that bytes cross sockets so it could live
+anywhere. True, and beside the point: you **walk with** the master, and
+walking with something here means pressing its pad. A participant you
+cannot jump to is the one part of a squad that is not on the desk.
+
+So: **the squad lives in a file, and the master lives in column 1.**
+The grid is still an attention surface rather than an orchestration one —
+it shows you the squad and gets you to the master, and the orchestration
+happens in a conversation, which is where it was always going to happen.
 
 No new address space, no registry, no identity scheme. The grid already
 knows who is alive; a squad is what you get when a file says which of them
@@ -281,6 +293,55 @@ one job — vetoing an amber that the hook raised and never lowered. The
 squad reads the same field for its own reasons; neither use makes
 `claude agents` a roster.
 
+### Through `anchor attach`, which is the configuration that matters
+
+Everything above drove `claude` running **directly** in a pane. A tally
+view is not that: it is `anchor attach <id>` in a pane, forwarding to a
+PTY that anchord owns. Whether the injection rule survives that extra hop
+was the one unmeasured link under this whole document, so it was measured
+— same machine, 2026-10-17, socket `sqspike`, a real `anchor create`
+session attached in a real tmux pane.
+
+✅ **The whole chain works unchanged.** `load-buffer` → `paste-buffer -p`
+→ `Escape` → `Enter` put `reply with exactly the word ACK` into the
+composer, the session went **`busy` on the first poll**, and `ACK` came
+back. Four tmux commands, one extra process in the path, no difference.
+
+✅ **The join is confirmed a second time, in the right shape.** The three
+pids, read off one pane:
+
+| | |
+|---|---|
+| `anchor get <id>` → `pid` | **56015** |
+| `claude agents --json` → `pid` | **56015** |
+| `#{pane_pid}` | 58269 — `anchor attach`, as expected |
+
+This document once asserted the join was impossible *because* `pane_pid`
+is `anchor attach`. It is, and the join never wanted `pane_pid`. Measured
+twice now, the second time through the exact topology a squad runs in.
+
+⚠️ **Every member meets the trust dialog, and it is invisible while it
+does.** A fresh worktree is a path Claude Code has never seen, and
+`hasTrustDialogAccepted` is recorded **per project path** in
+`~/.claude.json` — zero of the thirty projects on this machine are
+worktrees, so this is not an edge case, it is every member of every
+squad. Sitting on that dialog, the session is **absent from
+`claude agents --json` entirely**, which is the row
+[27](27-the-level-and-the-edge.md) measured and the reason that command
+can never be a liveness source.
+
+So spawning has a step the first draft did not know about:
+
+> **A squad is not up until every member appears in the array.**
+
+`squad new` answers the dialog — it is a fixed first screen and one
+`Enter` — and then **waits for each member to become visible** before it
+reports the squad as spawned. It answers it rather than leaving it
+because the human just asked for a squad in a repo they are standing in,
+and a worktree of your own repo is the least ambiguous trust decision
+there is. It is recorded in the ledger that it did, because a tool that
+clicks *yes, I trust this* on your behalf should say so in writing.
+
 ### What the spike did not find
 
 **No supported way to write into a running interactive session.**
@@ -300,10 +361,10 @@ second one.
 |---|---|
 | squad | **the ledger file** — the slots, their briefs and their results |
 | row | an absolute row `r01`…`r64`, where the ledger's members are shown |
-| member | a pane in that row, any column, same as any other view |
-| master | whichever session currently holds the ledger — **not a pane in the row** |
+| member | a pane in that row, same as any other view; columns 2…n are workers |
+| master | **column 1** — a pad you jump to, holding the ledger and driving the rest |
 | roster | `anchor ls --label tl.slot` filtered to the row — **not a file** |
-| brief | a file on disk, one per member, path handed in at spawn |
+| brief | a file on disk, written by the **master**, not by you — below |
 
 **The ledger is the only new artefact, and it is the squad.** Everything
 else in that table already exists. It is a file for the same reason
@@ -398,24 +459,111 @@ charge.
 
 ### Control crosses sockets. Attention does not.
 
-[24](24-the-tally-server.md) refused to let a jump cross sockets, and the
-first draft let that refusal cover too much — it put the master in column
-1 so that master and members would share a server.
+[24](24-the-tally-server.md) refused to let a jump cross sockets, and an
+early draft let that refusal cover too much — it put the master in column
+1 only so that master and members would share a server.
 
 The refusal is narrower than that. `switch-client` **moves your eyes** and
 must not cross. `send-keys`, `capture-pane` and `load-buffer` move
-**bytes**, and cross freely — every measurement in this document was taken
-by driving a pane on one socket from a session on another.
+**bytes**, and cross freely — several measurements in this document were
+taken by driving a pane on one socket from a session on another.
 
-So the master is an ordinary session wherever you already are, driving
-`-L tally` from outside it. Nothing in [24](24-the-tally-server.md)
-reopens, and the thing that would have — tally's window turning from a
-place jumps *land* into the place you *live* — never comes up. Column 1 is
-a member like any other.
+So *where the master can live* is unconstrained. That turned out to be
+the wrong question.
+
+### The master is column 1, because you walk with it
+
+The draft that followed answered the unconstrained question with
+"anywhere, so: your own shell." That is defensible and it is wrong, and
+the thing that shows it is a sentence about how this gets used:
+
+> *I spawn a squad of four, the leftmost is the master, and **I walk with
+> it**.*
+
+**Walking with something on this product means jumping to it.** That is
+the gesture the whole device exists for ([06](06-jump.md)), and a master
+in a shell somewhere is the one participant you cannot press. It would be
+the only part of a squad that is not on the grid, in a product whose
+entire claim is that the agents you are running are an object on your
+desk.
+
+So: **column 1 is the master, columns 2…n are workers**, and the master
+is an ordinary view in an ordinary pane that you reach with an ordinary
+press.
+
+| | |
+|---|---|
+| where | the leftmost column of the squad's row |
+| what it is | a pad, a view, a jump target — nothing special to `tallyd` |
+| how it drives members | the injection rule, same socket, measured above |
+| how it knows it is master | it reads the ledger that names its own `tl.slot` |
+| what the grid enforces | **nothing** |
+
+⚠️ **This strains [24](24-the-tally-server.md)'s naming rule and the strain
+is worth naming.** *Everything is named by address, never by content* —
+and "column 1 means master" is a role read off a position. The line it
+stays on: **the ledger says which slot is master; the column is only
+where `squad new` puts it.** Leftmost because that is where the eye starts
+on a row, not because anything resolves a master by looking at a column.
+Move the master to column 5 by hand and the squad still works, for the
+same reason a pane dragged to another row still jumps correctly.
+
+**The master discovers itself rather than being told.** It is a session
+with a `tl.slot` like every other; it looks for the ledger naming that
+slot. No argv handoff, no env var, no identity passed at spawn — the same
+correction as [the roster](#the-roster-is-the-grid-not-a-broadcast), which
+is that a derived copy goes stale and the grid does not.
+
+### Nobody writes a brief before the squad exists
+
+The earlier draft took briefs at creation: `squad new --brief c1.md
+--brief c2.md`. That assumed the human arrives knowing the decomposition,
+which inverts the point of having a master at all.
+
+What actually happens:
+
+```text
+1.  press         a squad appears on row 7: master, worker, worker, worker
+2.  press 7:1     you are looking at the master
+3.  you say       "let's group the backlog and work out the streams"
+4.  master        reads the backlog, groups it, comes back with:
+                  a CLI stream, a desktop stream, a testing stream
+5.  master        writes three briefs and sends them to 7:2, 7:3, 7:4
+6.  you           keep talking to the master, and only to the master
+```
+
+**Step 4 is the work, and it is the reason the master is an agent and not
+a script.** Grouping a backlog into streams is judgement. Nothing in this
+document should try to specify it; what this document owes it is a way to
+*act* on the answer — which is `squad send`, and which is measured.
+
+Three consequences, and the third is the one that costs something:
+
+- **`squad new` takes no briefs**, because none exist yet. It takes a row
+  and a count. The repo comes from the shell or from the row, the way it
+  already does for `>` ([18](18-the-launch-column.md)).
+- **The master writes briefs into the ledger's brief paths** and sends
+  them. It is the single writer, which is the rule
+  [above](#one-writer-full-stop) already settled for a different reason.
+- **`owns` is declared at assign time, not at creation.** The merge
+  defence below is unchanged in substance and later in time: the check
+  runs when the master assigns, because that is the first moment anyone
+  knows what the paths are. An overlapping assignment is refused by
+  `squad send`, which is a tool the master is calling — so it is told
+  *no*, in a loop it can correct in, rather than a human discovering it
+  at integration.
+
+⚠️ **The master is now a thing that can be wrong at scale.** A human who
+mis-scopes one agent wastes one agent. A master that mis-groups a backlog
+wastes three, in parallel, in their own worktrees. That is not an argument
+against the design — it is the argument for the brief being a **file you
+can read** rather than a message you cannot, and for `squad status`
+answering *what was each of them actually told* without jumping anywhere.
 
 ### Four, and four is a guess with a citation
 
-A row holds eight. **Four is the default.** Reported experience across
+A row holds eight. **Four is the default — one master and three
+workers.** Reported experience across
 several independent write-ups converges on three-to-five as the point past
 which teammates scatter rather than parallelise, with token cost scaling
 roughly linearly — three focused agents beating five unfocused ones. Eight
@@ -439,8 +587,10 @@ recorded as such, and the week of data that
 **And the row is a default, not a constraint.** Once the squad is the
 ledger, the row is display — and the ledger names slots, which already
 carry absolute rows. **A squad spanning rows is already representable and
-nothing forbids it.** `tally squad` puts members on one row because a row
-is legible, not because anything requires it. If master throughput turns
+nothing forbids it.** `tally squad new` puts members on one row because a
+row is legible, not because anything requires it; the *gesture* is
+row-bound because `>` is, which is a property of the chord and not of the
+design. If master throughput turns
 out to be the real limit, the eight-wide furniture has no claim on the
 number and the design does not have to change to admit it.
 
@@ -536,21 +686,27 @@ than solved it. The first draft said the ledger "probably should not grow
 a notion of a merge." That is still right, and it is not an excuse to say
 nothing.
 
-**The cheap half is prevention, and it happens before any agent runs.**
+**The cheap half is prevention, and it happens before any worker runs.**
 Each assignment declares the paths that member owns. Two members claiming
-the same path is a **squad that refuses to spawn** — caught at creation,
-when the fix is editing one line, rather than at integration, when the fix
-is a human reading four diffs.
+the same path is an **assignment that `squad send` refuses** — caught
+when the master is handing out work, when the fix is one more sentence of
+planning, rather than at integration, when the fix is a human reading
+four diffs.
 
 ```text
-c1  owns  src/anchor.rs
-c2  owns  src/jump.rs          ok — disjoint
-c3  owns  src/jump.rs          refused: already owned by c2
+send 7:2  owns src/anchor.rs   ok
+send 7:3  owns src/jump.rs     ok — disjoint
+send 7:4  owns src/jump.rs     refused: already owned by 7:3
 ```
 
+The master is the one that gets refused, which is the right audience: it
+is mid-plan, it has the context, and it can re-cut the streams. A human
+told this at integration time has no cheap move left.
+
 This is the same move [24](24-the-tally-server.md) made with column
-order: decide it at creation, where it is a placement rule, instead of
-maintaining it as an invariant something has to keep checking.
+order: decide it where the decision is being made, as a rule on the
+action, instead of maintaining an invariant something has to keep
+checking.
 
 **It does not catch everything, and the exceptions are known.** `Cargo.toml`,
 a lockfile, a module list — files every member touches and nobody owns.
@@ -570,6 +726,78 @@ rewrites history in a repository, and the Launchpad's claim is that it
 cannot lose anything ([05](05-interaction.md)). The same rule that keeps
 worktree reaping off the grid keeps this off it.
 
+## The gesture: hold `User`, tap a row's `>`
+
+A squad you have to open a terminal to start is a squad you will start
+once. The surface already spawns one agent with a tap — `>` into a row,
+inheriting that row's folder and command ([18](18-the-launch-column.md))
+— and the ask is the obvious neighbour of that:
+
+```text
+>                     one agent in this row          (shipped)
+User + >              a squad in this row            (this document)
+Stop + >              end the squad in this row      (below)
+```
+
+**One primitive, no new one.** Hold-then-tap with a right-column target is
+the grammar [05](05-interaction.md#the-exact-rules-of-a-chord) already
+runs on, and the row-end chord below already proposed this exact shape.
+`User` is `Top(8)` — **off, nothing, nothing** in
+[23](23-gesture-brainstorm.md)'s inventory, and the button that document
+expected to stay free.
+
+**It spends the last free button, and that is the honest price.**
+[18](18-the-launch-column.md) closed with *the bar for the next idea is
+now a button taken from something that works*; `Top(8)` is the one
+exception that was still spare, and after this the surface has nothing
+left. If `squad` turns out not to earn it, the button comes back.
+
+| | |
+|---|---|
+| **where** | the row of the `>` that was tapped, filling from the leftmost free column |
+| **how many** | four — master plus three |
+| **directory** | a worktree each, off the repo the row's newest session is in |
+| **lit** | `User` held: rows that could take a squad light; the rest go dark |
+| **row 8** | no `>`, so no squad by gesture — the asymmetry [18](18-the-launch-column.md#row-8-is-shell-only-by-rule) already declared |
+| **a row with no session** | dark. There is no repo to branch from, the same reason `>` is dark there |
+
+⚠️ **The grid gained a gesture that writes to a repository**, and that is
+new. `>` spawns a process; `User + >` creates four worktrees and four
+branches. It is still reversible — a worktree with no commits is removed
+by `squad reap` and refuses when it is not — but the claim that *the
+Launchpad cannot lose anything* now rests on `reap` refusing, rather than
+on the gesture having nothing to lose. Stated here because it is the kind
+of thing that gets noticed later.
+
+### What this corrects in [23](23-gesture-brainstorm.md)
+
+That document put *spawn four and give them a goal* behind a wall:
+
+> *tally attaches as an **observer** and never holds the control lease, so
+> it cannot type into a running session even if it had the text. So
+> broadcasting a goal to four already-running agents is out of scope by
+> construction, not by preference.*
+
+**The wall is not there.** Measured above, end to end, through
+`anchor attach`: the bytes go to a *tmux pane*, which forwards them to
+the attach client the human's keyboard would have used. anchord grows no
+write path and `tallyd` takes no lease — **`tallyd` is not in this
+picture at all.** The thing typing is one agent driving tmux, which is
+the same privilege any shell on this machine already has.
+
+What `23` got right and this does not reopen: **the goal does not come
+from the surface.** It never does. The human says it to the master in
+words, the master writes files, and the clipboard-to-four-agents button
+that document called the worst version of this product stays unbuilt.
+
+So `23`'s verdict splits more finely than it could at the time:
+
+| | `23` said | measured |
+|---|---|---|
+| four new sessions on one goal | free — argv | free, and argv is not how this does it |
+| four *running* sessions redirected | **forbidden**, needs the lease | **free** — tmux, not anchord |
+| a goal typed on the grid | out of scope | **still out of scope**, and good |
+
 ## The command surface
 
 Five verbs, all of them shell. [11](11-cli.md) settled why: the folder
@@ -577,24 +805,32 @@ comes from the shell you are standing in, and a squad needs a repo the
 same way `spawn` needs a directory.
 
 ```text
-tally squad new   <row> -n 4 [--brief <file>]…   write the ledger, spawn the members
-tally squad send  <slot> <file>                  the injection rule, with its receipt
-tally squad status <row>                         who is busy, waiting, stalled, done
-tally squad land  <row>                          rebase each member's branch in ledger order
-tally squad reap  <row>                          remove worktrees; refuses dirty or unmerged
+tally squad new   <row> [-n 4]        write the ledger, make the worktrees, spawn
+tally squad send  <slot> <file>       the injection rule, with its receipt
+tally squad status <row>              who is busy, waiting, stalled, done
+tally squad land  <row>               rebase each member's branch in ledger order
+tally squad reap  <row>               remove worktrees; refuses dirty or unmerged
 ```
 
-**`new` is the only one that is not re-runnable**, and it is the one that
-can refuse: overlapping `owns`, a row with live pads in the way, a repo
-with no clean base to branch from. Everything else reads the ledger and
-the grid, so running it twice is running it once.
+**`new` is what `User + >` calls**, and the gesture is the expected way in
+— the verb exists because a row with no session has no repo to infer, and
+because a squad of three or six is a flag rather than a second chord.
 
-**`send` exists as a verb rather than only as an MCP tool** because the
-master drives panes with Bash first, and a four-command rule with two
-timing dependencies is exactly the thing not to re-type. It is one
-process that does the paste, the `Escape`, the `Enter` and the poll, and
-exits non-zero when the receipt never comes and the composer is not
-empty.
+**`send` is the master's verb, not yours.** It is the one in this list a
+human will rarely type: the master calls it, gets told *no* on an
+overlapping `owns`, and corrects. Everything the master does to a worker
+goes through it.
+
+**`new` is the only one that is not re-runnable**, and it is the one that
+can refuse: a row with live pads in the way, a repo with no clean base to
+branch from, a member that never appeared in the array. Everything else
+reads the ledger and the grid, so running it twice is running it once.
+
+**It is a verb rather than only an MCP tool** because the master drives
+panes with Bash first, and a four-command rule with two timing
+dependencies is exactly the thing not to re-type. It is one process that
+does the paste, the `Escape`, the `Enter` and the poll, and exits
+non-zero when the receipt never comes and the composer is not empty.
 
 **There is no `tally squad kill`.** Ending a squad is the row-end chord
 and `reap` — [below](#what-ends-a-squad) — because killing is reversible
@@ -726,21 +962,30 @@ agents on it is still legal and still correct. But the eye will read four
 lit pads in a line as a squad whether or not it is one, and that is a real
 cost of showing a squad on the furniture.
 
-**The Launchpad is not the orchestration surface, and the pitch implied it
-would be.** The intuition this document started from was eight pads you
-command a fleet with — press a row, drive a squad. What the evidence
-supports is smaller: orchestration lives in a file and in a process you can
-kill, and the sixty-four pads keep doing what they were always good at,
-which is telling you where to look. That is a real letdown measured against
-the idea, and it is stated here rather than discovered later.
+**The Launchpad starts a squad and gets you to its master. It does not
+drive one.** The intuition this began from was eight pads you command a
+fleet with, and two of those three verbs survived: the chord makes the
+squad, the pad takes you to the master. The third — *telling them what to
+do from the surface* — is not here and should not be. A goal is text, the
+grid has no input ([01](01-scope.md)), and every way of smuggling text
+onto it is invisible state the surface has rejected three times. The work
+is a conversation, and it happens in the pane the press lands in.
 
-**`>` and the squad disagree about arguments.**
-[18](18-the-launch-column.md) drops `args` when spawning into a row, on
-purpose, so a scene-launch cannot clone a conversation. A squad spawn must
-pass a brief, which is an argument. These are not in conflict — `>` is
-*another one like this*, `squad` is *this specific job* — but the two paths
-into a row now behave differently and that is a thing to remember rather
-than feel.
+**The last spare button is gone.** [18](18-the-launch-column.md) closed
+with *the bar for the next idea is now a button taken from something that
+works*, with `Top(7)` and `Top(8)` the two exceptions.
+[23](23-gesture-brainstorm.md) spends `Top(7)` on the pick-up-and-drop
+modifier, this spends `Top(8)`, and the surface is full. Every future
+gesture is now a trade.
+
+**The two ways into a row behave differently.**
+[18](18-the-launch-column.md) drops `args` when `>` spawns, on purpose, so
+a scene-launch cannot clone a conversation. `User + >` is not spawning one
+of anything — it is four agents, four worktrees, and a file that groups
+them. They are not in conflict, `>` being *another one like this* and the
+chord being *a unit of work*, but one button and one button-plus-modifier
+now do categorically different sizes of thing, and that is a thing to
+remember rather than feel.
 
 ## What does not change
 
@@ -781,13 +1026,18 @@ than feel.
    ledger records them as unowned, and a human resolves them. Whether that
    set stays small enough to be a footnote or turns out to be where all the
    work is, is the thing only running a squad can say.
-5. **Does a master need a brief of its own?** The ledger holds assignments
+5. **What does `User` held look like?** Every other modifier repaints the
+   grid to show what it would do ([05](05-interaction.md#the-held-preview)).
+   `User` has seven candidate rows and a four-pad consequence each, which
+   is more state than any held preview has had to show. If it cannot be
+   drawn in one glance, the chord is wrong and the shell keeps the verb.
+6. **Does a master need a brief of its own?** The ledger holds assignments
    and results; nothing holds *why this squad exists*. A master that dies
    is replaceable because the thread is on disk — but the thread is
    currently four tasks with no statement of what they add up to. The
    `done` condition in the squad line is a thin version of it and may not
    be enough.
-6. **What happens on the second round?** Every verb here assumes one pass:
+7. **What happens on the second round?** Every verb here assumes one pass:
    assign, work, land, reap. A real squad discovers that c2's result
    changes what c3 should have been asked. Re-assigning into a live member
    is just `send` with a new brief — but the ledger grows a second
