@@ -1,4 +1,4 @@
-# 20 — The arts
+# 21 — The arts
 
 Settled elsewhere and not reopened here: the grid is an 8×8 window onto a
 64-row space ([16](16-the-queue.md)), the top row is `▲▼◄►⌂` with three
