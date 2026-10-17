@@ -165,7 +165,7 @@ mod tests {
             }
         }
         fn pads(&self) -> Pads<'_> {
-            Pads::new(&self.resolved, &self.config, &self.rows)
+            Pads::new(&self.resolved, &self.config, &self.rows, None)
         }
     }
 

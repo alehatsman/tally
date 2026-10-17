@@ -178,6 +178,28 @@ took it, and dark red joins it here. Both are the right column, not the
 grid, and position disambiguates before hue has to. Every other control is
 still checked.
 
+## The map does not learn about forgotten rows
+
+A seam worth stating, because it was found and closed rather than
+missed. The overview ([20](20-the-overview.md)) summarises what
+`resolve` draws, and `resolve` drops clean exits — so a dark-but-purgeable
+pad contributes **nothing** to the map. Now that Stop forgets dead
+stacks, the map understates exactly where those stacks are.
+
+Left alone, deliberately, for two reasons:
+
+- **You can never see both.** `Session` and `CC19` held together is two
+  modifiers, and two modifiers disarm the surface
+  (`chord.rs:modifier`). There is no frame in which you are reading the
+  map and previewing a purge at once.
+- **A dead row is not a destination.** The overview exists to put the
+  window somewhere; a row whose only content is forgettable history is
+  not somewhere you want the window. Lighting it would be the map
+  answering a question it was not asked.
+
+The dark-pad problem is solved by holding Stop on the grid, which is
+exactly what it now does.
+
 ## What is deliberately not here
 
 **Solo**, in the sense of *silence the other thirty-one*. It was the third
@@ -230,7 +252,7 @@ you to remember the order, and the next idea after that is a menu.
 
 ## Validation
 
-**Unit-testable:**
+**Unit-testable** — all of these now exist and pass:
 
 - kill and purge targets are disjoint for every `Pad`
 - `effect` returns the purge consequence for a pad that draws dark but has
@@ -242,7 +264,17 @@ you to remember the order, and the next idea after that is a menu.
 - picking up and releasing without dropping writes nothing
 - a drop onto an occupied pad writes nothing
 - the mode toggles on two taps and not on one, and not on an aborted hold
-- `chord.rs` still emits no mode change and still takes no clock
+  — the sharpest one, because a single-tap toggle would have broken
+  chord rule 4 silently
+- a long press clears a half-started double, so an abort cannot complete
+  a pair begun a minute earlier
+- `chord.rs` still emits no mode change and still takes no clock: no
+  sequence of presses alone moves the mode
+- the mode survives [`Chords::clear`] — a replug forgets the hold and
+  keeps the verb, because the mode is not a button that can stick down
+- nothing in a move animates. After `9b2eee5` the only moving thing on
+  the surface is amber, so a breathing preview would be claiming that
+  something is asking
 
 **Only the hardware says:**
 

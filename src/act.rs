@@ -35,6 +35,17 @@ pub enum Done {
     Killed(String),
     /// Ended rows were forgotten, and how many.
     Forgot(usize),
+    /// A pad came into your hand. **Nothing was written** — a pick-up
+    /// that is never put down must leave anchord untouched.
+    Picked(Slot),
+    /// A session changed address: one `tl.slot` write, and the agent
+    /// never learns it happened.
+    Moved {
+        /// Where it was.
+        from: Slot,
+        /// Where it is now.
+        to: Slot,
+    },
     /// The gesture did not apply here. The preview said so first.
     Nothing,
 }
@@ -46,6 +57,12 @@ impl std::fmt::Display for Done {
             Self::Killed(id) => write!(f, "killed {id}"),
             Self::Forgot(1) => write!(f, "forgot 1 row"),
             Self::Forgot(n) => write!(f, "forgot {n} rows"),
+            Self::Picked(at) => write!(f, "picked up {}:{}:{}", at.page, at.row, at.col),
+            Self::Moved { from, to } => write!(
+                f,
+                "moved {}:{}:{} -> {}:{}:{}",
+                from.page, from.row, from.col, to.page, to.row, to.col
+            ),
             Self::Nothing => write!(f, "nothing to do"),
         }
     }
@@ -92,15 +109,23 @@ impl Context<'_> {
     ///
     /// # Errors
     /// Whatever anchord returned. A refusal is reported, not retried.
-    pub fn chord(&self, action: Action, at: Slot) -> Result<Done, anchor::Error> {
+    pub fn chord(&self, action: Action, at: Slot, pages: &Pages) -> Result<Done, anchor::Error> {
         // The **consequence** dispatches, not the button. `Stop` carries
         // two, and asking `effect` which one applies here is the same
         // question the preview asked a frame ago — so there is still one
         // predicate, and still no second place for it to disagree.
-        match effect(action, self.pads.at(at)) {
-            Effect::None | Effect::Skips => Ok(Done::Nothing),
+        match effect(action, self.pads.at(at), self.pads.hand()) {
+            // `Holds` is the pad already in your hand. Putting it back
+            // where it came from is not a move and writes nothing, which
+            // is the same answer the preview gave by lighting it rather
+            // than dimming it.
+            Effect::None | Effect::Skips | Effect::Holds => Ok(Done::Nothing),
             Effect::Acts(Consequence::Ends) => self.kill(at),
             Effect::Acts(Consequence::Forgotten) => Ok(self.forget(at)),
+            // A pick-up is surface state, not an anchord call. It is
+            // reported rather than performed, and the loop records it.
+            Effect::Acts(Consequence::PickedUp) => Ok(Done::Picked(at)),
+            Effect::Acts(Consequence::Dropped) => self.put_down(at, pages),
         }
     }
 
@@ -154,6 +179,35 @@ impl Context<'_> {
             return Err(e);
         }
         Ok(Done::Killed(r.session.clone()))
+    }
+
+    /// Put the pad in your hand down here: **one label write.**
+    ///
+    /// A pad's address is its `tl.slot` and nothing else, so moving a
+    /// session is rewriting one string. No process moves, no pane is
+    /// touched, and the agent never learns it happened
+    /// (`docs/22-the-mode-button.md#move-is-the-missing-verb`).
+    ///
+    /// Only the **drawn** session moves. Every ended row at the old
+    /// address stays there, so the row it left still knows its directory
+    /// and keeps its `>`: dragging a session out of a row is not a claim
+    /// that the row never existed.
+    fn put_down(&self, to: Slot, pages: &Pages) -> Result<Done, anchor::Error> {
+        // All three are things `effect` already established before it
+        // said `Dropped`; they are re-asked rather than assumed because
+        // this function is also the one that writes.
+        let (Some(from), Some(address)) = (self.pads.hand(), to.label(pages)) else {
+            return Ok(Done::Nothing);
+        };
+        let Some(r) = self.pads.grid().get(&from) else {
+            // It exited between the pick-up and the drop. The next
+            // reconcile draws it dead, which is the truth.
+            return Ok(Done::Nothing);
+        };
+        let mut set = BTreeMap::new();
+        let _slot = set.insert(anchor::LABEL_SLOT.to_owned(), address);
+        self.client.label(&r.session, &set, &[])?;
+        Ok(Done::Moved { from, to })
     }
 
     /// Forget every ended row behind a pad.
@@ -232,7 +286,7 @@ spec = "claude"
     ) -> Context<'a> {
         Context {
             client,
-            pads: Pads::new(grid, config, purgeable),
+            pads: Pads::new(grid, config, purgeable, None),
         }
     }
 
@@ -281,7 +335,8 @@ spec = "claude"
         let (client, config, purge) = (nowhere(), Config::default(), BTreeMap::new());
         let ctx = context(&client, &config, &grid, &purge);
         assert_eq!(
-            ctx.chord(Action::Stop, at(2, 2)).expect("no call"),
+            ctx.chord(Action::Stop, at(2, 2), &Pages::default())
+                .expect("no call"),
             Done::Nothing
         );
     }
@@ -337,7 +392,7 @@ spec = "claude"
             "dark at rest: there is nothing to draw"
         );
         assert_eq!(
-            effect(Action::Stop, ctx.pads.at(at(5, 5))),
+            effect(Action::Stop, ctx.pads.at(at(5, 5)), None),
             Effect::Acts(Consequence::Forgotten),
             "and a target under the hold"
         );
@@ -353,6 +408,7 @@ spec = "claude"
                 queued: 0,
                 launchable: &BTreeSet::new(),
                 held: Some(Action::Stop),
+                hand: None,
                 overview: false,
                 pressed: &pressed,
                 art: false,
@@ -420,6 +476,7 @@ spec = "claude"
                 queued: 0,
                 launchable: &BTreeSet::new(),
                 held: Some(Action::Stop),
+                hand: None,
                 overview: false,
                 pressed: &pressed,
                 art: false,
@@ -432,7 +489,8 @@ spec = "claude"
             "a pad that already ended is not a kill target"
         );
         assert_eq!(
-            ctx.chord(Action::Stop, at(5, 5)).expect("no call"),
+            ctx.chord(Action::Stop, at(5, 5), &Pages::default())
+                .expect("no call"),
             Done::Nothing,
             "and the press must agree with the pixel"
         );

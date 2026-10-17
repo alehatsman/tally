@@ -58,6 +58,22 @@ const DEVICE_SILENCE: Duration = Duration::from_secs(7);
 /// it — a hardware question, which is why it is a named constant.
 const HOME_HOLD: Duration = Duration::from_millis(500);
 
+/// How short a press has to be to count as a **tap** on `CC19` rather
+/// than an aborted hold.
+///
+/// This number is the only thing standing between the mode toggle and
+/// chord rule 4 — *releasing a modifier without tapping is a no-op* —
+/// which is the escape hatch the whole hold-then-tap grammar rests on.
+/// A hold long enough to read a preview is nowhere near 250 ms; a
+/// deliberate tap is about 100 ms (`docs/22-the-mode-button.md`).
+const TAP: Duration = Duration::from_millis(250);
+
+/// How close two taps on `CC19` have to be to toggle the mode.
+///
+/// Long enough to be comfortable, short enough that two unrelated
+/// presses do not pair into a mode change you did not ask for.
+const DOUBLE_TAP: Duration = Duration::from_millis(400);
+
 /// Async-signal-safe: a relaxed store and nothing else.
 ///
 /// The restore is four MIDI writes and a port close, none of which is
@@ -102,7 +118,126 @@ fn reraise(signum: i32) -> ! {
 /// fresh `list`, so a kill that did not land shows as a pad that is still
 /// green — the truth, and better than an error state invented for the
 /// surface.
-fn perform(ctx: &Context<'_>, gesture: Gesture, at: Slot, pages: &Pages, tmux: &impl Jump) {
+/// The `CC19` double-tap, tracked across presses.
+///
+/// A tap is a press and a release close together with **no chord fired
+/// in between** — which is exactly what distinguishes it from an aborted
+/// hold, the gesture chord rule 4 promises will do nothing. Two of them
+/// inside [`DOUBLE_TAP`] toggle the mode.
+///
+/// The clock is here and not in `chord.rs` because that module is pure —
+/// presses in, gestures out, no `now` — and that purity is what lets the
+/// four chord rules be tested without a device or a timeline. Same shape
+/// as `home_press`, and the same precedent (`docs/20-the-overview.md`).
+#[derive(Debug, Clone, Copy, Default)]
+struct Corner {
+    /// When it went down, while it is down.
+    down: Option<Duration>,
+    /// A chord fired during this hold, so the release is not a tap.
+    used: bool,
+    /// When the last completed tap ended.
+    tapped: Option<Duration>,
+}
+
+impl Corner {
+    /// `CC19` went down or came up. Returns `true` when that completed a
+    /// double-tap and the mode should flip.
+    fn feed(&mut self, down: bool, elapsed: Duration) -> bool {
+        if down {
+            self.down = Some(elapsed);
+            self.used = false;
+            return false;
+        }
+        let held = self.down.take().map(|since| elapsed.saturating_sub(since));
+        // An aborted hold, or a hold that did something. Neither is a
+        // tap, and a long press must not leave a half-double behind for
+        // the next one to pair with.
+        if self.used || held.is_none_or(|h| h > TAP) {
+            self.tapped = None;
+            return false;
+        }
+        match self.tapped.take() {
+            Some(first) if elapsed.saturating_sub(first) <= DOUBLE_TAP => true,
+            // First tap of a possible pair, or a second one that came
+            // too late — which starts a new pair rather than failing.
+            _ => {
+                self.tapped = Some(elapsed);
+                false
+            }
+        }
+    }
+
+    /// A gesture completed while the corner may have been down. A chord
+    /// means this hold did something, so its release is not a tap.
+    fn saw(&mut self, gesture: Gesture) {
+        self.used |= matches!(gesture, Gesture::Chord { .. });
+    }
+}
+
+/// `CC19` went down or came up. Returns whether the surface changed.
+///
+/// Extracted rather than inlined because `main` is already at the
+/// cognitive-complexity cap, and because the two things that happen on
+/// this one button — a double-tap toggling the verb, and a release
+/// emptying the hand — are unrelated to each other and to everything
+/// else in the press loop.
+fn corner_event(
+    corner: &mut Corner,
+    chords: &mut Chords,
+    hand: &mut Option<Slot>,
+    button: Button,
+    down: bool,
+    elapsed: Duration,
+) -> bool {
+    if button != Action::Stop.button() {
+        return false;
+    }
+    let toggled = corner.feed(down, elapsed);
+    if toggled {
+        chords.toggle_mode();
+        eprintln!("tallyd: corner {:?}", chords.mode());
+    }
+    // Letting go empties the hand. A pick-up you did not put down must
+    // leave the board exactly as it was, which is chord rule 4 doing the
+    // job it was put there for.
+    if !down {
+        *hand = None;
+    }
+    toggled
+}
+
+/// What a press did to the hand under a held `Move`.
+///
+/// Returned rather than mutated because [`perform`] has no business
+/// owning surface state — it carries gestures out and says what
+/// happened, and the loop that owns the hold owns the hand.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Hand {
+    /// Not a move, or a move that wrote nothing.
+    Unchanged,
+    /// A pad came into your hand.
+    Took(Slot),
+    /// It landed. The hand is empty again.
+    Emptied,
+}
+
+impl Hand {
+    /// Fold this into the loop's hand.
+    ///
+    /// A method rather than a `match` at the call site for the same
+    /// reason [`corner_event`] exists: `main` is at the
+    /// cognitive-complexity cap and this is the kind of three-arm
+    /// bookkeeping that belongs next to the enum it is about.
+    fn apply(self, hand: &mut Option<Slot>) {
+        match self {
+            Self::Unchanged => {}
+            Self::Took(at) => *hand = Some(at),
+            Self::Emptied => *hand = None,
+        }
+    }
+}
+
+fn perform(ctx: &Context<'_>, gesture: Gesture, at: Slot, pages: &Pages, tmux: &impl Jump) -> Hand {
     let (row, col) = (at.row, at.col);
     match gesture {
         Gesture::Tap { .. } => match ctx.tap(at, pages) {
@@ -123,14 +258,34 @@ fn perform(ctx: &Context<'_>, gesture: Gesture, at: Slot, pages: &Pages, tmux: &
             Ok(Some(done)) => eprintln!("tallyd: {}:{row}:{col} {done}", at.page),
             Err(e) => eprintln!("tallyd: spawn {}:{row}:{col}: {e}", at.page),
         },
-        Gesture::Chord { action, .. } => match ctx.chord(action, at) {
-            // The preview already said nothing would happen here, so the
-            // log stays quiet too: a line per dimmed pad you brushed is
-            // noise in the only file that is read after something broke.
-            Ok(Done::Nothing) => {}
-            Ok(done) => eprintln!("tallyd: {action:?} {}:{row}:{col} {done}", at.page),
-            Err(e) => eprintln!("tallyd: {action:?} {}:{row}:{col}: {e}", at.page),
-        },
+        Gesture::Chord { action, .. } => {
+            return match ctx.chord(action, at, pages) {
+                // The preview already said nothing would happen here, so
+                // the log stays quiet too: a line per dimmed pad you
+                // brushed is noise in the only file that is read after
+                // something broke.
+                Ok(Done::Nothing) => Hand::Unchanged,
+                Ok(done @ Done::Picked(picked)) => {
+                    eprintln!("tallyd: {action:?} {}:{row}:{col} {done}", at.page);
+                    Hand::Took(picked)
+                }
+                Ok(done @ Done::Moved { .. }) => {
+                    eprintln!("tallyd: {action:?} {}:{row}:{col} {done}", at.page);
+                    Hand::Emptied
+                }
+                Ok(done) => {
+                    eprintln!("tallyd: {action:?} {}:{row}:{col} {done}", at.page);
+                    Hand::Unchanged
+                }
+                Err(e) => {
+                    eprintln!("tallyd: {action:?} {}:{row}:{col}: {e}", at.page);
+                    // The write failed, so the pad is still in your hand
+                    // and still white. Emptying it here would lose the
+                    // pick-up to an error you can simply retry.
+                    Hand::Unchanged
+                }
+            };
+        }
         // Handled in the loop: they change where you are or what is
         // running, and all of them need state the loop computes.
         Gesture::PageUp
@@ -142,6 +297,7 @@ fn perform(ctx: &Context<'_>, gesture: Gesture, at: Slot, pages: &Pages, tmux: &
         | Gesture::Arts
         | Gesture::Launch { .. } => {}
     }
+    Hand::Unchanged
 }
 
 /// Write one navigation line, dropping the sink if it fails.
@@ -480,6 +636,11 @@ fn main() -> ExitCode {
     let mut offset = 0u8;
     // Set while `▲` is down, taken when the hold fires.
     let mut home_press: Option<Duration> = None;
+    // The `CC19` double-tap, and the pad a held `Move` is carrying. Both
+    // live here for the same reason `home_press` does: they are timed or
+    // multi-press gestures, and `chord.rs` is pure on purpose.
+    let mut corner = Corner::default();
+    let mut hand: Option<Slot> = None;
     // The queue, as of the last tick: what the finger was looking at when
     // it landed. Recomputing on the press would act on a grid the eye
     // never saw.
@@ -557,9 +718,21 @@ fn main() -> ExitCode {
                         if button == Button::Top(1) {
                             home_press = down.then_some(elapsed);
                         }
+                        // Same reason, same place: a double-tap is two
+                        // presses close in time, and the release that
+                        // completes one answers `None` from `feed`.
+                        repaint |= corner_event(
+                            &mut corner,
+                            &mut chords,
+                            &mut hand,
+                            button,
+                            down,
+                            elapsed,
+                        );
                         let Some(gesture) = chords.feed(button, down) else {
                             continue;
                         };
+                        corner.saw(gesture);
                         let swallowed = left_art(&mut reel, gesture);
                         repaint |= swallowed;
                         if swallowed {
@@ -607,9 +780,9 @@ fn main() -> ExitCode {
                                     // Last tick's grid: what the pad the
                                     // finger landed on was showing, which
                                     // is the only honest thing to act on.
-                                    pads: model::Pads::new(&grid, &config, &purgeable),
+                                    pads: model::Pads::new(&grid, &config, &purgeable, hand),
                                 };
-                                perform(&ctx, gesture, at, &pages, &tmux);
+                                perform(&ctx, gesture, at, &pages, &tmux).apply(&mut hand);
                                 // Whatever it was, the grid is now stale.
                                 // Pull the list forward rather than
                                 // leaving the pad wrong for two seconds.
@@ -702,7 +875,7 @@ fn main() -> ExitCode {
         // The queue, after the journal has been brought up to date: the
         // map it keeps *is* the queue, ordered by when each slot started
         // asking (`docs/16-the-queue.md`).
-        let pads = model::Pads::new(&resolved, &config, &purgeable);
+        let pads = model::Pads::new(&resolved, &config, &purgeable, hand);
         let viewing: std::collections::BTreeSet<Slot> = tmux
             .viewing()
             .iter()
@@ -754,6 +927,7 @@ fn main() -> ExitCode {
             can_go_back: tmux.can_go_back(),
             queued,
             held: chords.modifier(),
+            hand,
             overview: chords.overview(),
             art: reel.is_some(),
             pressed: &pressed,
@@ -810,4 +984,80 @@ fn main() -> ExitCode {
     }
     drop(device); // Drop restores Live mode and verifies it by readback.
     reraise(signum);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ms(n: u64) -> Duration {
+        Duration::from_millis(n)
+    }
+
+    /// Two quick taps, and the corner flips.
+    #[test]
+    fn two_quick_taps_toggle_the_mode() {
+        let mut c = Corner::default();
+        assert!(!c.feed(true, ms(0)));
+        assert!(!c.feed(false, ms(80)), "one tap is not a double");
+        assert!(!c.feed(true, ms(200)));
+        assert!(c.feed(false, ms(280)), "the second one inside the window");
+    }
+
+    /// **The assertion the whole toggle rests on.** Chord rule 4 says
+    /// releasing a modifier without tapping is a no-op, and that escape
+    /// hatch is what the hold-then-tap grammar is built on. Abort a kill
+    /// twice and the mode must not have moved
+    /// (`docs/22-the-mode-button.md#changing-the-mode`).
+    #[test]
+    fn an_aborted_hold_is_not_a_tap() {
+        let mut c = Corner::default();
+        assert!(!c.feed(true, ms(0)));
+        assert!(!c.feed(false, ms(900)), "a long look at the preview");
+        assert!(!c.feed(true, ms(1000)));
+        assert!(!c.feed(false, ms(1900)), "and another one");
+    }
+
+    /// A hold that actually fired a chord is not a tap either, however
+    /// quick it was. You killed something; you did not ask for a mode.
+    #[test]
+    fn a_hold_that_did_something_is_not_a_tap() {
+        let mut c = Corner::default();
+        assert!(!c.feed(true, ms(0)));
+        c.saw(Gesture::Chord {
+            action: Action::Stop,
+            row: 1,
+            col: 1,
+        });
+        assert!(!c.feed(false, ms(60)));
+        assert!(!c.feed(true, ms(100)));
+        assert!(!c.feed(false, ms(160)), "the pair was never started");
+    }
+
+    /// Two taps too far apart are two taps, not a double. The second
+    /// starts a new pair rather than failing, so a slow hand does not
+    /// have to stop and start over.
+    #[test]
+    fn taps_too_far_apart_do_not_pair() {
+        let mut c = Corner::default();
+        assert!(!c.feed(true, ms(0)));
+        assert!(!c.feed(false, ms(80)));
+        assert!(!c.feed(true, ms(2000)));
+        assert!(!c.feed(false, ms(2080)), "too late to pair");
+        assert!(!c.feed(true, ms(2200)));
+        assert!(c.feed(false, ms(2280)), "but it started a fresh pair");
+    }
+
+    /// A long press between two taps clears the half-pair. Otherwise an
+    /// abort could silently complete a double you started a minute ago.
+    #[test]
+    fn a_long_press_clears_a_half_started_double() {
+        let mut c = Corner::default();
+        assert!(!c.feed(true, ms(0)));
+        assert!(!c.feed(false, ms(80)), "first tap");
+        assert!(!c.feed(true, ms(120)));
+        assert!(!c.feed(false, ms(900)), "an abort, not a tap");
+        assert!(!c.feed(true, ms(950)));
+        assert!(!c.feed(false, ms(1000)), "so this is a first tap again");
+    }
 }

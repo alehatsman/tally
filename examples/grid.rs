@@ -38,7 +38,13 @@ fn main() {
     for row in 1..=8 {
         f.set(
             Button::Action(row),
-            render::action(tally::chord::Action::of(Button::Action(row)), false),
+            // The corner at rest, in whichever verb it is carrying. A
+            // fixture needs one of the two and does not care which
+            // (`docs/22-the-mode-button.md`).
+            render::action(
+                tally::chord::Action::of(Button::Action(row), tally::chord::Action::Stop),
+                false,
+            ),
         );
     }
     f.set(

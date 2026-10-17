@@ -34,6 +34,20 @@ pub enum Action {
     /// half of what it does, and because that is the word the silkscreen
     /// puts under the corner it lives in.
     Stop,
+    /// `CC19` in its other mode — **pick a pad up and put it down.**
+    ///
+    /// The surface had no way to rearrange itself: a shell spawn lands
+    /// where you typed and `>` takes the leftmost free column, so after a
+    /// day the board is a log of where things happened to land rather
+    /// than a layout you chose. A move is one `tl.slot` write and the
+    /// agent never learns it happened
+    /// (`docs/22-the-mode-button.md#move-is-the-missing-verb`).
+    ///
+    /// Two taps inside one hold, which needs no new grammar: this module
+    /// already emits one [`Gesture::Chord`] per tap and the pairing lives
+    /// above it. Letting go with something still in hand changes nothing,
+    /// which is rule 4 doing the job it was put there for.
+    Move,
 }
 
 impl Action {
@@ -41,9 +55,13 @@ impl Action {
     ///
     /// `CC49`–`CC79` are unassigned and stay that way: an inert button
     /// that lights up like a live one is an invitation to press it.
-    pub fn of(button: Button) -> Option<Self> {
+    ///
+    /// **Takes the mode**, because the corner carries two verbs now and
+    /// which one is live is surface state, not a property of the button
+    /// (`docs/22-the-mode-button.md#changing-the-mode`).
+    pub fn of(button: Button, mode: Self) -> Option<Self> {
         match button {
-            Button::Action(8) => Some(Self::Stop),
+            Button::Action(8) => Some(mode),
             // `Action(1)`-`Action(7)` are `>`, and they are **taps**, not
             // modifiers: they destroy nothing, so there is nothing for a
             // hold to protect (`docs/18-the-launch-column.md`).
@@ -54,13 +72,26 @@ impl Action {
     /// The button this action lives on.
     pub fn button(self) -> Button {
         match self {
-            Self::Stop => Button::Action(8),
+            // Both modes, one button. That is the whole design: there
+            // were no spare buttons left (`docs/18-the-launch-column.md`).
+            Self::Stop | Self::Move => Button::Action(8),
         }
     }
 
     /// Every action, in top-to-bottom order.
-    pub fn all() -> [Self; 1] {
-        [Self::Stop]
+    pub fn all() -> [Self; 2] {
+        [Self::Stop, Self::Move]
+    }
+
+    /// The other mode. A toggle rather than a cycle: two fit, a third
+    /// would need you to remember the order
+    /// (`docs/22-the-mode-button.md#what-is-deliberately-not-here`).
+    #[must_use]
+    pub fn toggled(self) -> Self {
+        match self {
+            Self::Stop => Self::Move,
+            Self::Move => Self::Stop,
+        }
     }
 }
 
@@ -153,7 +184,7 @@ fn top(n: u8) -> Option<Gesture> {
 const OVERVIEW: Button = Button::Top(5);
 
 /// Which modifiers are down.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Chords {
     /// In press order. At most four, so a `Vec` is the right amount of
     /// machinery — a press that is already down is not pushed twice.
@@ -166,6 +197,28 @@ pub struct Chords {
     /// the list would make every `Action` match answer a question about a
     /// button that is not an `Action`.
     overview: bool,
+    /// Which verb `CC19` is carrying.
+    ///
+    /// Surface state, so it lives with the other surface state and not in
+    /// the model. It **latches**, which is allowed here for a reason the
+    /// ROADMAP's rejection of latched modes does not reach: nothing is
+    /// invisible. The state is the colour of the button that set it, and
+    /// the grid does not change until you hold — at which point it
+    /// repaints entirely in the mode's colour under your thumb, before
+    /// anything can fire (`docs/22-the-mode-button.md#changing-the-mode`).
+    mode: Action,
+}
+
+impl Default for Chords {
+    fn default() -> Self {
+        Self {
+            held: Vec::new(),
+            overview: false,
+            // It rests on Stop: four presses of muscle memory, and the
+            // word the silkscreen puts under that corner.
+            mode: Action::Stop,
+        }
+    }
 }
 
 impl Chords {
@@ -193,7 +246,7 @@ impl Chords {
             self.overview = down;
             return None;
         }
-        if let Some(action) = Action::of(button) {
+        if let Some(action) = Action::of(button, self.mode) {
             if down {
                 if !self.held.contains(&action) {
                     self.held.push(action);
@@ -282,6 +335,23 @@ impl Chords {
         self.overview && self.held.is_empty()
     }
 
+    /// Which verb the corner is carrying.
+    pub fn mode(&self) -> Action {
+        self.mode
+    }
+
+    /// Flip the corner to its other verb.
+    ///
+    /// **Called by `tallyd`, never from here.** A double-tap is two
+    /// presses close together in time, and this module has no clock on
+    /// purpose: it is pure, and that is what lets the four chord rules be
+    /// tested without a device or a timeline. The loop that owns
+    /// `elapsed` owns the threshold, exactly as it does for the `▲` hold
+    /// (`docs/20-the-overview.md`, `docs/22-the-mode-button.md`).
+    pub fn toggle_mode(&mut self) {
+        self.mode = self.mode.toggled();
+    }
+
     /// Forget every held button.
     ///
     /// Called when the device goes away. A modifier that was down when the
@@ -292,6 +362,10 @@ impl Chords {
     pub fn clear(&mut self) {
         self.held.clear();
         self.overview = false;
+        // The mode deliberately survives: it is not a button that can be
+        // stuck down, it is what the corner means, and a replug that
+        // silently moved it back to Stop would be a surface lying about
+        // itself.
     }
 }
 
@@ -321,7 +395,7 @@ mod tests {
         assert_eq!(PURGE.index(), 39);
         assert_eq!(MUTE.index(), 89);
         for action in Action::all() {
-            assert_eq!(Action::of(action.button()), Some(action));
+            assert_eq!(Action::of(action.button(), action), Some(action));
         }
     }
 
@@ -416,7 +490,7 @@ mod tests {
     #[test]
     fn the_middle_of_the_column_is_unassigned() {
         for row in 2..=5 {
-            assert_eq!(Action::of(Button::Action(row)), None);
+            assert_eq!(Action::of(Button::Action(row), Action::Stop), None);
         }
     }
 
@@ -557,5 +631,79 @@ mod tests {
             None,
             "a release fires nothing"
         );
+    }
+
+    /// The corner carries two verbs and `Action::of` answers with
+    /// whichever is loaded. Same button, same gesture, different word.
+    #[test]
+    fn the_corner_answers_with_the_mode_it_is_in() {
+        for mode in Action::all() {
+            assert_eq!(Action::of(Button::Action(8), mode), Some(mode), "{mode:?}");
+        }
+    }
+
+    /// It rests on Stop: four presses of muscle memory, and the word the
+    /// silkscreen puts under that corner.
+    #[test]
+    fn the_corner_rests_on_stop_and_toggles_to_move() {
+        let mut c = Chords::default();
+        assert_eq!(c.mode(), Action::Stop);
+        c.toggle_mode();
+        assert_eq!(c.mode(), Action::Move);
+        c.toggle_mode();
+        assert_eq!(c.mode(), Action::Stop, "a toggle, not a cycle");
+    }
+
+    /// A hold under `Move` emits the same `Chord` shape a hold under
+    /// `Stop` does. The pairing of two taps into a move lives above this
+    /// module, which is why no new grammar was needed.
+    #[test]
+    fn a_move_chord_is_an_ordinary_chord() {
+        let mut c = Chords::default();
+        c.toggle_mode();
+        assert_eq!(c.feed(Button::Action(8), true), None);
+        assert_eq!(
+            c.feed(Button::Grid { row: 3, col: 4 }, true),
+            Some(Gesture::Chord {
+                action: Action::Move,
+                row: 3,
+                col: 4
+            })
+        );
+        assert_eq!(
+            c.feed(Button::Grid { row: 5, col: 6 }, true),
+            Some(Gesture::Chord {
+                action: Action::Move,
+                row: 5,
+                col: 6
+            }),
+            "and a second tap inside the same hold is another one"
+        );
+    }
+
+    /// The mode is not a button that can be stuck down. A replug that
+    /// silently moved the corner back to Stop would be the surface lying
+    /// about itself.
+    #[test]
+    fn a_replug_forgets_the_hold_and_keeps_the_mode() {
+        let mut c = Chords::default();
+        c.toggle_mode();
+        assert_eq!(c.feed(Button::Action(8), true), None);
+        c.clear();
+        assert!(!c.is_held(Action::Move), "the hold is gone");
+        assert_eq!(c.mode(), Action::Move, "the mode is not");
+    }
+
+    /// This module has no clock, and that is what lets the four chord
+    /// rules be tested without a device or a timeline. The double-tap
+    /// lives in `tallyd` for the same reason `Home` does.
+    #[test]
+    fn no_sequence_of_presses_alone_changes_the_mode() {
+        let mut c = Chords::default();
+        for _ in 0..8 {
+            let _down = c.feed(Button::Action(8), true);
+            let _up = c.feed(Button::Action(8), false);
+        }
+        assert_eq!(c.mode(), Action::Stop, "chord.rs never toggles it");
     }
 }

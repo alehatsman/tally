@@ -51,6 +51,13 @@ pub struct View<'a> {
     /// (`crate::chord::Chords::modifier`). The grid recolours to show
     /// what it would do.
     pub held: Option<Action>,
+    /// The pad picked up under a held [`Action::Move`], if any.
+    ///
+    /// Only ever `Some` while [`Self::held`] is [`Action::Move`]: letting
+    /// go empties the hand, because a pick-up you did not put down must
+    /// leave the board exactly as it was
+    /// (`docs/22-the-mode-button.md#hold-tap-the-source-tap-the-destination`).
+    pub hand: Option<Slot>,
     /// `Session` is held, so the grid is the whole 64-row address space
     /// rather than the eight-row window onto it
     /// (`docs/20-the-overview.md`). Outranks [`Self::held`], which is
@@ -200,6 +207,10 @@ pub enum Effect {
     /// consequences is the case that makes the difference load-bearing
     /// (`docs/22-the-mode-button.md`).
     Acts(Consequence),
+    /// The pad already in your hand. Lit, and a tap on it does nothing —
+    /// putting a pad back where it came from is not a move, and the
+    /// write that would express it is the one anchord already has.
+    Holds,
     /// Something is here and this gesture does not apply to it. Dim.
     Skips,
     /// Nothing here for this gesture. Dark.
@@ -220,6 +231,12 @@ pub enum Consequence {
     /// Every ended row behind this pad is forgotten — including the ones
     /// nothing draws.
     Forgotten,
+    /// This session comes into your hand. Nothing is written yet — a
+    /// pick-up that is never put down must leave anchord untouched.
+    PickedUp,
+    /// The session in your hand lands here: one `tl.slot` write, and the
+    /// agent never learns it happened.
+    Dropped,
 }
 
 /// One pad, as a gesture sees it.
@@ -236,6 +253,15 @@ pub struct Pad {
     /// a pad lit on the strength of the label would promise a respawn
     /// that [`Pads::launch`] cannot perform.
     pub spec: bool,
+    /// This is the pad currently **in your hand** under a held
+    /// [`Action::Move`]: picked up, not yet put down.
+    ///
+    /// Positional rather than a property of the session, which is why it
+    /// is resolved by [`Pads`] alongside everything else a pad means. A
+    /// gesture that spans two taps needs somewhere to keep the first one,
+    /// and the only honest place is the same struct the second tap will
+    /// be judged against (`docs/22-the-mode-button.md#hold-tap-the-source-tap-the-destination`).
+    pub in_hand: bool,
     /// anchord holds at least one row for this pad that it would forget.
     /// Includes rows that are **not drawn**: a clean exit keeps its
     /// `tl.slot` and its log, and its pad is dark
@@ -317,7 +343,7 @@ pub fn row_launch(
 /// because the *preview* is the point: a destructive button with no label
 /// has to answer "what happens if I press this" before you press it, and
 /// it has to answer with the same predicate the press uses.
-pub fn effect(action: Action, pad: Pad) -> Effect {
+pub fn effect(action: Action, pad: Pad, hand: Option<Slot>) -> Effect {
     match action {
         // Alive wins over purgeable, and the order is the rule: a pad can
         // be running *and* have a dozen ended rows behind it, and the one
@@ -331,6 +357,30 @@ pub fn effect(action: Action, pad: Pad) -> Effect {
         // rather than an assumption.
         Action::Stop if pad.state.is_some() => Effect::Skips,
         Action::Stop => Effect::None,
+
+        // Move is two questions, and which one is being asked depends on
+        // whether your hand is full. Nothing else about the pad changes
+        // between them.
+        Action::Move if pad.in_hand => Effect::Holds,
+        // Hand empty: what can be picked up. A session that has ended is
+        // not a thing you carry — its address is the only record of where
+        // it ran, and moving that would be rewriting history rather than
+        // arranging work.
+        Action::Move if hand.is_none() => {
+            if pad.alive() {
+                Effect::Acts(Consequence::PickedUp)
+            } else if pad.state.is_some() {
+                Effect::Skips
+            } else {
+                Effect::None
+            }
+        }
+        // Hand full: what it can land on. A pad with something alive on
+        // it is dim rather than a swap — two label writes are two calls,
+        // and a failure between them leaves two sessions claiming one
+        // address (`docs/22-the-mode-button.md#what-is-deliberately-not-here`).
+        Action::Move if pad.alive() => Effect::Skips,
+        Action::Move => Effect::Acts(Consequence::Dropped),
     }
 }
 
@@ -349,21 +399,39 @@ pub struct Pads<'a> {
     grid: &'a BTreeMap<Slot, Resolved>,
     config: &'a Config,
     purgeable: &'a BTreeMap<Slot, Vec<String>>,
+    /// The pad picked up under a held [`Action::Move`], if any.
+    ///
+    /// Here rather than passed to [`effect`] by each caller, for the
+    /// reason the whole struct exists: one function handed two
+    /// differently-built [`Pad`]s tells the same lie as two functions.
+    hand: Option<Slot>,
 }
 
 impl<'a> Pads<'a> {
     /// Borrow a resolved grid, the config behind it, and the rows anchord
     /// would forget ([`purgeable`]).
+    /// `hand` is the pad picked up under a held [`Action::Move`]. It is a
+    /// parameter rather than a setter because a [`Pads`] built without it
+    /// answers [`effect`] wrongly for every pad on the grid, and a
+    /// builder you can forget to call is how the preview and the press
+    /// drifted apart the first time.
     pub fn new(
         grid: &'a BTreeMap<Slot, Resolved>,
         config: &'a Config,
         purgeable: &'a BTreeMap<Slot, Vec<String>>,
+        hand: Option<Slot>,
     ) -> Self {
         Self {
             grid,
             config,
             purgeable,
+            hand,
         }
+    }
+
+    /// The pad in your hand, if one is.
+    pub fn hand(&self) -> Option<Slot> {
+        self.hand
     }
 
     /// What is drawn, by pad. The caller that already resolved gets it
@@ -405,6 +473,7 @@ impl<'a> Pads<'a> {
             muted: r.is_some_and(|r| r.muted),
             spec: self.launch(at).is_some(),
             purgeable: !self.rows(at).is_empty(),
+            in_hand: self.hand == Some(at),
         }
     }
 }
@@ -499,7 +568,7 @@ pub fn frame(
 ) -> Frame {
     let resolved = resolve(sessions, derived, view.pages, view.now);
     let rows = purgeable(sessions, view.pages);
-    frame_from(&Pads::new(&resolved, config, &rows), view)
+    frame_from(&Pads::new(&resolved, config, &rows, view.hand), view)
 }
 
 /// Build the frame from pads already assembled, so a caller that needs
@@ -556,7 +625,7 @@ pub fn frame_from(pads: &Pads<'_>, view: &View<'_>) -> Frame {
                 let pad = pads.at(at);
                 frame.set(
                     Button::Grid { row, col },
-                    render::preview(effect(action, pad)),
+                    render::preview(effect(action, pad, pads.hand())),
                 );
             }
         }
@@ -665,6 +734,7 @@ mod tests {
             can_go_back: false,
             queued: 0,
             held: None,
+            hand: None,
             overview: false,
             pressed: &NO_BUTTONS,
             art: false,
@@ -718,7 +788,7 @@ mod tests {
     fn stop_ends_everything_alive_and_nothing_else() {
         for state in ALIVE {
             assert_eq!(
-                effect(Action::Stop, pad(Some(state))),
+                effect(Action::Stop, pad(Some(state)), None),
                 Effect::Acts(Consequence::Ends),
                 "{state:?}"
             );
@@ -731,12 +801,12 @@ mod tests {
             SlotState::Lost { reclaimable: false },
         ] {
             assert_eq!(
-                effect(Action::Stop, pad(Some(dead))),
+                effect(Action::Stop, pad(Some(dead)), None),
                 Effect::Skips,
                 "{dead:?}"
             );
         }
-        assert_eq!(effect(Action::Stop, pad(None)), Effect::None);
+        assert_eq!(effect(Action::Stop, pad(None), None), Effect::None);
     }
 
     /// The whole claim of the merged button: every pad has **one**
@@ -764,7 +834,110 @@ mod tests {
                     (false, false, true) => Effect::Skips,
                     (false, false, false) => Effect::None,
                 };
-                assert_eq!(effect(Action::Stop, p), want, "{state:?}/{purgeable}");
+                assert_eq!(effect(Action::Stop, p, None), want, "{state:?}/{purgeable}");
+            }
+        }
+    }
+
+    /// Hand empty: what the hold offers is what you can pick up. Only
+    /// what is **alive** — a session that has ended is not a thing you
+    /// carry, because its address is the only record of where it ran.
+    #[test]
+    fn an_empty_hand_offers_what_is_alive() {
+        for state in ALIVE {
+            assert_eq!(
+                effect(Action::Move, pad(Some(state)), None),
+                Effect::Acts(Consequence::PickedUp),
+                "{state:?}"
+            );
+        }
+        for dead in [
+            SlotState::Failed { code: 1 },
+            SlotState::Lost { reclaimable: false },
+        ] {
+            assert_eq!(
+                effect(Action::Move, pad(Some(dead)), None),
+                Effect::Skips,
+                "history does not move"
+            );
+        }
+        assert_eq!(effect(Action::Move, pad(None), None), Effect::None);
+    }
+
+    /// Hand full: the same pads answer a different question. Dark pads
+    /// become the targets and live ones go dim — the exact inverse of
+    /// the empty-handed grid, which is why one colour can serve both.
+    #[test]
+    fn a_full_hand_offers_somewhere_to_put_it() {
+        let held = Slot {
+            page: 1,
+            row: 2,
+            col: 2,
+        };
+        let carried = Pad {
+            state: Some(SlotState::Working),
+            in_hand: true,
+            ..Pad::default()
+        };
+        assert_eq!(
+            effect(Action::Move, carried, Some(held)),
+            Effect::Holds,
+            "the pad in your hand is lit, not dimmed"
+        );
+        assert_eq!(
+            effect(Action::Move, pad(None), Some(held)),
+            Effect::Acts(Consequence::Dropped),
+            "a dark pad is where it can land"
+        );
+        assert_eq!(
+            effect(Action::Move, pad(Some(SlotState::Working)), Some(held)),
+            Effect::Skips,
+            "no swap: two writes are two calls"
+        );
+        assert_eq!(
+            effect(
+                Action::Move,
+                pad(Some(SlotState::Failed { code: 1 })),
+                Some(held)
+            ),
+            Effect::Acts(Consequence::Dropped),
+            "dead history underneath is what every reused pad looks like"
+        );
+    }
+
+    /// Move never ends anything and never forgets anything. The two
+    /// verbs share a button and must not share a consequence.
+    #[test]
+    fn move_is_not_destructive_anywhere_on_the_grid() {
+        for hand in [
+            None,
+            Some(Slot {
+                page: 1,
+                row: 1,
+                col: 1,
+            }),
+        ] {
+            for state in [
+                None,
+                Some(SlotState::Working),
+                Some(SlotState::Quiet),
+                Some(SlotState::Failed { code: 1 }),
+                Some(SlotState::Lost { reclaimable: true }),
+            ] {
+                for purgeable in [false, true] {
+                    let p = Pad {
+                        state,
+                        purgeable,
+                        ..Pad::default()
+                    };
+                    assert!(
+                        !matches!(
+                            effect(Action::Move, p, hand),
+                            Effect::Acts(Consequence::Ends | Consequence::Forgotten)
+                        ),
+                        "{state:?}/{purgeable}/{hand:?}"
+                    );
+                }
             }
         }
     }
@@ -779,7 +952,7 @@ mod tests {
             ..Pad::default()
         };
         assert_eq!(
-            effect(Action::Stop, hidden),
+            effect(Action::Stop, hidden, None),
             Effect::Acts(Consequence::Forgotten),
             "dark, and not empty"
         );
@@ -1187,6 +1360,7 @@ mod tests {
         let v = View {
             overview: false,
             held: None,
+            hand: None,
             ..view(&pages)
         };
         let f = frame(&sessions, &BTreeMap::new(), &NO_SPECS, &v);

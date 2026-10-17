@@ -31,7 +31,7 @@
 use crate::chord::Action;
 use crate::model::{Consequence, Effect};
 use crate::signal::SlotState;
-use crate::surface::palette::{AMBER, DARK_GREY, DARK_RED, GREEN, RED, WHITE};
+use crate::surface::palette::{AMBER, DARK_GREY, DARK_RED, GREEN, RED, TURQUOISE, WHITE};
 use crate::surface::Cell;
 
 /// How one slot is lit.
@@ -179,9 +179,17 @@ pub fn next(waiting: bool) -> Cell {
     }
 }
 
-/// A right-column action button. Red at rest — the colour of what it
-/// does, on the corner the silkscreen labels *Stop*. White while held,
-/// which is the only feedback that the modifier is actually down.
+/// A right-column action button, coloured by the verb it is carrying.
+///
+/// **The colour is the mode**, and it is the only thing that says which
+/// mode you are in — which is what makes a latched corner honest
+/// (`docs/22-the-mode-button.md#changing-the-mode`). Red for *Stop*, the
+/// colour of what it does and the word on the silkscreen; turquoise for
+/// *Move*, which touches nothing that is running.
+///
+/// White while held, unchanged: it is the only feedback that the
+/// modifier is actually down, and it does not need to repeat the mode,
+/// because holding repaints the whole grid in the mode's colour.
 ///
 /// `CC49`-`CC79` carry no gesture and are dark: a button lit like a live
 /// one that does nothing when you press it is worse than an unlit button,
@@ -190,7 +198,8 @@ pub fn action(button: Option<Action>, held: bool) -> Cell {
     match (button, held) {
         (None, _) => Cell::Off,
         (Some(_), true) => Cell::Static(WHITE),
-        (Some(_), false) => Cell::Static(RED),
+        (Some(Action::Stop), false) => Cell::Static(RED),
+        (Some(Action::Move), false) => Cell::Static(TURQUOISE),
     }
 }
 
@@ -219,6 +228,14 @@ pub fn preview(effect: Effect) -> Cell {
         // are already gone.
         Effect::Acts(Consequence::Ends) => Cell::Static(RED),
         Effect::Acts(Consequence::Forgotten) => Cell::Static(DARK_RED),
+        // Both halves of a move are turquoise, and they never share a
+        // grid: your hand is either empty or full, so one colour answers
+        // "what can I pick up" and "where can it land" without ever
+        // having to mean both at once.
+        Effect::Acts(Consequence::PickedUp | Consequence::Dropped) => Cell::Static(TURQUOISE),
+        // The pad in your hand. White is already *this is live right
+        // now*, which is what a pad you are carrying is.
+        Effect::Holds => Cell::Static(WHITE),
     }
 }
 
@@ -507,9 +524,12 @@ mod tests {
         assert_eq!(arrow(true), Cell::Static(DARK_GREY));
     }
 
-    const EFFECTS: [Effect; 4] = [
+    const EFFECTS: [Effect; 7] = [
         Effect::Acts(Consequence::Ends),
         Effect::Acts(Consequence::Forgotten),
+        Effect::Acts(Consequence::PickedUp),
+        Effect::Acts(Consequence::Dropped),
+        Effect::Holds,
         Effect::Skips,
         Effect::None,
     ];
@@ -556,6 +576,38 @@ mod tests {
             preview(Effect::Acts(Consequence::Ends)),
             preview(Effect::Acts(Consequence::Forgotten))
         );
+    }
+
+    /// The mode is the only thing that says which mode you are in, so
+    /// the two must not look alike. This is what makes a latched corner
+    /// honest (`docs/22-the-mode-button.md#changing-the-mode`).
+    #[test]
+    fn the_corner_says_which_verb_it_is_carrying() {
+        let stop = action(Some(Action::Stop), false);
+        let mv = action(Some(Action::Move), false);
+        assert_eq!(stop, Cell::Static(RED));
+        assert_eq!(mv, Cell::Static(TURQUOISE));
+        assert_ne!(stop, mv, "a latched mode that does not say which");
+    }
+
+    /// Held is held, whichever verb is loaded. The mode is not repeated
+    /// under the thumb because holding repaints the whole grid in it.
+    #[test]
+    fn either_mode_goes_white_while_held() {
+        for a in Action::all() {
+            assert_eq!(action(Some(a), true), Cell::Static(WHITE), "{a:?}");
+        }
+    }
+
+    /// Both halves of a move are turquoise and neither moves. After
+    /// 9b2eee5 the only animated thing on the surface is amber, so a
+    /// preview that breathed would be claiming something is asking.
+    #[test]
+    fn a_move_is_turquoise_and_still() {
+        for c in [Consequence::PickedUp, Consequence::Dropped] {
+            assert_eq!(preview(Effect::Acts(c)), Cell::Static(TURQUOISE), "{c:?}");
+        }
+        assert_eq!(preview(Effect::Holds), Cell::Static(WHITE));
     }
 
     /// An unassigned button lit like a live one is an invitation to press
