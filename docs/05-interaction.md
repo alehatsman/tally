@@ -57,7 +57,21 @@ it is done, so "alive and idle" is the common resting state, not "exited".
 
 **One thing moves**, and it breathes — the device's two-beat ramp. Amber
 is reserved, so nothing else on the surface is ever that colour, and
-nothing else on the surface ever moves.
+nothing else on the resting surface ever moves.
+
+There is exactly one exemption, and it is a preview rather than a state:
+under a held Move with a pad in hand, that one pad **flashes**
+([22](22-the-mode-button.md#the-colours)). It breaks both halves of this
+heading at once, and it is allowed to, because both were measured on the
+surface at **rest** — a pad in your hand is not. It is one pad, it lasts
+as long as your thumb, and the grid it is on has no amber to be confused
+with, because a held modifier repaints all 64.
+
+It flashes rather than pulses for a reason that is not taste: both
+figures run on the one clock ([17](17-the-tempo.md)), so speeding this
+pad up by the clock would speed amber up too and lie about how long
+something has been waiting. A flash is one beat where a pulse is two,
+which is the only way to be faster without touching the tempo.
 
 ⚠️ **Working and quiet used to differ, and the table above was changed.**
 Green pulsed for *producing output* and sat still for idle. The pulse was
@@ -279,13 +293,21 @@ and the dead rows light while the running agents go dim: you learn *why* a
 pad is not a target, instead of watching two thirds of the grid vanish and
 guessing.
 
+**Move with a pad in hand is the one place the levels invert.** Everywhere
+else, bright is the target and dim is what will be spared. There, *most of
+the grid* is a legal destination — so room is drawn at the dimmest level
+the language has, and the only bright things left are the two that are not
+room: what is occupied, and what is in your hand
+([22](22-the-mode-button.md#picking-something-up-flips-the-question-not-the-board)).
+
 | held | pad | colour | what the tap does |
 |---|---|---|---|
 | `CC19` **Stop** | alive — working, quiet, wants-you | 5 red | terminate it |
 | `CC19` **Stop** | hiding ended rows | 7 dark red | forget **all** of them |
-| `CC19` **Move** | holds a live session | 37 turquoise | pick it up |
-| `CC19` **Move** | in hand | 3 white | — |
-| `CC19` **Move** | free, on the visible grid | 37 turquoise | put it down there |
+| `CC19` **Move**, hand empty | holds a live session | 37 turquoise | pick it up |
+| `CC19` **Move**, hand full | in hand | 37 turquoise, flashing against dark | — |
+| `CC19` **Move**, hand full | holds a live session | 37 turquoise | nothing — no swap |
+| `CC19` **Move**, hand full | free, on the visible grid | 1 dark grey | put it down there |
 | either | a session this gesture will not touch | 1 dark grey | nothing |
 | either | nothing there | off | nothing |
 

@@ -97,9 +97,10 @@ Two taps inside one hold. No new grammar: `chord.rs` already emits one
 
 ```text
 hold Move          every pad holding a live session goes turquoise
-tap a session      it goes white — it is in your hand
-                   every legal destination stays lit, everything else dims
-tap a dark pad     it lands there
+tap a session      it starts flashing — it is in your hand
+                   every pad it can land on comes up to a dim glow
+                   the occupied pads stay turquoise, and do not move
+tap a dim pad      it lands there
 release early      nothing happened
 ```
 
@@ -163,9 +164,71 @@ the wrong colour.
 |---|---|---|
 | 5 red | Stop at rest; a pad that will be terminated | the colour of what it is about to be |
 | 7 dark red | a pad whose ended rows will be forgotten | already the documented *will be forgotten* colour ([18](18-the-launch-column.md)) |
-| 37 turquoise | Move at rest; a pad that can be picked up | unused since [16](16-the-queue.md) |
-| 3 white | either mode while held; the pad in your hand | already *this is live right now* |
+| 37 turquoise | Move at rest; **a session is here** — a pad that can be picked up, or one that is in the way | unused since [16](16-the-queue.md) |
+| 37 turquoise, flashing against dark | the pad in your hand | it is one of the occupied pads, and it is the one you are carrying — and the fastest figure the device has |
+| 1 dark grey | **somewhere to put it** | the only dim level there is, and it already means *available, not urgent* |
+| 3 white | either mode while held | already *this is live right now* |
 | 1 dark grey | present, and this gesture will not touch it | unchanged |
+
+### Picking something up flips the question, not the board
+
+The first version coloured the second half by *consequence* alone: the
+destinations turquoise, the occupied pads dim. It read wrong, and the
+reason is that it repainted the board under the thumb that had just
+acted. You tap a session and two thirds of what you were looking at
+changes colour for reasons that have nothing to do with the pad you
+touched.
+
+So **turquoise is not the verb, it is the fact**: a session is here. It
+means that before the pick-up and after it, and the occupied board is
+the one thing that does not move when your hand closes. What changes is
+the *question*. Hand empty, you are reading for sessions, and the
+sessions are the lit thing. Hand full, you are reading for room — and
+room comes up to a **dim glow** on pads that were dark a moment ago.
+
+**Dim, not bright, and that is the second correction.** Room was drawn
+white first, on the reasoning that the thing you are looking for should
+be the bright thing. It is not, because of a count: with a hand full,
+*most of the grid* is a legal destination. Lighting destinations brightly
+lights two thirds of the surface, and a board where two thirds is bright
+has told you nothing — the pad you are carrying stops standing out in the
+one frame where it is the only thing that matters.
+
+So the levels invert here, and only here. Everywhere else bright is the
+target and dim is what will be spared. With a pad in hand, dim is the
+target and the only bright things are the two that are **not** room.
+
+The pad in your hand keeps the turquoise it already had and **flashes
+against dark**. Hue says it is one of the occupied; motion says it is the
+one you are carrying. Making it white instead would have made the one pad
+that is not a destination the brightest thing on a board being read for
+destinations.
+
+**Flash rather than pulse, because it is the only way to be faster.**
+Both figures run on the one clock ([17](17-the-tempo.md)) — the clock
+amber's urgency is spoken in — so there is no rate knob here that does
+not also drag amber along. There is only the choice of figure: a pulse
+is a two-beat ramp, a flash is one beat. Twice the rate for free, spent
+on the one pad allowed to be impatient.
+
+It flashes against **dark**, not against a second colour. Dark is the one
+value on this grid that cannot be misread in this moment: an occupied pad
+is turquoise and a destination is a dim grey that never goes fully out, so
+the gap says *nothing*, which is exactly what a pad that is no longer
+anywhere should say half the time.
+
+**This is the only exemption to both *only amber moves* and *nothing
+blinks*** ([05](05-interaction.md#nothing-blinks-and-only-attention-moves)),
+and it is cheap, because both of those were measured on a surface at
+**rest**. A pad in your hand is not at rest. It is one pad, for as long
+as your thumb is down, on a grid a held modifier has already repainted —
+there is no amber on it to compete with, and no time for a 50% chop to
+become the thing that wears you out by afternoon.
+
+`render.rs` pins both bounds as tests rather than comments: *at most one
+pad in any preview moves, and it is the one in your hand*, and *the pad
+in your hand is the fastest thing on the grid* — the second of which
+also asserts amber was not dragged along with it.
 
 Turquoise failed once, as a page button lit beside a white current page —
 two bright colours on one row with no way to tell which was which
@@ -228,7 +291,8 @@ at the worst moment.
 
 **Swap, when the destination is occupied.** Two label writes are two
 anchord calls, and a failure between them leaves two sessions claiming one
-address. An occupied pad is dim and does nothing instead. If compaction
+address. An occupied pad stays turquoise and does nothing instead — it
+is *there*, which is exactly why you cannot land on it. If compaction
 turns out to need it, it needs an atomic two-session op in anchord first.
 
 **A third mode.** Two fit on a toggle. A third needs a cycle, a cycle needs
@@ -242,7 +306,7 @@ you to remember the order, and the next idea after that is a menu.
 | Stop on a `lost` session | purges it — `lost` is purgeable (`model.rs:168`) |
 | Stop on a clean-exited pad that draws dark | dark red under the hold, and a tap forgets it |
 | purge fails for one id in the stack | reported and dropped; the next reconcile redraws the truth ([`act`](../src/act.rs)) |
-| Move with nothing live on the grid | every pad dim; the hold does nothing |
+| Move with nothing live on the grid | nothing lights; the hold does nothing |
 | Move, pick up, then page away and drop | lands on the new page's pad — the address is absolute |
 | Move, pick up, and the session exits before the drop | the drop fails, is reported, and the pad redraws dead |
 | Move onto the pad it came from | nothing; same address, no write |
@@ -273,9 +337,11 @@ you to remember the order, and the next idea after that is a menu.
   sequence of presses alone moves the mode
 - the mode survives [`Chords::clear`] — a replug forgets the hold and
   keeps the verb, because the mode is not a button that can stick down
-- nothing in a move animates. After `9b2eee5` the only moving thing on
-  the surface is amber, so a breathing preview would be claiming that
-  something is asking
+- exactly one thing in a move animates, and it is the pad in your hand.
+  After `9b2eee5` the only moving thing on the *resting* surface is
+  amber, so a second breathing pad would be claiming something is
+  asking — which is why the hand flashes instead of breathing, and why
+  nothing else under the hold moves at all
 
 **Only the hardware says:**
 
