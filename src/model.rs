@@ -72,6 +72,12 @@ pub struct View<'a> {
     /// knows about it: the daemon paints the 64 pads itself while this is
     /// true (`docs/21-the-arts.md`).
     pub art: bool,
+    /// Which verb `CC19` is carrying
+    /// (`crate::chord::Chords::mode`). **The colour of that corner is
+    /// the only thing that says which mode you are in**, which is what
+    /// makes a latched mode honest — so it is read here rather than
+    /// assumed (`docs/22-the-mode-button.md#changing-the-mode`).
+    pub mode: Action,
 }
 
 /// What a session resolved to, once.
@@ -711,7 +717,12 @@ pub fn frame_from(pads: &Pads<'_>, view: &View<'_>) -> Frame {
     }
     frame.set(
         Button::Action(8),
-        render::action(Some(Action::Stop), view.pressed.contains(&Action::Stop)),
+        // Held is asked of the **button**, not of the verb the mode
+        // names: both verbs live on `CC19`, and a double-tap flips the
+        // mode on the release, so a press can go down under one verb and
+        // come up under another. `pressed` holds whichever verb was live
+        // when it went down (`docs/22-the-mode-button.md`).
+        render::action(Some(view.mode), !view.pressed.is_empty()),
     );
 
     // Attention you cannot see, because it is scrolled off the window.
@@ -787,6 +798,7 @@ mod tests {
             overview: false,
             pressed: &NO_BUTTONS,
             art: false,
+            mode: Action::Stop,
         }
     }
 
@@ -1365,6 +1377,55 @@ mod tests {
                 ],
                 "{bad:?} lit a pad"
             );
+        }
+    }
+
+    /// The corner wears the mode's colour, on the frame and not merely
+    /// in [`crate::render::action`].
+    ///
+    /// It is a regression test: `frame_from` passed [`Action::Stop`] as
+    /// a literal, so the renderer knew about turquoise and the surface
+    /// never showed it — the latched mode was invisible, which is the
+    /// one property `docs/22-the-mode-button.md#changing-the-mode` says
+    /// it must never have.
+    #[test]
+    fn the_corner_wears_the_mode() {
+        let pages = Pages::default();
+        let sessions: [Session; 0] = [];
+        for mode in Action::all() {
+            let mut v = view(&pages);
+            v.mode = mode;
+            let f = frame(&sessions, &BTreeMap::new(), &NO_SPECS, &v);
+            assert_eq!(
+                f.get(Button::Action(8)),
+                render::action(Some(mode), false),
+                "{mode:?} at rest"
+            );
+        }
+    }
+
+    /// Held is held, and it is asked of the **button**. A double-tap
+    /// completes on the release, so the verb in `pressed` can be the one
+    /// that was live when the press went down rather than the one the
+    /// mode names now — matching by verb is what stranded a hold and
+    /// froze the grid once (`docs/22-the-mode-button.md`).
+    #[test]
+    fn the_corner_is_white_while_held_in_either_mode() {
+        let pages = Pages::default();
+        let sessions: [Session; 0] = [];
+        for mode in Action::all() {
+            for down in Action::all() {
+                let held: BTreeSet<Action> = [down].into_iter().collect();
+                let mut v = view(&pages);
+                v.mode = mode;
+                v.pressed = &held;
+                let f = frame(&sessions, &BTreeMap::new(), &NO_SPECS, &v);
+                assert_eq!(
+                    f.get(Button::Action(8)),
+                    Cell::Static(WHITE),
+                    "{mode:?} with {down:?} down"
+                );
+            }
         }
     }
 
