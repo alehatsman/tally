@@ -36,7 +36,7 @@
 //! this module always claimed and, until green went still, was not true.
 
 use crate::chord::Action;
-use crate::model::{Consequence, Effect};
+use crate::effect::{Consequence, Effect};
 use crate::signal::SlotState;
 use crate::surface::palette::{AMBER, DARK_GREY, DARK_RED, GREEN, OFF, RED, TURQUOISE, WHITE};
 use crate::surface::Cell;

@@ -23,7 +23,8 @@ use std::collections::BTreeMap;
 use crate::anchor::{self, Client, Spawn};
 use crate::chord::Action;
 use crate::config::Launch;
-use crate::model::{effect, Consequence, Effect, Pads};
+use crate::effect::{effect, Consequence, Effect};
+use crate::model::Pads;
 use crate::slot::{Pages, Slot};
 
 /// What a gesture did, for the log line.
