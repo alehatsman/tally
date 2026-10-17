@@ -94,10 +94,27 @@ does not own the three lights that report.
 ### Claude
 
 The mark, blooming open from a single lit core and then turning —
-orthogonal, all eight spokes, diagonal, all eight again. Nothing on an
-8×8 grid can rotate by less than 45°, so it does not try: the full
-asterisk between the two positions is the frame that sells the turn, and
-without it the mark would read as jumping rather than spinning.
+orthogonal, the mark, diagonal, the mark again. Nothing on an 8×8 grid
+can rotate by less than 45°, so it does not try: the full sunburst
+between the two positions is the frame that sells the turn, and without
+it the mark would read as jumping rather than spinning.
+
+**The diagonals stop short of the corners.** That taper is the entire
+difference between Claude's mark and a `*`: it gives the sunburst a
+circular silhouette where a plain asterisk has a square one. The first
+cut was a plus and an X stacked on each other, which was clean, symmetric
+and recognisably nothing in particular.
+
+```text
+. . . # # . . .
+. # . # # . # .
+. . # # # # . .
+# # # # # # # #
+# # # # # # # #
+. . # # # # . .
+. # . # # . # .
+. . . # # . . .
+```
 
 Amber, which is the surface's reserved *answer me*. Borrowing it is safe
 for the reason every piece here borrows something — while an art is

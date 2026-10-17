@@ -1090,15 +1090,18 @@ const SPARK: [Sprite; 4] = [
         0b0001_1000,
         0b0001_1000,
     ],
-    // all eight spokes: the mark itself
+    // The mark itself: a rounded sunburst. The diagonals stop short of
+    // the corners on purpose — that taper is what gives it a circular
+    // silhouette instead of the square one a plain asterisk has, and it
+    // is the whole difference between Claude's mark and a `*`.
     [
         0b0001_1000,
-        0b1001_1001,
         0b0101_1010,
+        0b0011_1100,
         0b1111_1111,
         0b1111_1111,
+        0b0011_1100,
         0b0101_1010,
-        0b1001_1001,
         0b0001_1000,
     ],
     // turned 45°
@@ -1114,12 +1117,12 @@ const SPARK: [Sprite; 4] = [
     ],
     [
         0b0001_1000,
-        0b1001_1001,
         0b0101_1010,
+        0b0011_1100,
         0b1111_1111,
         0b1111_1111,
+        0b0011_1100,
         0b0101_1010,
-        0b1001_1001,
         0b0001_1000,
     ],
 ];
