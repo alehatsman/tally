@@ -146,7 +146,9 @@ the TUI asked for; it is not what makes this work.
 ```sh
 tmux -L tally load-buffer  -b sq <brief-file>
 tmux -L tally paste-buffer -p -d -b sq -t "$pane"
+                                               # settle
 tmux -L tally send-keys    -t "$pane" Escape   # dismiss the completion menu
+                                               # settle
 tmux -L tally send-keys    -t "$pane" Enter    # submit is always separate
 ```
 
@@ -154,6 +156,20 @@ tmux -L tally send-keys    -t "$pane" Enter    # submit is always separate
 purpose: a master cannot know whether the brief it is pasting will open a
 menu — any leading `/` will, and a brief is a file somebody else wrote —
 and `Escape` with no menu was measured to cost nothing.
+
+**The payload never ends in a newline.** Not because a newline submits —
+it does not — but because the submit must stay a step of its own, so that
+a brief which goes wrong stalls *in the composer* where a human can still
+be shown what happened.
+
+⚠️ **The gaps are not decoration.** Fired back to back with no delay, the
+whole sequence silently does nothing: measured, the brief landed in the
+composer and **sat there for thirty seconds across fifty-two polls, every
+one `idle`.** The TUI needs time to finish handling a paste before the
+next key means what it should. Roughly a second each was enough here; the
+number is not the point and should not be tuned — **the point is that the
+sequence has a timing dependency, so it cannot be fire-and-forget and must
+be confirmed.**
 
 ### The defect is the silence, not the fragility
 
@@ -186,20 +202,81 @@ claude agents --json
 ```
 
 So the check becomes a **post-condition from an API rather than a
-pre-condition parsed off a screen**: paste, `Escape`, `Enter`, then poll —
-**if the member does not go `idle` → `busy`, the submit did not happen.**
+pre-condition parsed off a screen**: paste, `Escape`, `Enter`, then poll.
 `Escape` is then allowed to break, because the receipt does not depend on
 `Escape` being right.
 
-⚠️ **Two measurements before trusting it**: the poll latency, and whether a
-fast reply returns to `idle` before the first poll sees `busy`. And
-`status` is a field name, not a contract.
+**What it costs and how fast it answers**, measured on the same machine:
+
+| | |
+|---|---|
+| one `claude agents --json` | **≈550 ms**, and it returns **every** session — poll once per squad, never per member |
+| `Enter` → `busy` visible | within a single poll (±0.08 s, inside the sampling noise) |
+| how long `busy` lasts | exactly as long as the work: **1.6 s** for a one-second reply, **6.8 s** for a six-second one |
+
+⚠️ **The window can be shorter than the sample.** A reply that completes in
+under half a second is never observed as `busy`. So the receipt is
+one-sided, and that asymmetry is the rule:
+
+> **`busy` proves the submit happened. Never seeing `busy` does not prove
+> it failed — unless it persists.**
+
+Which is how the thirty-second `idle` above was caught, and it is why
+`capture-pane` comes back: **not as the check, as the tiebreaker.** When
+the receipt never arrives, read the composer — text still sitting there is
+a failed submit, an empty composer is a reply that was too fast to catch.
 
 **Probe once per version anyway.** At squad spawn, paste `/sta` and assert
 the composer reads `/sta` rather than `/status`, cached against
 `claude --version`. It costs one paste and it converts *driven wrong* into
 *refuses to drive*. The rule does not need to be stable; it needs to be
 validated.
+
+### `waitingFor` is the amber, and it reaches past this document
+
+Forcing a real permission prompt — a `Write` outside cwd, session started
+`--permission-mode manual` — moved the status to a third value with a
+reason attached:
+
+```json
+{ "name": "spike3-92", "status": "waiting",
+  "waitingFor": "permission prompt" }
+```
+
+Transitions were clean: `busy` at `Enter` +0.0 s, `waiting` at +1.15 s,
+back to `idle` the moment the prompt was cancelled.
+
+**This is the signal the README says never fired.** The amber is the bet
+this product is built on; it never once lit for Claude Code because Claude
+Code does not ring the bell, so [14](14-attention.md) moved attention onto
+hooks. Here it is as a first-class field, with a reason, from a documented
+command that needs no TTY.
+
+**It is also exactly the kind of finding that gets too little scrutiny**,
+because it confirms this document *and* solves somebody else's problem at
+the same time. So, plainly, what is not known:
+
+- **one version** (2.1.236), one machine, and **one** `waitingFor` value
+  ever observed. The vocabulary is not documented.
+- **a question may not count.** Permission prompts are part of the amber;
+  an agent asking you something is the rest of it, and that was not tested.
+- **`idle` is overloaded.** A fresh session and a finished turn are both
+  `idle` — *done and waiting for you* is not distinguishable from *never
+  started*, which is the distinction [16](16-the-queue.md) built a queue on.
+- **the join key is wrong for tally.** `pane_pid` was the claude pid in a
+  bare pane, but tally's panes run `anchor attach`, so the pane pid is the
+  client. Matching needs `cwd` + `sessionId`, or anchor recording the
+  child pid.
+- **550 ms per poll is heavy for a 2 s tick.** A hook pushes; this polls.
+
+**And it breaks a line written earlier in this document.** The section
+below says `tallyd` never reads `claude agents`. If `waitingFor` is the
+amber, `tallyd` is precisely who wants it. The reconciliation that may
+survive both is *hooks stay the amber because they push, and `waitingFor`
+is corroboration on a slower cadence* — but that is a decision about
+[04](04-signals.md) and [14](14-attention.md), **not one this document gets
+to make.** It is recorded here because it was measured here, and it is
+flagged as unresolved rather than quietly folded in.
 
 ### What the spike did not find
 
@@ -209,11 +286,6 @@ message into a session that already exists. Reading a squad is solved and
 official. Driving one is still typing at a TUI, which is why the injection
 rule above is still the rule.
 
-**The payload never ends in a newline.** Not because a newline submits —
-it does not — but because the submit must be the step that is visibly
-separate, so that a brief which goes wrong stalls *in the composer*, where
-`capture-pane -p` can still show a human what happened. That is a
-debugging affordance, not the check.
 
 ## The spec
 
@@ -223,7 +295,7 @@ second one.
 
 | thing | what it is |
 |---|---|
-| squad | **the ledger file** — slot → brief path → status, one per squad |
+| squad | **the ledger file** — the slots, their briefs and their results |
 | row | an absolute row `r01`…`r64`, where the ledger's members are shown |
 | member | a pane in that row, any column, same as any other view |
 | master | whichever session currently holds the ledger — **not a pane in the row** |
@@ -341,16 +413,22 @@ also **a new socket and a new protocol**, and
 
 That rule was written about a `tallyd` control socket and it applies here
 without amendment. An MCP server survives it on **one** condition: it holds
-no state. A read is `anchor ls` and nothing else; a write shells out to
-`tally spawn` / `tally purge` / `tally mute` or to the three tmux commands
-above. Four tools, no cache, no registry, no second source of truth:
+no state. A read is `anchor ls` — joined, for members, with
+`claude agents --json` — and nothing else; a write shells out to
+`tally spawn` / `tally purge` / `tally mute`, or to the four tmux commands
+of the injection rule. Four tools, no cache, no registry, nothing it is
+the only copy of:
 
 ```text
-tally_roster()           -> [{slot, cwd, command, state, attention}]
-tally_send(slot, text)   -> load-buffer / paste-buffer -p / Enter
+tally_roster()           -> [{slot, cwd, command, state, status}]
+tally_send(slot, text)   -> the injection rule, and it returns the receipt
 tally_compact(slot)      -> the same path, payload "/compact"
 tally_spawn(slot, …)     -> tally spawn
 ```
+
+**`tally_send` returns whether the member went `busy`**, because a send
+whose result the caller has to go and check separately is a send that will
+not be checked.
 
 **The moment it caches a roster it is a control socket wearing a hat**, and
 08 says kill it.
@@ -454,9 +532,24 @@ working squad. With the ledger it stops being ambiguous:
 > **unfinished briefs + every member `idle` = stalled**
 
 Both halves are readable without a master running — the ledger from disk,
-`idle` from `claude agents --json`. So *is anyone actually working* is a
-question with an answer, and the answer survives the master that was
+the statuses from `claude agents --json`. So *is anyone actually working*
+is a question with an answer, and the answer survives the master that was
 supposed to know it.
+
+**`idle` is the right word only because `waiting` is a different one.** The
+three observed statuses separate the three cases a squad cares about, and
+they separate them without a master:
+
+| every member | means |
+|---|---|
+| `busy` | working — leave it alone |
+| `waiting` | blocked on you — this is the amber |
+| `idle`, briefs unfinished | **stalled** — nobody is working and nobody is asking |
+
+⚠️ And `idle` is still overloaded within that last row: a member that
+finished its brief and one that never received it both read `idle`. The
+ledger is what tells them apart, which is the argument for the ledger
+restated.
 
 **It surfaces in the CLI, not on the grid.** `tally squad status <row>`.
 [16](16-the-queue.md) spent real effort keeping pad colour meaning exactly
@@ -472,12 +565,18 @@ gets to keep being the only one. So this is a rule under pressure, and the
 line it holds is:
 
 **anchor stays the roster; `claude agents` is member enrichment that only
-the squad reads, and `tallyd` never touches it.**
+the squad reads.**
 
 The two sets are not the same. anchor sees `isayes`, `codex` and bare
-shells, and the grid is about all of them; `status: idle | busy` exists only
-for Claude members and only a squad asks. The day `tallyd` reads it, the
-rule has broken and that belongs on a page, not in a commit.
+shells, and the grid is about all of them; `status` exists only for Claude
+members, and a squad is the only thing that needs it.
+
+⚠️ **That line held for about an hour.** `waitingFor: "permission prompt"`
+is the amber, and the amber is `tallyd`'s business — so the rule is
+already under a pressure this document cannot relieve. **It is named here,
+not resolved here.** Whatever decides it belongs with
+[04](04-signals.md) and [14](14-attention.md), and until then no code
+reads `claude agents` from the daemon.
 
 ## What this costs
 
@@ -486,7 +585,7 @@ rule has broken and that belongs on a page, not in a commit.
 *make* on a row, not something a row *is*, and a row with four unrelated
 agents on it is still legal and still correct. But the eye will read four
 lit pads in a line as a squad whether or not it is one, and that is a real
-cost of putting the roster on the furniture.
+cost of showing a squad on the furniture.
 
 **The Launchpad is not the orchestration surface, and the pitch implied it
 would be.** The intuition this document started from was eight pads you
@@ -510,31 +609,31 @@ than feel.
 - `@tally_session` as the identity, `@tally_slot` as the address
 - the kill chord's grammar, the launch column, purge, mute — the row-end
   chord adds a target to kill, not a new kind of gesture
-- `anchor ls` as the only roster **`tallyd` reads**, and the reconcile tick
-  as the only clock
+- `anchor ls` as the only roster **`tallyd` reads** — today, and pending
+  open question 1 — and the reconcile tick as the only clock
 - **no IPC between our own binaries** — the MCP server, if it is ever
   built, is a translator and not a participant
 
 ## Open questions
 
-1. **Does `idle → busy` arrive in time to be a receipt?** Poll latency is
-   unmeasured, and a reply short enough to finish before the first poll
-   would read as a failed submit. Two numbers settle it, and they are the
-   next thing to measure.
-2. **What is `status`, exactly?** A field name in a JSON array, not a
-   documented contract. `busy` plainly means generating; whether anything
-   distinguishes *waiting on a permission prompt* from *thinking* is
-   unknown — and that distinction is the amber this whole product is a bet
-   on ([14](14-attention.md)).
-3. **Does the member write its own result path, and with what?** One
-   writer per field is the rule; the mechanism is not designed. A hook is
-   the obvious candidate, which is how the amber already works
-   ([04](04-signals.md#4-a-hook--it-told-us)).
-4. **What does a squad do when a member's worktree conflicts?** Isolation
-   stops them corrupting each other's edits; it does nothing about two
-   members producing changes that cannot both land. The ledger has no
-   notion of a merge and probably should not grow one.
-5. **Does `Escape` keep dismissing the menu?** Unanswerable in advance,
-   which is why the rule carries a probe and a receipt instead of a
-   promise. Lower stakes now: the receipt catches the break even when the
-   probe is stale.
+1. **Does `waitingFor` replace the hook, corroborate it, or neither?** The
+   one question here that is not about squads, and the one with the most
+   riding on it — it touches [04](04-signals.md), [14](14-attention.md) and
+   the week of `attention.jsonl` the [README](../README.md) is waiting on.
+   It needs its own page.
+2. **Does `waiting` cover a question, or only a permission prompt?** One
+   value has been observed. If an agent asking you something does not raise
+   it, the field covers less of the amber than it appears to.
+3. **How does a member tell the ledger it is done?** One writer per field
+   is the rule; the mechanism is not designed. A hook is the obvious
+   candidate, which is how the amber already works
+   ([04](04-signals.md#4-a-hook--it-told-us)) — and that is a second reason
+   the hooks question comes first.
+4. **What joins a tally pane to a `claude agents` row?** `pane_pid` is
+   `anchor attach`, not `claude`. Either match on `cwd` + `sessionId`, or
+   anchor learns to report the child pid — which is a change to anchor and
+   therefore an issue, not a decision taken here.
+5. **What does a squad do when two members' worktrees conflict?** Isolation
+   stops them corrupting each other's edits; it does nothing about changes
+   that cannot both land. The ledger has no notion of a merge and probably
+   should not grow one.
