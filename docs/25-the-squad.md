@@ -1,16 +1,25 @@
-# 25 — The squad is a row
+# 25 — The squad is a file, the row is its face
 
 [24](24-the-tally-server.md) gave tally its own tmux server and settled the
 layout: **a row is a session, a column is a pane.** This document spends
 that, and the thing it spends it on is not a feature — it is a unit of
 work.
 
-> **A squad is a row.** Column 1 is the master, columns 2…8 are members,
-> and the Launchpad row you are looking at *is* the roster, lit.
+> **A squad is a ledger file.** The row is where it is displayed, the
+> members are the panes it names, and the master is whoever is currently
+> reading it.
+
+The first draft of this document said *a squad is a row*, with column 1 as
+the master. That was the furniture deciding the design. Three of the four
+questions it left open turned out to be the same question —
+*where does the squad actually live* — and the answer is not on the
+Launchpad. **The grid is an attention surface, not an orchestration
+surface**, which is what it has always been good at and what every other
+document here has assumed.
 
 No new address space, no registry, no identity scheme. The grid already
-knows who is alive; a squad is what you get when you agree that eight pads
-side by side mean something together.
+knows who is alive; a squad is what you get when a file says which of them
+belong together.
 
 ## The feature already shipped, and it is not this one
 
@@ -144,9 +153,37 @@ tmux -L tally send-keys    -t "$pane" Enter    # submit is always separate
 **Four commands, and `Escape` is not optional.** It is unconditional on
 purpose: a master cannot know whether the brief it is pasting will open a
 menu — any leading `/` will, and a brief is a file somebody else wrote —
-and `Escape` with no menu was measured to cost nothing. A conditional
-`Escape` would need the master to read the pane back and decide, which is
-a race against a TUI redraw.
+and `Escape` with no menu was measured to cost nothing.
+
+### The defect is the silence, not the fragility
+
+`Escape` is TUI behaviour and nothing promises it across a version bump.
+Asking *will it keep working* is unanswerable and therefore the wrong
+question. The thing that actually hurts is that **a break is silent**: the
+day `Escape` stops dismissing the menu, nothing errors — a member receives
+a command nobody wrote, and the first symptom is a wrong result some hours
+later.
+
+So the rule gets two cheap checks, and neither is about making the
+keystrokes more robust.
+
+**Read back before submitting.** Between the `Escape` and the `Enter`,
+`capture-pane -p` and assert the composer holds the payload and nothing
+else. The gap already exists because submit is already a separate step;
+this puts an assertion in it. A mismatch aborts instead of sending.
+
+**Probe once per version.** At squad spawn, paste a known three-character
+prefix — `/sta` — and assert the composer still reads `/sta` rather than
+`/status`. Cache the verdict against `claude --version`. The rule does not
+need to be *stable*; it needs to be *validated*, and an unvalidated
+version refuses to be driven rather than being driven wrong.
+
+⚠️ **There may be no need for any of this.** `/status` reports
+`Peer address: uds:/tmp/cc-socks/4002.sock` — every session already has a
+unix socket. If that is a usable control channel the whole typing problem
+evaporates. It is undocumented and internal, which is the same fragility
+with a worse failure mode: a keystroke rule breaks visibly, a wire
+protocol drifts silently. **Worth a spike, not worth a design.**
 
 **The payload never ends in a newline.** Not because a newline submits —
 it does not — but because the submit must be the step that is visibly
@@ -164,20 +201,43 @@ second one.
 
 | thing | what it is |
 |---|---|
-| squad | an absolute row, `r01`…`r64` — the session [24](24-the-tally-server.md) already creates |
-| master | column 1 of that row, by convention and nothing stronger |
-| member | columns 2…8, lazily created panes, same as any view |
+| squad | **the ledger file** — slot → brief path → status, one per squad |
+| row | an absolute row `r01`…`r64`, where the ledger's members are shown |
+| member | a pane in that row, any column, same as any other view |
+| master | whichever session currently holds the ledger — **not a pane in the row** |
 | roster | `anchor ls --label tl.slot` filtered to the row — **not a file** |
 | brief | a file on disk, one per member, path handed in at spawn |
-| ledger | one file per squad: slot → brief path → status |
 
-**Master is column 1 by convention, deliberately.** Nothing enforces it,
-nothing breaks without it, and a row with no master is just a row of
-agents — which is what every row is today. A rule that needs enforcement
-is a rule that needs a registry, and [08](08-lifecycle.md) already spent
-its budget saying no to those.
+**The ledger is the only new artefact, and it is the squad.** Everything
+else in that table already exists. It is a file for the same reason
+[08](08-lifecycle.md) made every other shared fact a file: so that nothing
+has to be running for it to be true.
 
-### Four, not eight
+**The master is the most replaceable part of a squad.** That inverts the
+intuition this started from — a master that hands out identities and holds
+the thread sounds like the irreplaceable centre. It is not: the thread is
+in the ledger, so any new master reads the file and picks it up. The one
+component you can kill freely is the one that was supposed to be in
+charge.
+
+### Control crosses sockets. Attention does not.
+
+[24](24-the-tally-server.md) refused to let a jump cross sockets, and the
+first draft let that refusal cover too much — it put the master in column
+1 so that master and members would share a server.
+
+The refusal is narrower than that. `switch-client` **moves your eyes** and
+must not cross. `send-keys`, `capture-pane` and `load-buffer` move
+**bytes**, and cross freely — every measurement in this document was taken
+by driving a pane on one socket from a session on another.
+
+So the master is an ordinary session wherever you already are, driving
+`-L tally` from outside it. Nothing in [24](24-the-tally-server.md)
+reopens, and the thing that would have — tally's window turning from a
+place jumps *land* into the place you *live* — never comes up. Column 1 is
+a member like any other.
+
+### Four, and four is a guess with a citation
 
 A row holds eight. **Four is the default.** Reported experience across
 several independent write-ups converges on three-to-five as the point past
@@ -189,7 +249,23 @@ is the capacity of the furniture, not a target.
 tally squad <row> [-n 4] [--brief <file>]
 ```
 
-The remaining columns stay dark, which is the grid doing what it does:
+**But `n` is the wrong variable and the ledger already measures the right
+one.** The limit is not how many agents exist, it is **how many members one
+master can service before the median wait gets long** — and the ledger
+records who was sent what and when, which is that measurement for free.
+[16](16-the-queue.md#the-instrument) took the same shape of reading off
+`attention.jsonl` and it is the same instrument.
+
+So the number is not defended here. It is a default with a citation,
+recorded as such, and the week of data that
+[`README`](../README.md) already refuses to hurry is what replaces it.
+
+⚠️ **If the limit is master throughput, it has nothing to do with eight.**
+A squad could legitimately span rows, and `squad = row` would then be
+furniture constraining design. That is the assumption in this document
+most likely to break first.
+
+The unused columns stay dark, which is the grid doing what it does:
 **dark means nothing is there**, the same rule as everywhere else.
 
 ### The roster is the grid, not a broadcast
@@ -281,10 +357,44 @@ So the squad's answer to a full context is: kill the pane, respawn in
 place, paste the brief — same `%id`, same `pane_left`, same column, which
 [24](24-the-tally-server.md) measured.
 
-That is also why the master holds a **ledger of paths and not of work**.
-Members write results to files; the master reads filenames. A master whose
-own context fills with what its members produced is a master that needs
-compacting, and then nobody is holding the thread.
+That is also why the ledger holds **paths and not work**. Members write
+results to files; the master reads filenames. A master whose own context
+fills with what its members produced is a master that needs compacting —
+and because the ledger is on disk, the remedy for that is to kill it and
+start another one, not to compact it.
+
+## What ends a squad
+
+Kill is per pad, and `purge` is about rows that have already ended. Nothing
+says *this row is finished*, which is the gap a squad makes obvious.
+
+**Hold kill, tap that row's `>`.** The scene-launch buttons are already
+row-scoped — `CC89`…`CC29`, one per row, [18](18-the-launch-column.md) —
+and kill is already a hold-modifier. The chord reads the way it acts:
+`>` means *this row*, kill means *destroy*. It inherits the hold-then-tap
+ceremony [05](05-interaction.md#the-exact-rules-of-a-chord) reserves for
+destruction, and row 8 cannot be ended by gesture for the same reason it
+has no `>` — an asymmetry [18](18-the-launch-column.md#row-8-is-shell-only-by-rule)
+already declared and already pays for.
+
+**Ending has two halves and only one of them is a button.**
+
+| | how | why |
+|---|---|---|
+| kill the processes | hold kill + `>` | reversible — respawn in place exists ([19](19-the-dead-pane.md)) |
+| reap the worktrees | CLI, and it refuses when one is dirty or unmerged | holds commits that are nowhere else |
+
+**The Launchpad is fast because it cannot lose anything.** A pad that could
+destroy an unmerged worktree is a pad you would hesitate over, and a pad
+you hesitate over has already failed — that is the whole argument of
+[05](05-interaction.md) applied to a new destructive gesture.
+
+The deeper answer is that **a squad with a ledger already knows when it is
+finished**: every brief has a status. The gesture is garbage collection,
+not a verdict. It is tempting to light the row differently once the ledger
+completes, and that should be resisted — [16](16-the-queue.md) spent real
+effort keeping grid colour meaning one thing, and this would be a second
+meaning for the sake of a fact a file already states.
 
 ## What this costs
 
@@ -294,6 +404,14 @@ compacting, and then nobody is holding the thread.
 agents on it is still legal and still correct. But the eye will read four
 lit pads in a line as a squad whether or not it is one, and that is a real
 cost of putting the roster on the furniture.
+
+**The Launchpad is not the orchestration surface, and the pitch implied it
+would be.** The intuition this document started from was eight pads you
+command a fleet with — press a row, drive a squad. What the evidence
+supports is smaller: orchestration lives in a file and in a process you can
+kill, and the sixty-four pads keep doing what they were always good at,
+which is telling you where to look. That is a real letdown measured against
+the idea, and it is stated here rather than discovered later.
 
 **`>` and the squad disagree about arguments.**
 [18](18-the-launch-column.md) drops `args` when spawning into a row, on
@@ -307,27 +425,29 @@ than feel.
 
 - the slot model, the addresses, the colours, the queue, the tempo
 - `@tally_session` as the identity, `@tally_slot` as the address
-- the kill chord, the launch column, purge, mute
+- the kill chord's grammar, the launch column, purge, mute — the row-end
+  chord adds a target to kill, not a new kind of gesture
 - `anchor ls` as the only roster, and the reconcile tick as the only clock
 - **no IPC between our own binaries** — the MCP server, if it is ever
   built, is a translator and not a participant
 
 ## Open questions
 
-1. ~~**The bracketed-paste spike.**~~ **Run.** `-p` does not suppress the
-   menu and `Enter` picks from it; `Escape` is the fix and it is in the
-   rule above. What is still unmeasured is whether `Escape` keeps that
-   behaviour across Claude Code versions — it is TUI behaviour, not a
-   protocol, and nothing promises it.
-2. **Does the master need a pane at all?** Column 1 is a convention here,
-   but the master is the one agent you actually talk to — it may belong in
-   your own terminal on your own socket, with the squad on tally's. That
-   would mean a jump that crosses sockets, which
-   [24](24-the-tally-server.md#what-this-costs) explicitly refused.
-3. **What ends a squad?** Kill is per pad. There is no gesture that means
-   *this row is finished*, and `purge` is about ended rows rather than live
-   ones.
-4. **Whether four is four.** The number is borrowed from other people's
-   write-ups, not from `attention.jsonl`. The instrument that measured the
-   top row ([16](16-the-queue.md#the-instrument)) can measure this, and
-   until it does the default is a guess with a citation.
+1. **The session's unix socket.** `uds:/tmp/cc-socks/<n>.sock` exists on
+   every session. If it is a usable control channel, the injection rule and
+   both of its checks are dead weight. One spike answers it, and the answer
+   changes more of this document than anything else here.
+2. **What the ledger actually contains.** It is named in the spec table and
+   nowhere defined — status values, who writes them, what happens when a
+   member dies mid-brief. It is the only new artefact in the design and the
+   least specified thing in this document.
+3. **Does a dead master leave the grid lying?** A member is lit because its
+   session is alive, which is true whether or not anything is still reading
+   the ledger. A row of four live agents nobody is coordinating looks
+   exactly like a working squad.
+4. **Whether `squad = row` survives contact.** The row is a good address.
+   It may be a bad boundary — see the warning in
+   [§ Four](#four-and-four-is-a-guess-with-a-citation). If master throughput
+   is the real limit, the eight-wide furniture has no claim on the design.
+5. **Does `Escape` keep dismissing the menu?** Unanswerable in advance,
+   which is why the rule carries a probe instead of a promise.
