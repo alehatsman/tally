@@ -37,13 +37,15 @@ playing, white while one is.
 One button, nine pieces, and a press moves to the next:
 
 ```text
-dark → Claude → Plasma → Life → Rain → Fire → Tetris → Pacman
-     → Bestiary → Uprising → dark → …
+dark → Bestiary → Claude → Plasma → Life → Rain → Fire → Tetris
+     → Pacman → Uprising → dark → …
 ```
 
-The mark first, because the first press should say who made it. Three
-that are only pretty, four that are somebody else's icons, and the joke
-last, because a reel ends on the thing worth filming.
+**The animals first.** Everything else in the reel is a field, a
+simulation or a logo; the bestiary is the only one that is *somebody*,
+and it is the one that makes a person lean in rather than nod. The mark
+is one press behind it. Then three that are only pretty, two classics,
+and the joke last, because a reel ends on the thing worth filming.
 
 No menu, no mode indicator beyond the button itself, and no way to get
 lost: keep pressing and you arrive back where you started.
@@ -90,6 +92,19 @@ Everything else on the surface goes dark. The art owns the 64 pads; it
 does not own the three lights that report.
 
 ## The nine pieces
+
+### Bestiary
+
+Cat, dog, fish, bird, rabbit — about three seconds each, two poses
+apiece, because a sprite that does
+not move is a logo and the grid already has one of those: the cat lifts
+its tail, the dog wags, the fish flicks, the bird beats once, the rabbit
+folds an ear.
+
+The eyes are a second sprite drawn over the first, which is why [`draw`]
+paints set bits and leaves everything else alone rather than clearing the
+grid first. The white rabbit gets grey eyes for the same reason — eyes
+the colour of the body are no eyes at all.
 
 ### Claude
 
@@ -201,18 +216,6 @@ rather than as a bell.
 **A different ghost each time round.** Blinky, Pinky, Inky, Clyde, in the
 arcade's order. It costs one modulo and it is the detail that makes
 somebody look at the grid twice.
-
-### Bestiary
-
-Cat, dog, fish, bird, rabbit. Two poses each, because a sprite that does
-not move is a logo and the grid already has one of those: the cat lifts
-its tail, the dog wags, the fish flicks, the bird beats once, the rabbit
-folds an ear.
-
-The eyes are a second sprite drawn over the first, which is why [`draw`]
-paints set bits and leaves everything else alone rather than clearing the
-grid first. The white rabbit gets grey eyes for the same reason — eyes
-the colour of the body are no eyes at all.
 
 ### The sprite format
 
