@@ -133,8 +133,10 @@ for good rather than lying dormant until someone splits a window.
 
 ## A view pane outlives its command
 
-Every pane tally owns — created or adopted — gets `remain-on-exit on`, set
-at pane scope at the moment it is tagged.
+Every pane tally owns gets `remain-on-exit on`, set at pane scope at the
+moment it is tagged. (It said *created or adopted* until
+[24](24-the-tally-server.md) removed adoption; the rule is unchanged, the
+second case simply no longer exists.)
 
 The consequences, in the order you meet them:
 
@@ -182,6 +184,15 @@ to a pane you actually *closed*, not to one whose agent merely died.
 
 ## Adoption: `tally spawn` from a pane
 
+> ⛔ **Superseded by [24](24-the-tally-server.md). This section is the
+> record of a decision that was reversed, not current behaviour.**
+> Everything below was true and shipped; it stopped being true when
+> views moved to tally's own tmux server, because a pane on your
+> personal server cannot be a view on tally's. `tally spawn` now places
+> the view in the row session the pad belongs to and leaves your shell
+> where it is. The half this section was really defending — *the folder
+> comes from where you are standing* — survives untouched.
+>
 > ✅ **Cleared by [16](16-the-queue.md).** Addressing stays
 > `page:row:col`, declared, so there is no one-way migration to build
 > this twice against.
@@ -382,11 +393,22 @@ after a purge reports what it cleared, not from inside `act`.
 
 ### CLI
 
+> ⛔ **Superseded by [24](24-the-tally-server.md).** `tally spawn` always
+> returns now, and `--detach` kept its name while losing this meaning: it
+> declines **the view**, not the hand-over, because there is no hand-over
+> left to decline.
+
 `tally spawn` gains `--detach` and, inside tmux, stops returning.
 [11-cli.md](11-cli.md#tally-spawn) needs both, and the table there gains a
 row: **pane — adopted unless `--detach`**.
 
 ## Edge cases
+
+> ⚠️ **The rows naming an *adopted* pane are superseded by
+> [24](24-the-tally-server.md)** — there are no adopted panes. Every
+> other row still holds, and holds for the same reason: they are about a
+> pane outliving its command, which is unchanged. [24](24-the-tally-server.md#edge-cases)
+> carries the table for views on tally's own server.
 
 | situation | behaviour |
 |---|---|
@@ -427,7 +449,7 @@ row: **pane — adopted unless `--detach`**.
 |---|---|
 | [06-jump.md](06-jump.md) | the unit is a pane; three-case recovery; identity at pane scope; jump becomes a round trip |
 | [05-interaction.md](05-interaction.md) | what a second press on the pad you are on means; purge also closes the view |
-| [11-cli.md](11-cli.md) | `spawn` adopts and does not return; `--detach`; the cwd/pane table row |
+| [11-cli.md](11-cli.md) | ⛔ reversed by [24](24-the-tally-server.md): `spawn` places a view and returns. The doc was amended to match |
 
 ## Validation
 

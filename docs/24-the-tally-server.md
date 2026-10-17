@@ -212,6 +212,18 @@ the new server, which is the already-shipped *absent* case. The old
 | a pane the user moved to another row's session | jumps correctly — identity is the tag, not the location |
 | two Alacritty windows attached | both switch, both show the view; not prevented, not a goal |
 
+## Pressing a pad while an art is playing does nothing
+
+⚠️ **Not this document's behaviour, and the first thing to trip over.**
+While an art is on the surface, the grid is a **menu**: drums and the
+eight launchers pick a piece, and every other press — including every
+pad — is swallowed. `►` is the only way back.
+
+So a pad press cannot reach a jump at all while an art is up. Press `►`
+first, or you are testing the swallow and not the server. Recorded here
+because two sessions have already lost time to it, and because the
+failure looks exactly like a broken jump.
+
 ## Validation
 
 1. `tmux list-sessions` on the personal socket is unchanged by any press.
@@ -221,3 +233,5 @@ the new server, which is the already-shipped *absent* case. The old
 5. A jump with no tally terminal open opens one, and lands in the view.
 6. `tally spawn` from a personal pane returns to that shell, and the pad
    opens the view on tally's server.
+7. `►` first, then the pad — see above. A swallowed press is not a
+   failed jump.

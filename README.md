@@ -73,8 +73,12 @@ about what they mean.
 
 ## What it is not
 
-**Not a terminal multiplexer.** No panes, no layouts, no attach. tmux does
-that, you already use it, and the jump target is a tmux pane.
+**Not a terminal multiplexer.** tmux does that, you already use it, and
+the jump target is a tmux pane. tally does make panes — one per live
+slot, on [its own tmux server](docs/24-the-tally-server.md), where a row
+is a session and a column is a pane — but it makes exactly the ones the
+grid implies and gives you no way to arrange them. The layout is not a
+feature; it is the grid, reflected. Your own tmux is never touched.
 
 **Not a session daemon.** It never owns a PTY, never holds a control lease,
 and goes away without anything noticing. anchor exists precisely so this
