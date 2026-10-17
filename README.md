@@ -149,7 +149,7 @@ spec once blocked on reading it the other way.
 | [12-the-layout.md](docs/12-the-layout.md) | what all 81 buttons do, why the grid is flat, and which arrangements are closed |
 | [14-attention.md](docs/14-attention.md) | the bell that is never rung, and the hooks that replace it |
 | [15-views.md](docs/15-views.md) | a view is addressed as a pane: it outlives its agent, and a jump is a round trip |
-| [16-the-queue.md](docs/16-the-queue.md) | the top row is a queue, not a map — and why rows are not projects |
+| [16-the-queue.md](docs/16-the-queue.md) | `►` goes to the longest wait, `◄` brings you back, and nothing is stored for either |
 | [17-the-tempo.md](docs/17-the-tempo.md) | the breathing rate says how long the oldest thing has waited |
 | [18-the-launch-column.md](docs/18-the-launch-column.md) | `>` spawns into its row, and the row already knows the folder |
 | [19-the-dead-pane.md](docs/19-the-dead-pane.md) | a view whose agent exited says so in place, and stays jumpable |
@@ -164,7 +164,7 @@ Not design, and nothing below is built:
 
 | doc | what |
 |---|---|
-| [23-gesture-brainstorm.md](docs/23-gesture-brainstorm.md) | **brainstorm** — three asks the surface has no buttons left for |
+| [23-gesture-brainstorm.md](docs/23-gesture-brainstorm.md) | **brainstorm** — fork, sync, and spawn-four: three asks, and the two buttons left to pay for them |
 | [25-the-squad.md](docs/25-the-squad.md) | **spec, and the one that needs a product decision first** — `User` + `>` puts four agents in a row; the leftmost is the master and you talk only to it. It does not fit `01`'s six bullets, it spends the last free button, and it has seven open questions |
 | [28-the-level-and-the-edge.md](docs/28-the-level-and-the-edge.md) | **spec** — a hook is an edge, `claude agents --json` is a level, and the level may only veto |
 

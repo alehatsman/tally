@@ -1,4 +1,4 @@
-# 23 — Every gesture we have, and the three we do not
+# 23 — Three asks, and no buttons left
 
 **Brainstorm, not design.** Nothing here is settled and nothing here is
 scheduled.
