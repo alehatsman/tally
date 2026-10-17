@@ -12,7 +12,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 
-use crate::anchor::{Client, Frame, Session};
+use crate::anchor::{Client, Packet, Session};
 use crate::signal::Derived;
 use crate::slot::Pages;
 
@@ -100,7 +100,7 @@ fn run(client: &Client, id: &str, signals: &Arc<Mutex<Signals>>, now: i64) {
     let from = signals
         .lock()
         .map_or(0, |s| s.get(id).map_or(0, |d| d.scanned_to));
-    let mut frames = match client.attach(id, from) {
+    let mut packets = match client.attach(id, from) {
         Ok(f) => f,
         Err(e) => {
             eprintln!("tallyd: attach {id}: {e}");
@@ -113,9 +113,9 @@ fn run(client: &Client, id: &str, signals: &Arc<Mutex<Signals>>, now: i64) {
             .or_insert_with(|| Derived::starting_at(now));
     }
 
-    while let Some(frame) = frames.next_frame() {
-        match frame {
-            Frame::Output { bytes, .. } => {
+    while let Some(packet) = packets.next_packet() {
+        match packet {
+            Packet::Output { bytes, .. } => {
                 let at = crate::now_ms();
                 if let Ok(mut s) = signals.lock() {
                     if let Some(d) = s.get_mut(id) {
@@ -125,8 +125,8 @@ fn run(client: &Client, id: &str, signals: &Arc<Mutex<Signals>>, now: i64) {
             }
             // An exit ends the watcher. Whatever was derived while it ran
             // stays; an exited session is rendered from the list, not here.
-            Frame::Exit(_) => break,
-            Frame::Other => {}
+            Packet::Exit(_) => break,
+            Packet::Other => {}
         }
     }
 }

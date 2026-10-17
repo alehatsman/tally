@@ -303,17 +303,28 @@ the complaint was made in.
 
 ## Where the code lives
 
-`src/art.rs`, and it is pure: `Piece` and a frame counter in, a `Frame`
-out. It does not know what a session is, that anchord exists, or that the
-pads it is painting usually mean something. That is the same boundary
+`src/art/`, and it is pure: `Piece` and a frame counter in, a `Frame` out.
+It does not know what a session is, that anchord exists, or that the pads
+it is painting usually mean something. That is the same boundary
 `src/render.rs` keeps, and it is what lets the whole module be tested
 without a device, a daemon, or a socket.
+
+**One file per piece**, with `mod.rs` holding `Piece`, `Reel` and the
+dispatcher, and three files for what the pieces share: `rng` (the xorshift
+and the seed every board starts from), `colour` (the hues and the heat
+ramp) and `sprite` (the 8×8 picture type and the painter that leaves the
+rest of the grid alone). It was one 2,084-line file until
+[29](29-what-the-loop-holds.md); nothing moved between pieces in the
+split, and the one thing that did move — `SEED`, from `life` to `rng` —
+moved because the split made it visible that all four stateful boards seed
+from a constant only one of them was named after.
 
 Two consequences worth stating, because they are the parts a reviewer
 should check:
 
 - **Nothing in `src/render.rs` changes.** The colour language has one
-  owner and the art is not it. `art.rs` names its own ramp.
+  owner and the art is not it. `art` names its own ramp, in
+  `art/colour.rs`.
 - **The art ramp is not eyeballed.** The twelve entries in
   `surface::palette` each carry *confirmed against a real device in M0*.
   The fifteen bright hues the art uses are read off the manual's palette

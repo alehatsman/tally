@@ -219,8 +219,13 @@ struct AttachReply {
 }
 
 /// What anchord sends an attached observer.
+///
+/// **Not `Frame`**, which in this crate is the 81 cells going out to the
+/// Launchpad ([`crate::surface::Frame`]). This is anchor's wire framing
+/// coming the other way, and the two met in `watch.rs`, which imports
+/// both halves (`docs/29-what-the-loop-holds.md`).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Frame {
+pub enum Packet {
     /// PTY bytes, with the offset of the first one.
     Output {
         /// Offset of the first byte in the stream.
@@ -230,46 +235,46 @@ pub enum Frame {
     },
     /// The session ended. `None` when anchor cannot say with what.
     Exit(Option<i32>),
-    /// A frame we do not act on — lease, resize.
+    /// A packet we do not act on — lease, resize.
     Other,
 }
 
-/// A stream of frames from an attached session.
+/// A stream of packets from an attached session.
 #[derive(Debug)]
-pub struct Frames {
+pub struct Packets {
     reader: BufReader<UnixStream>,
     offset: u64,
 }
 
-impl Frames {
+impl Packets {
     /// Where anchord said the stream starts.
     pub fn offset(&self) -> u64 {
         self.offset
     }
 
-    /// The next frame, or `None` when the connection ends.
+    /// The next packet, or `None` when the connection ends.
     ///
-    /// Ending is **normal**: an exit frame, EOF, or being dropped for
+    /// Ending is **normal**: an exit packet, EOF, or being dropped for
     /// falling behind all finish a watcher, and the supervisor starts a
     /// fresh one if the session is still live.
-    pub fn next_frame(&mut self) -> Option<Frame> {
+    pub fn next_packet(&mut self) -> Option<Packet> {
         let mut header = [0u8; HEADER_LEN];
         self.reader.read_exact(&mut header).ok()?;
         let (tag, offset, len) = decode_header(&header)?;
         let mut payload = vec![0u8; len];
         self.reader.read_exact(&mut payload).ok()?;
         Some(match tag {
-            0x01 => Frame::Output {
+            0x01 => Packet::Output {
                 offset,
                 bytes: payload,
             },
-            0x03 => Frame::Exit(
+            0x03 => Packet::Exit(
                 payload
                     .get(0..4)
                     .and_then(|b| b.try_into().ok())
                     .map(i32::from_le_bytes),
             ),
-            _ => Frame::Other,
+            _ => Packet::Other,
         })
     }
 }
@@ -397,7 +402,7 @@ impl Client {
         )))
     }
 
-    /// Attach as an **observer** and return the stream of output frames.
+    /// Attach as an **observer** and return the stream of output packets.
     ///
     /// Never `control: true`. The lease belongs to the terminal you jumped
     /// to; a surface that steals it makes typing stop working, from across
@@ -412,7 +417,7 @@ impl Client {
     /// # Errors
     /// [`Error::Unreachable`] if anchord will not talk, [`Error::Protocol`]
     /// if it refuses the attach.
-    pub fn attach(&self, session: &str, from: u64) -> Result<Frames, Error> {
+    pub fn attach(&self, session: &str, from: u64) -> Result<Packets, Error> {
         let stream =
             UnixStream::connect(&self.path).map_err(|e| Error::Unreachable(e.to_string()))?;
         // The handshake is request/response like any other control call, so
@@ -455,14 +460,14 @@ impl Client {
         // session whose agent is waiting on a human -- which is precisely
         // the state the surface exists to show. Blocking indefinitely
         // between frames is the intended behaviour
-        // ([`Frames::next_frame`]); a read timeout left in place would end
+        // ([`Packets::next_packet`]); a read timeout left in place would end
         // every quiet watcher every two seconds. `None` is the blocking
         // default, restored.
         reader
             .get_ref()
             .set_read_timeout(None)
             .map_err(|e| Error::Unreachable(e.to_string()))?;
-        Ok(Frames {
+        Ok(Packets {
             reader,
             offset: reply.offset,
         })
@@ -754,11 +759,11 @@ mod tests {
         daemon
             .write_all(&header(0x01, 0, u32::MAX))
             .expect("write a bogus header");
-        let mut frames = Frames {
+        let mut packets = Packets {
             reader: BufReader::new(ours),
             offset: 0,
         };
-        assert_eq!(frames.next_frame(), None);
+        assert_eq!(packets.next_packet(), None);
     }
 
     /// One PTY chunk is the common case and must still go through whole.
@@ -771,16 +776,16 @@ mod tests {
                 .write_all(&output_frame(99, &bytes))
                 .expect("write a chunk");
         });
-        let mut frames = Frames {
+        let mut packets = Packets {
             reader: BufReader::new(ours),
             offset: 0,
         };
-        match frames.next_frame() {
-            Some(Frame::Output { offset, bytes }) => {
+        match packets.next_packet() {
+            Some(Packet::Output { offset, bytes }) => {
                 assert_eq!(offset, 99);
                 assert_eq!(bytes.len(), 64 * 1024);
             }
-            other => panic!("expected one output frame, got {other:?}"),
+            other => panic!("expected one output packet, got {other:?}"),
         }
         written.join().expect("writer");
     }
@@ -838,16 +843,16 @@ mod tests {
         });
 
         let client = Client::new(&path);
-        let mut frames = client
+        let mut packets = client
             .attach("01M52D614H0SSH1WMB0PMA6YAD", 0)
             .expect("attach");
         assert_eq!(
-            frames.next_frame(),
-            Some(Frame::Output {
+            packets.next_packet(),
+            Some(Packet::Output {
                 offset: 0,
                 bytes: b"ding".to_vec(),
             }),
-            "a frame after a long silence must still arrive"
+            "a packet after a long silence must still arrive"
         );
         server.join().expect("server thread");
         let _gone = std::fs::remove_file(&path);

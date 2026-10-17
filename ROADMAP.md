@@ -792,12 +792,16 @@ Exit:
 > **seconds**, not frames, because seconds are the unit the complaint was
 > made in and frames are the unit that hid it.
 
-> **It is the largest file in the crate, and that is worth saying out
-> loud.** `src/art.rs` is bigger than `model.rs` and bigger than
-> `jump.rs` — sixteen percent of the code, for nine animations behind a
-> button. Both arguments above are real and neither is an argument for it
-> growing. **The reel is closed at nine.** A tenth piece is a button taken
-> from something that works, and the bar `M10` set applies to pixels too.
+> **It is the largest thing in the crate, and that is worth saying out
+> loud.** `src/art/` is bigger than `model.rs` and bigger than `jump.rs` —
+> sixteen percent of the code, for nine animations behind a button. Both
+> arguments above are real and neither is an argument for it growing.
+> **The reel is closed at nine.** A tenth piece is a button taken from
+> something that works, and the bar `M10` set applies to pixels too.
+>
+> It became a directory in [29](docs/29-what-the-loop-holds.md) — one file
+> per piece, three for what they share. That is a smaller unit to read, not
+> a smaller amount of code, and it does not reopen the count.
 
 ---
 

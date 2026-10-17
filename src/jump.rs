@@ -521,11 +521,16 @@ fn pane_title(place: Place, at: &str, session: &str) -> String {
     format!("c{col} · {at} · {tail}")
 }
 
-/// A view found in a `list-panes` listing.
+/// The pane a view is in, as one `list-panes` line describes it.
+///
+/// **Was `View`**, which collided with [`crate::model::View`] — the 8-row
+/// window onto the address space — in a crate where both senses of the
+/// word are load-bearing (`docs/29-what-the-loop-holds.md`). A view is the
+/// concept ([15](../docs/15-views.md)); this is the pane holding one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct View<'a> {
-    /// The pane holding it.
-    pane: &'a str,
+struct Pane<'a> {
+    /// tmux's id for it, `%N`.
+    id: &'a str,
     /// The window that pane is in, for clearing a legacy tag.
     window: &'a str,
     /// Is its command gone? **Not** the same as the agent being gone:
@@ -537,7 +542,7 @@ struct View<'a> {
 /// One line of the pane listing: a pane, and the two tags on it.
 #[derive(Debug, Clone, Copy)]
 struct Row<'a> {
-    view: View<'a>,
+    pane: Pane<'a>,
     /// `@tally_session`, empty when the pane is not tally's.
     session: &'a str,
     /// `@tally_slot`, empty likewise. The address, not the identity.
@@ -553,8 +558,8 @@ fn row(line: &str) -> Option<Row<'_>> {
     let session = f.next()?;
     let slot = f.next()?;
     Some(Row {
-        view: View {
-            pane,
+        pane: Pane {
+            id: pane,
             window,
             dead: dead == "1",
         },
@@ -568,7 +573,7 @@ fn row(line: &str) -> Option<Row<'_>> {
 /// An **unset** option prints as an empty field, so an untagged pane must
 /// never match — otherwise an empty session id would claim the first
 /// untagged pane on the server, which is every pane you work in.
-fn view_for<'a>(listing: &'a str, session: &str) -> Option<View<'a>> {
+fn view_for<'a>(listing: &'a str, session: &str) -> Option<Pane<'a>> {
     if session.is_empty() {
         return None;
     }
@@ -576,7 +581,7 @@ fn view_for<'a>(listing: &'a str, session: &str) -> Option<View<'a>> {
         .lines()
         .filter_map(row)
         .find(|r| r.session == session)
-        .map(|r| r.view)
+        .map(|r| r.pane)
 }
 
 /// Find a **dead** pane holding the window that address `at` names.
@@ -589,15 +594,15 @@ fn view_for<'a>(listing: &'a str, session: &str) -> Option<View<'a>> {
 /// Dead only, by decision: a live `anchor attach` at this address is a
 /// view somebody is reading, and this is not the gesture that closes it.
 /// Empty address never matches, for `view_for`'s reason.
-fn dead_view_at<'a>(listing: &'a str, at: &str) -> Option<View<'a>> {
+fn dead_view_at<'a>(listing: &'a str, at: &str) -> Option<Pane<'a>> {
     if at.is_empty() {
         return None;
     }
     listing
         .lines()
         .filter_map(row)
-        .find(|r| r.slot == at && r.view.dead)
-        .map(|r| r.view)
+        .find(|r| r.slot == at && r.pane.dead)
+        .map(|r| r.pane)
 }
 
 /// Every attached client and the pane it is looking at.
@@ -797,15 +802,15 @@ impl Tmux {
         let listing = self.panes();
         if let Some(found) = view_for(&listing, session) {
             if found.dead {
-                let args = respawn_pane_args(found.pane, session, &self.anchor_bin);
+                let args = respawn_pane_args(found.id, session, &self.anchor_bin);
                 let _revived = self.run("respawn-pane", &args)?;
             }
-            self.tag(found.pane, session, claude, place, at)?;
+            self.tag(found.id, session, claude, place, at)?;
             // After the pane owns the tag, never before: an inherited tag
             // is the only thing identifying a legacy view, and clearing it
             // first would lose the session mid-sequence.
             let _legacy = self.run("set-option", &clear_window_option_args(found.window));
-            return Ok(found.pane.to_owned());
+            return Ok(found.id.to_owned());
         }
         // Not found by id, so this is a new session for the slot — and the
         // slot's window may still be held by the previous one's corpse.
@@ -814,11 +819,11 @@ impl Tmux {
         // want, keeping its id, its tab and its place in the row across a
         // respawn (`docs/27-the-slot-collision.md`).
         if let Some(stale) = dead_view_at(&listing, at) {
-            let args = respawn_pane_args(stale.pane, session, &self.anchor_bin);
+            let args = respawn_pane_args(stale.id, session, &self.anchor_bin);
             let _reclaimed = self.run("respawn-pane", &args)?;
-            self.tag(stale.pane, session, claude, place, at)?;
+            self.tag(stale.id, session, claude, place, at)?;
             let _legacy = self.run("set-option", &clear_window_option_args(stale.window));
-            return Ok(stale.pane.to_owned());
+            return Ok(stale.id.to_owned());
         }
         let pane = self.make_view(session, place)?;
         self.tag(&pane, session, claude, place, at)?;
@@ -911,7 +916,7 @@ fn session_of(listing: &str, pane: &str) -> Option<String> {
     listing
         .lines()
         .filter_map(row)
-        .find(|r| r.view.pane == pane)
+        .find(|r| r.pane.id == pane)
         .map(|r| r.session)
         .filter(|s| !s.is_empty())
         .map(ToOwned::to_owned)
@@ -1040,7 +1045,7 @@ impl Jump for Tmux {
             // fields are `|`-separated and a hand-rolled split here went
             // stale the moment that changed
             // (`docs/27-the-slot-collision.md`).
-            if !live.lines().filter_map(row).any(|r| r.view.pane == pane) {
+            if !live.lines().filter_map(row).any(|r| r.pane.id == pane) {
                 continue; // the origin closed while you were away
             }
             self.run("switch-client", &switch_args(&client, &pane))?;
@@ -1069,7 +1074,7 @@ impl Jump for Tmux {
         let Some(found) = view_for(&listing, session) else {
             return Ok(());
         };
-        let _closed = self.run("kill-pane", &kill_pane_args(found.pane))?;
+        let _closed = self.run("kill-pane", &kill_pane_args(found.id))?;
         Ok(())
     }
 }
@@ -1211,7 +1216,7 @@ mod tests {
     #[test]
     fn the_view_is_found_by_option_not_by_name() {
         let found = view_for(LISTING, SESSION).expect("tagged pane");
-        assert_eq!(found.pane, "%3");
+        assert_eq!(found.id, "%3");
         assert_eq!(found.window, "@2");
         assert!(!found.dead);
         assert_eq!(view_for(LISTING, "nope"), None);
@@ -1232,9 +1237,9 @@ mod tests {
     #[test]
     fn an_empty_tag_does_not_shift_the_fields() {
         let r = row("%9|@9|1||").expect("parses");
-        assert_eq!(r.view.pane, "%9");
-        assert_eq!(r.view.window, "@9");
-        assert!(r.view.dead, "the field after two empties is still read");
+        assert_eq!(r.pane.id, "%9");
+        assert_eq!(r.pane.window, "@9");
+        assert!(r.pane.dead, "the field after two empties is still read");
         assert_eq!(r.session, "");
         assert_eq!(r.slot, "");
     }
@@ -1262,11 +1267,11 @@ mod tests {
     #[test]
     fn a_corpse_holding_the_slot_is_found_by_address() {
         let stale = dead_view_at(LISTING, AT).expect("the dead pane at this address");
-        assert_eq!(stale.pane, "%4");
+        assert_eq!(stale.id, "%4");
         assert_eq!(stale.window, "@3");
         assert_ne!(
-            view_for(LISTING, SESSION).map(|v| v.pane),
-            Some(stale.pane),
+            view_for(LISTING, SESSION).map(|v| v.id),
+            Some(stale.id),
             "found by address precisely because the id does not match"
         );
     }
@@ -1294,7 +1299,7 @@ mod tests {
     fn a_dead_view_is_distinguished_from_a_live_one() {
         let dead = view_for(LISTING, "01M52MXB4WQTA79K5FTHMXZ8YN").expect("dead pane");
         assert!(dead.dead, "pane_dead=1 means nothing is attached here");
-        assert_eq!(dead.pane, "%4");
+        assert_eq!(dead.id, "%4");
     }
 
     /// The bug a window option would reintroduce: every pane in the window
