@@ -201,7 +201,7 @@ yours to close.
 - the slot model, the addresses, the colours, the queue, the tempo
 - `@tally_session` as the identity, pane-scoped, and every rule in
   [15](15-views.md) about why it is a pane option
-- `remain-on-exit`, the dead-pane line ([19](19-the-dead-pane.md)),
+- `remain-on-exit`, the dead-pane line ([26](26-the-dead-pane.md)),
   respawn-in-place
 - `back`: origin is still a pane id, still per client, still first-jump-wins
   — the clients are simply tally's now

@@ -724,11 +724,11 @@ Exit:
 
 ## M15 — The dead pane names the conversation
 
-[M7](#m7--where-views-live) gave a killed view a corpse you can read, and
-`docs/19` put anchor's session id on it. **It is the wrong id.** An anchor
-session is a PTY that is now gone; what you want after killing an agent is
-the *conversation*, and `anchor attach <ulid>` resumes nothing
-([docs/26](docs/26-the-claude-session-id.md)).
+[M7](#m7--where-views-live) gave a killed view a corpse you can read.
+What it needs to say is the **conversation**: an anchor session is a PTY
+that is already gone by the time you are reading the line, and
+`anchor attach <ulid>` resumes nothing
+([docs/26](docs/26-the-dead-pane.md)).
 
 Scope: `CLAUDE_CODE_SESSION_ID` → `tl.claude` → `@tally_claude` → the
 `remain-on-exit-format` line. Four hops, each of them something tally
@@ -748,7 +748,7 @@ Exit:
 
 > **The conversation goes first, and 80 columns is why.** The rule is
 > *payload early, because truncation eats the tail*
-> ([docs/19](docs/19-the-dead-pane.md)). Half a UUID resumes nothing; half
+> ([docs/26](docs/26-the-dead-pane.md)). Half a UUID resumes nothing; half
 > an anchor id costs nothing, because it names a PTY that is already gone
 > by the time you are reading the line. The obvious ordering — the id that
 > is always there first — is the wrong one.

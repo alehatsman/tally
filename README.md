@@ -152,12 +152,11 @@ spec once blocked on reading it the other way.
 | [16-the-queue.md](docs/16-the-queue.md) | `►` goes to the longest wait, `◄` brings you back, and nothing is stored for either |
 | [17-the-tempo.md](docs/17-the-tempo.md) | the breathing rate says how long the oldest thing has waited |
 | [18-the-launch-column.md](docs/18-the-launch-column.md) | `>` spawns into its row, and the row already knows the folder |
-| [19-the-dead-pane.md](docs/19-the-dead-pane.md) | a view whose agent exited says so in place, and stays jumpable |
 | [20-the-overview.md](docs/20-the-overview.md) | `Session` held shows which of the sixty-four rows exist |
 | [21-the-arts.md](docs/21-the-arts.md) | the grid as a thing to look at, and the menu that picks one |
 | [22-the-mode-button.md](docs/22-the-mode-button.md) | the corner carries two verbs — Stop and Move — and a double-tap swaps them |
 | [24-the-tally-server.md](docs/24-the-tally-server.md) | tally's own tmux server: a row is a session, a column is a window |
-| [26-the-claude-session-id.md](docs/26-the-claude-session-id.md) | the dead pane names the *conversation*, not the PTY |
+| [26-the-dead-pane.md](docs/26-the-dead-pane.md) | a killed view names the conversation it was running, as a command you can paste |
 | [27-the-slot-collision.md](docs/27-the-slot-collision.md) | a corpse must not hold the slot: a view is found by address as well as by id |
 
 Not design, and nothing below is built:

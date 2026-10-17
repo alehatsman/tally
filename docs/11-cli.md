@@ -299,7 +299,7 @@ principle `spawn` is built on: **the shell already knows**.
 `tl.claude`, the Claude Code session id — the argument to
 `claude --resume`, read from `CLAUDE_CODE_SESSION_ID` in the hook's own
 environment, and the id that is actually worth having when a pad dies
-([26](26-the-claude-session-id.md)).
+([26](26-the-dead-pane.md)).
 
 It rides this subcommand rather than one of its own because the expensive
 half here is the lookup — a `ps -A` walk and an anchord `list` — and a
