@@ -11,11 +11,12 @@
 //! (`docs/08-lifecycle.md#one-process-no-socket`).
 
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 use tally::anchor::{Client, Spawn};
 use tally::attention::Ancestry;
-use tally::cli::{self, Claim, Request, USAGE};
+use tally::cli::{self, Claim, Fork, Request, USAGE};
 use tally::config::Config;
 use tally::jump::{Jump, Tmux};
 use tally::model;
@@ -46,6 +47,7 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Ok(Request::Spawn(claim)) => spawn(&claim, pages),
+        Ok(Request::Fork(f)) => fork(&f, pages),
         Ok(Request::Attention(on)) => attention(on),
         Ok(Request::Purge(at)) => purge(at, pages),
         Ok(Request::Mute(at, on)) => mute(at, on, pages),
@@ -196,11 +198,8 @@ fn attention(on: bool) -> ExitCode {
     }
 }
 
+/// Claim a pad for a session started in the current directory.
 fn spawn(claim: &Claim, pages: &Pages) -> ExitCode {
-    let Some(address) = claim.at.label(pages) else {
-        eprintln!("tally: that address has no page name");
-        return ExitCode::FAILURE;
-    };
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
         Err(e) => {
@@ -208,7 +207,10 @@ fn spawn(claim: &Claim, pages: &Pages) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-
+    let command = claim
+        .command
+        .clone()
+        .unwrap_or_else(|| cli::DEFAULT_COMMAND.to_owned());
     let client = Client::new(Client::default_path());
     let sessions = match client.list() {
         Ok(sessions) => sessions,
@@ -217,92 +219,203 @@ fn spawn(claim: &Claim, pages: &Pages) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    claim_pads(
+        &client,
+        &sessions,
+        pages,
+        claim,
+        &Source {
+            cwd,
+            command,
+            login_shell: true,
+            from: None,
+        },
+    )
+}
+
+/// Claim a pad for a sibling of another pad.
+///
+/// `spawn` with one fact substituted — the directory comes from a pad
+/// rather than from `$PWD` — which is why the whole of it below is
+/// resolving that one fact and then calling the same function
+/// (`docs/11-cli.md#tally-fork-src-dst`).
+fn fork(fork: &Fork, pages: &Pages) -> ExitCode {
+    let Some(source) = fork.from.label(pages) else {
+        eprintln!("tally: that address has no page name");
+        return ExitCode::FAILURE;
+    };
+    let client = Client::new(Client::default_path());
+    let sessions = match client.list() {
+        Ok(sessions) => sessions,
+        Err(e) => {
+            eprintln!("tally: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    // The newest session that pad has ever held, dead rows included:
+    // anchord keeps `cwd` on rows that have exited, which is the whole
+    // reason forking a finished agent works at all.
+    let Some(inherit) = model::inherit(&sessions, pages, fork.from) else {
+        eprintln!("tally: nothing has ever run on {source}, so there is no directory to inherit");
+        return ExitCode::FAILURE;
+    };
+    claim_pads(
+        &client,
+        &sessions,
+        pages,
+        &fork.claim,
+        &Source {
+            cwd: PathBuf::from(inherit.cwd),
+            // An explicit `--` beats the inheritance. The arguments are
+            // never inherited either way: a pad running
+            // `claude --resume <id>` is one conversation, and a second
+            // agent must not be on it (`model::row_launch`).
+            command: fork.claim.command.clone().unwrap_or(inherit.command),
+            login_shell: inherit.login_shell,
+            from: Some(source),
+        },
+    )
+}
+
+/// What a claim runs, once the half the parser could not know is resolved.
+struct Source {
+    cwd: PathBuf,
+    command: String,
+    login_shell: bool,
+    /// The address this was forked from, for the line it prints.
+    from: Option<String>,
+}
+
+/// The addresses a claim lands on: `count` consecutive pads, rightwards.
+///
+/// The parser has already refused a count that would run past column 8,
+/// so this cannot produce an address off the row.
+fn targets(claim: &Claim, pages: &Pages) -> Option<Vec<(Slot, String)>> {
+    (0..claim.count)
+        .map(|n| {
+            let at = Slot {
+                col: claim.at.col + n,
+                ..claim.at
+            };
+            at.label(pages).map(|label| (at, label))
+        })
+        .collect()
+}
+
+/// Check every pad, then claim every pad.
+///
+/// **The check runs over all of them before the first create**, which is
+/// the rule `--count` is worth having: a half-spawned fleet is a cleanup
+/// job, and finding out on the third one is worse than retyping
+/// (`docs/11-cli.md#the-rules`).
+fn claim_pads(
+    client: &Client,
+    sessions: &[tally::anchor::Session],
+    pages: &Pages,
+    claim: &Claim,
+    source: &Source,
+) -> ExitCode {
+    let Some(targets) = targets(claim, pages) else {
+        eprintln!("tally: that address has no page name");
+        return ExitCode::FAILURE;
+    };
 
     // The same predicate the grid previews with, run without watchers: a
     // pad holding something live refuses, a free one spawns. If these two
     // ever disagree, the grid is lying about what pressing it does.
-    let drawn = model::resolve(&sessions, &BTreeMap::new(), pages, tally::now_ms());
-    if let Some(held) = drawn.get(&claim.at) {
-        let free = matches!(
-            held.state,
-            SlotState::Lost { reclaimable: true } | SlotState::Failed { .. }
-        );
-        if !free {
-            eprintln!(
-                "tally: {address} is held by {} ({})",
-                held.session,
-                describe(held.state)
+    let drawn = model::resolve(sessions, &BTreeMap::new(), pages, tally::now_ms());
+    let mut reclaiming = Vec::new();
+    for (at, address) in &targets {
+        if let Some(held) = drawn.get(at) {
+            let free = matches!(
+                held.state,
+                SlotState::Lost { reclaimable: true } | SlotState::Failed { .. }
             );
-            // The message used to name the holder and not the move, and
-            // the documented move -- purge first -- is not reachable from
-            // a shell at all (#9, anchor#14). Say what actually works.
-            eprintln!(
-                "tally: if it is really gone: anchor label {} tl.slot- tl.attention-",
-                held.session
-            );
-            return ExitCode::FAILURE;
+            if !free {
+                eprintln!(
+                    "tally: {address} is held by {} ({})",
+                    held.session,
+                    describe(held.state)
+                );
+                // The message used to name the holder and not the move, and
+                // the documented move -- purge first -- is not reachable from
+                // a shell at all (#9, anchor#14). Say what actually works.
+                eprintln!(
+                    "tally: if it is really gone: anchor label {} tl.slot- tl.attention-",
+                    held.session
+                );
+                return ExitCode::FAILURE;
+            }
+            // A row anchord lost to its own restart keeps its `tl.slot` and
+            // its scrollback, and the newest session on a pad is the one the
+            // grid draws -- so claiming the pad does not need the old row
+            // removed, and must not destroy a log that is still worth
+            // reading.
+            reclaiming.push((address.clone(), held.session.clone(), held.state));
         }
-        // A row anchord lost to its own restart keeps its `tl.slot` and
-        // its scrollback, and the newest session on a pad is the one the
-        // grid draws -- so claiming the pad does not need the old row
-        // removed, and must not destroy a log that is still worth
-        // reading.
+    }
+    for (address, session, state) in reclaiming {
         eprintln!(
-            "tally: {address} was held by {} ({}); reclaiming it",
-            held.session,
-            describe(held.state)
+            "tally: {address} was held by {session} ({}); reclaiming it",
+            describe(state)
         );
     }
 
-    let mut labels = BTreeMap::new();
-    let _slot = labels.insert(tally::anchor::LABEL_SLOT.to_owned(), address.clone());
-    // No `tl.spec`: a spec label is a name looked up in `slots.toml`, and
-    // one that nothing declares would be a label that lies. The cost is a
-    // dead respawn chord on this pad (`docs/11-cli.md`).
-    match client.create(&Spawn {
-        command: &claim.command,
-        args: &claim.args,
-        cwd: Some(&cwd),
-        env: &BTreeMap::new(),
-        login_shell: true,
-        labels: &labels,
-    }) {
-        Ok(id) => place_or_report(claim, &id, &address),
-        Err(e) => {
-            eprintln!("tally: {e}");
-            ExitCode::FAILURE
+    // One pane and N sessions: picking one of them to open is a guess, so
+    // a fleet opens nothing and every pad is one press from its view.
+    let view = !claim.detach && claim.count == 1;
+    for (at, address) in &targets {
+        let mut labels = BTreeMap::new();
+        let _slot = labels.insert(tally::anchor::LABEL_SLOT.to_owned(), address.clone());
+        // No `tl.spec`: a spec label is a name looked up in `slots.toml`, and
+        // one that nothing declares would be a label that lies. The cost is a
+        // dead respawn chord on this pad (`docs/11-cli.md`).
+        match client.create(&Spawn {
+            command: &source.command,
+            args: &claim.args,
+            cwd: Some(&source.cwd),
+            env: &BTreeMap::new(),
+            login_shell: source.login_shell,
+            labels: &labels,
+        }) {
+            Ok(id) => {
+                if view {
+                    place_or_report(&id, address, *at);
+                }
+                match &source.from {
+                    Some(from) => println!("forked {id} from {from} onto {address}"),
+                    None => println!("spawned {id} on {address}"),
+                }
+            }
+            // Stop and report. The ones already created are running in a
+            // real repo and unwinding them would be a kill nobody asked
+            // for, so the honest answer is the list above plus this line.
+            Err(e) => {
+                eprintln!("tally: {address}: {e}");
+                return ExitCode::FAILURE;
+            }
         }
     }
+    ExitCode::SUCCESS
 }
 
-/// Open the view for the session just created, and say where it went.
+/// Put the view where the pad says.
 ///
-/// **Your shell is not touched.** This used to replace it with the
-/// attach, which made the pane you ran it in the view — and a pane on
-/// your personal tmux server cannot be a view on tally's, which is where
-/// every view lives now (`docs/24-the-tally-server.md`). The folder still
-/// comes from where you are standing, which was always the half worth
-/// having.
+/// **Your shell is not touched.** `tally spawn` used to replace it with
+/// the attach, which made the pane you ran it from the view — and a pane
+/// on your personal tmux server cannot be a view on tally's, which is
+/// where every view lives now (`docs/24-the-tally-server.md`). The folder
+/// still comes from where you are standing, which was always the half
+/// worth having.
 ///
-/// **Nothing is opened before the claim is accepted.** Every refusal
-/// above — a bad address, a held pad, an unreachable anchord — has
-/// already returned. By the time control reaches here the session exists.
-///
-/// Placement is **not** fatal: the session is running either way, and a
-/// tmux that would not cooperate costs a view the next press makes
-/// anyway — which is also exactly what `--detach` asks for on purpose.
-fn place_or_report(claim: &Claim, id: &str, address: &str) -> ExitCode {
-    if claim.detach {
-        println!("spawned {id} on {address}");
-        return ExitCode::SUCCESS;
-    }
-    if let Err(e) = tally::jump::place(id, address, claim.at.place()) {
+/// Placement is **not** fatal. The session exists by the time control
+/// gets here, so a tmux that would not cooperate costs you a view that
+/// the next press makes anyway.
+fn place_or_report(id: &str, address: &str, at: Slot) {
+    if let Err(e) = tally::jump::place(id, address, at.place()) {
         eprintln!("tally: could not open a view for it: {e}");
-        eprintln!("tally: spawned {id} on {address}; press its pad to open it");
-        return ExitCode::SUCCESS;
+        eprintln!("tally: press its pad to open it");
     }
-    println!("spawned {id} on {address}");
-    ExitCode::SUCCESS
 }
 
 /// What to call a state in a sentence. The pad says it in colour; this

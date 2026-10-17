@@ -337,6 +337,46 @@ pub fn row_launch(
     })
 }
 
+/// What a pad can be forked from.
+///
+/// Three fields and no address: `row_launch` picks the destination
+/// because `>` is a one-press gesture with nowhere else to put it, and
+/// `tally fork` is told both ends by the person typing it
+/// (`docs/11-cli.md`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Inherit {
+    /// `argv[0]`, from the newest session that pad has ever held.
+    pub command: String,
+    /// The directory that session was started in.
+    pub cwd: String,
+    /// Whether to wrap it in a login shell, as that session was.
+    pub login_shell: bool,
+}
+
+/// What `at` would hand to a session forked from it.
+///
+/// **The newest session that pad has ever held, dead rows included** —
+/// the same rule `row_launch` runs on, and what lets a fork work on a pad
+/// whose agent has already exited. `None` when the pad has never held
+/// anything, or when the row anchord has for it recorded no directory.
+///
+/// **Arguments are not here**, for the reason `row_launch` gives: a pad
+/// running `claude --resume <id>` describes one conversation, and copying
+/// its argv would put a second agent on it.
+#[must_use]
+pub fn inherit(sessions: &[Session], pages: &Pages, at: Slot) -> Option<Inherit> {
+    // Newest first, which is the order anchord lists in and the order
+    // `resolve` already depends on.
+    let newest = sessions
+        .iter()
+        .find(|s| s.slot_label().and_then(|l| slot::parse(l, pages)) == Some(at))?;
+    Some(Inherit {
+        command: newest.command.clone()?,
+        cwd: newest.cwd.clone()?,
+        login_shell: newest.login_shell,
+    })
+}
+
 /// What `action` would do to `pad`.
 ///
 /// One action now (`docs/18-the-launch-column.md`), and the function stays
@@ -1201,6 +1241,65 @@ mod tests {
         let l = row_launch(&sessions, &pages, &drawn, 5).expect("launchable");
         assert_eq!(l.cwd, "/repo/new");
         assert_eq!(l.command, "claude");
+    }
+
+    /// `fork` keys on the pad, not the row — which is the whole
+    /// difference between it and `>`.
+    #[test]
+    fn a_fork_inherits_from_the_pad_it_names() {
+        let pages = Pages::default();
+        let sessions = [
+            ran("a", "running", "1:5:1", "claude", "/repo/left"),
+            ran("b", "running", "1:5:2", "codex", "/repo/right"),
+        ];
+        let left = Slot {
+            page: 1,
+            row: 5,
+            col: 1,
+        };
+        let right = Slot { col: 2, ..left };
+        let i = inherit(&sessions, &pages, left).expect("left");
+        assert_eq!(i.cwd, "/repo/left");
+        assert_eq!(i.command, "claude");
+        assert_eq!(
+            inherit(&sessions, &pages, right).expect("right").cwd,
+            "/repo/right",
+            "the row is not the unit here"
+        );
+    }
+
+    /// The directory outlives the agent: anchord keeps `cwd` on rows that
+    /// have exited, which is what lets you fork a finished one.
+    #[test]
+    fn a_fork_inherits_from_a_pad_whose_agent_has_ended() {
+        let pages = Pages::default();
+        let mut gone = ran("a", "exited", "1:7:1", "claude", "/repo/done");
+        gone.exit_code = Some(0);
+        let at = Slot {
+            page: 1,
+            row: 7,
+            col: 1,
+        };
+        assert_eq!(
+            inherit(&[gone], &pages, at).expect("ended").cwd,
+            "/repo/done"
+        );
+    }
+
+    /// Nothing to inherit is `None`, not a guess. A pad that has never
+    /// held anything has no directory, and neither does one whose rows
+    /// recorded none.
+    #[test]
+    fn a_fork_from_an_unused_pad_inherits_nothing() {
+        let pages = Pages::default();
+        let at = Slot {
+            page: 1,
+            row: 8,
+            col: 1,
+        };
+        assert_eq!(inherit(&[], &pages, at), None, "never used");
+        let no_cwd = [session("a", "running", Some("1:8:1"))];
+        assert_eq!(inherit(&no_cwd, &pages, at), None, "no directory");
     }
 
     /// A row with sessions but no recorded directory has nothing to

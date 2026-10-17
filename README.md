@@ -105,7 +105,7 @@ is a product.
 | [docs/08-lifecycle.md](docs/08-lifecycle.md) | who starts tallyd, and why Live mode must be restored |
 | [docs/09-testing.md](docs/09-testing.md) | testing a thing whose output is light |
 | [docs/10-open-questions.md](docs/10-open-questions.md) | what is asserted here but not proven |
-| [docs/11-cli.md](docs/11-cli.md) | `tally spawn`, for when the folder comes from you |
+| [docs/11-cli.md](docs/11-cli.md) | `tally spawn` and `tally fork`, for when the folder comes from you |
 | [docs/12-layout-proposal.md](docs/12-layout-proposal.md) | a proposal: rows are projects — **not design**, tracked as [#8](https://github.com/alehatsman/tally/issues/8) |
 | [docs/13-layout-review.md](docs/13-layout-review.md) | the review of it, and a narrower counter-proposal |
 | [docs/14-attention.md](docs/14-attention.md) | the bell that is never rung, and the hooks that replace it |
@@ -113,6 +113,7 @@ is a product.
 | [docs/16-the-queue.md](docs/16-the-queue.md) | the top row is a queue, not a map — and why rows are not projects |
 | [docs/17-the-tempo.md](docs/17-the-tempo.md) | the breathing rate says how long the oldest thing has waited |
 | [docs/18-the-launch-column.md](docs/18-the-launch-column.md) | `>` spawns into its row, and the row already knows the folder |
+| [docs/23-gesture-brainstorm.md](docs/23-gesture-brainstorm.md) | every gesture the surface has, the two free buttons, and three asks — **brainstorm, not design** |
 | [docs/24-the-tally-server.md](docs/24-the-tally-server.md) | tally's own tmux server: a row is a session, a column is a pane |
 
 ## License
