@@ -279,11 +279,34 @@ you to remember the order, and the next idea after that is a menu.
 
 **Only the hardware says:**
 
-- [ ] red and dark red are tellable apart under a thumb, on a grid, at
-      arm's length — the one thing this design rests on
-- [ ] the dark pads lighting up under Stop reads as *there is history here*
-      and not as *I broke something*
-- [ ] a double-tap is reachable without looking, and 250/400 ms are the
-      right numbers
+- [x] red and dark red are tellable apart under a thumb, on a grid, at
+      arm's length — **the one thing this design rests on, and it holds.**
+      Confirmed on a live grid. Had it failed, the honest fix was
+      splitting kill and purge back onto separate gestures, and the
+      merge in this document would have been a mistake
+- [x] the dark pads lighting up under Stop reads as *there is history
+      here* and not as *I broke something*
+- [x] a double-tap is reachable without looking, and 250/400 ms are the
+      right numbers — untouched since, so the guesses were right
 - [ ] a week of logs: does the mode ever sit on Move, and does anything
       get purged from the grid that never got purged from the shell
+
+### What the first press found
+
+The mode toggle froze the surface, immediately. A double-tap completes on
+the **release**, and `tallyd` flips the mode before `chord.rs` sees that
+release — so the button went down under one verb and came up under
+another, and a release matched by *verb* stranded the old one in `held`
+forever. `modifier()` then answered `Some` with nothing under the thumb:
+the whole grid sat in a held preview, in red or turquoise, and no
+sequence of presses recovered it.
+
+It accumulated, alternating which verb got stuck, so only a restart
+cleared it. Fixed by matching a release on the **button** rather than the
+verb, which makes the pairing true by construction instead of relying on
+two pieces of state staying in step.
+
+Worth recording because no test would have found it: every unit test fed
+presses through `Chords` alone, where the mode never moves. The toggle
+lives in `tallyd`, the stranding happened in `chord.rs`, and the bug was
+in neither — it was in the order the two ran.
