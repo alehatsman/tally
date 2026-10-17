@@ -150,7 +150,7 @@ spec once blocked on reading it the other way.
 | [08-lifecycle.md](docs/08-lifecycle.md) | who starts tallyd, and why Live mode must be restored |
 | [09-testing.md](docs/09-testing.md) | testing a thing whose output is light |
 | [10-open-questions.md](docs/10-open-questions.md) | what is asserted here but not proven |
-| [11-cli.md](docs/11-cli.md) | `tally spawn` and `tally fork`, for when the folder comes from you |
+| [11-cli.md](docs/11-cli.md) | `tally spawn` and `tally fork`, for when the folder comes from you, and what `purge` and `mute` do |
 | [12-the-layout.md](docs/12-the-layout.md) | what all 81 buttons do, why the grid is flat, and which arrangements are closed |
 | [14-attention.md](docs/14-attention.md) | the bell that is never rung, and the hooks that replace it |
 | [15-views.md](docs/15-views.md) | a view is addressed as a pane: it outlives its agent, and a jump is a round trip |

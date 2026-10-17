@@ -95,6 +95,52 @@ removing — a directory typed by hand — and the shell has a perfectly good
 one already. Scripts that want a different folder can use a subshell, or
 call `anchor create` directly, which stays supported.
 
+## What `purge` and `mute` do, and do not
+
+**`purge` does not kill.** It forgets the *ended* rows behind a pad:
+every session anchord reports as exited or lost that carries the pad's
+`tl.slot`, rows and logs together, and it closes their views
+(`model::purgeable`, `src/bin/tally.rs`). A running session is never in
+that set. With nothing ended behind the pad it prints `nothing to purge on
+<addr>` and exits `0`, so a script reading the exit code learns nothing
+about whether anything is still running there.
+
+```sh
+$ tally purge 1:3:1
+purged 4 on 1:3:1
+```
+
+Freeing a pad that holds a **live** session is a different move, and it is
+the one `tally spawn` prints when it refuses:
+
+```sh
+$ tally spawn 1:3:1
+tally: 1:3:1 is held by 01M53KQ… (running)
+tally: if it is really gone: anchor label 01M53KQ… tl.slot- tl.attention-
+
+$ anchor label 01M53KQ… tl.slot- tl.attention-   # let go of the pad
+$ anchor kill 01M53KQ…                           # end the session
+$ tally spawn 1:3:1                              # the pad is free
+```
+
+An agent that reads `tally purge <addr>` as *kill whatever is on that
+pad* runs it against a live session, gets a success exit, and the
+session keeps running (#11).
+
+**`mute` suppresses attention and nothing else.** It sets `tl.mute` on the
+session currently drawn on the pad, so the pad shows the state underneath
+(working or quiet) instead of amber, and the pad stops counting toward the
+queue head and the tempo. The session is not touched. The label is on the
+*session*, not the pad: a fresh spawn there starts unmuted. A dark pad has
+no session to carry it, so `mute` refuses with `nothing is on <addr>`.
+
+```sh
+$ tally mute 1:3:1
+muted 1:3:1
+$ tally mute 1:3:1 --off
+unmuted 1:3:1
+```
+
 ## It is exactly a pad press, with a folder
 
 The occupancy rule is not invented here. `tally spawn` **refuses an address
