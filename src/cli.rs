@@ -56,7 +56,8 @@ a second agent must not be on it.
 
 The goal is argv, not a flag. N is 1-8, it refuses rather than running
 past column 8 or wrapping, and it refuses before creating anything if
-any target is taken. N above 1 never adopts: one pane, N sessions.
+any target is taken. N above 1 opens no view: one shell, N sessions,
+and each pad opens its own on the first press.
 
 attention   Say whether the calling session is waiting on a human.
 
