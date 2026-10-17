@@ -67,6 +67,36 @@ attention   Say whether the calling session is waiting on a human.
 For a Claude Code hook. It takes no address: the session is whichever one
 this process is running inside, found by walking the process tree. Not
 being under anchor is success and prints nothing.
+
+purge   Forget the ended rows behind a pad. It does not kill anything.
+
+  tally purge 1:3:1                    forget what has exited here
+  tally purge work:3:4                 same, on a named page
+
+Every exited or lost session that claims the pad goes, rows and logs
+together, and their views close. A session that is still running is never
+touched: if nothing has ended behind the pad it prints \"nothing to purge\"
+and exits 0, and whatever was running keeps running.
+
+To free a pad that holds a live session, release it, end it, claim it:
+
+  anchor label <id> tl.slot- tl.attention-    let go of the pad
+  anchor kill <id>                            end the session
+  tally spawn 1:3:1                           the pad is free
+
+The id is in the message spawn refuses with.
+
+mute    Stop a pad raising attention, or let it again.
+
+  tally mute 1:3:1                     stop it asking for you
+  tally mute 1:3:1 --off               let it ask again
+
+For a prompt you are never going to answer, which would otherwise sit at
+the head of the queue and keep the tempo up. Only attention is muted: the
+pad still shows working or quiet, and the session is not touched. It
+sticks to the session on the pad, not to the pad, so a fresh spawn there
+starts unmuted. It refuses when nothing is on the pad. It takes a flag
+rather than toggling because a shell cannot see the colour.
 ";
 
 /// What the user asked for.
