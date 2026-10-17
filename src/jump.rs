@@ -161,17 +161,26 @@ pub trait Jump {
 
 // ── command construction, separated so the arguments are testable ──────────
 
-/// Args listing every pane, its window, whether it is dead, and its tag.
+/// The field separator in the pane listing.
 ///
-/// **The possibly-empty field goes last.** An unset option prints as an
-/// empty string, so putting it anywhere else would make the fields after
-/// it shift left and the parse silently wrong.
+/// **Not a space.** An unset option prints as an empty string, and
+/// whitespace-splitting swallows it — which was survivable while only the
+/// *last* field could be empty, and is not now that the address can be
+/// too (`docs/27-the-slot-collision.md`). Neither a ULID nor a
+/// `page:row:col` address can contain this, so position holds.
+const FIELD: char = '|';
+
+/// Args listing every pane, its window, whether it is dead, and the two
+/// things tally writes on it: the session it views and the address it
+/// occupies.
 fn list_panes_args() -> Vec<String> {
     vec![
         "list-panes".into(),
         "-a".into(),
         "-F".into(),
-        format!("#{{pane_id}} #{{window_id}} #{{pane_dead}} #{{{PANE_OPTION}}}"),
+        format!(
+            "#{{pane_id}}{FIELD}#{{window_id}}{FIELD}#{{pane_dead}}{FIELD}#{{{PANE_OPTION}}}{FIELD}#{{{SLOT_OPTION}}}"
+        ),
     ]
 }
 
@@ -525,6 +534,35 @@ struct View<'a> {
     dead: bool,
 }
 
+/// One line of the pane listing: a pane, and the two tags on it.
+#[derive(Debug, Clone, Copy)]
+struct Row<'a> {
+    view: View<'a>,
+    /// `@tally_session`, empty when the pane is not tally's.
+    session: &'a str,
+    /// `@tally_slot`, empty likewise. The address, not the identity.
+    slot: &'a str,
+}
+
+/// Parse one listing line. Positional, which is what [`FIELD`] buys.
+fn row(line: &str) -> Option<Row<'_>> {
+    let mut f = line.split(FIELD);
+    let pane = f.next()?;
+    let window = f.next()?;
+    let dead = f.next()?;
+    let session = f.next()?;
+    let slot = f.next()?;
+    Some(Row {
+        view: View {
+            pane,
+            window,
+            dead: dead == "1",
+        },
+        session,
+        slot,
+    })
+}
+
 /// Find the view for `session` in `list-panes` output.
 ///
 /// An **unset** option prints as an empty field, so an untagged pane must
@@ -534,17 +572,32 @@ fn view_for<'a>(listing: &'a str, session: &str) -> Option<View<'a>> {
     if session.is_empty() {
         return None;
     }
-    listing.lines().find_map(|line| {
-        let mut f = line.split_whitespace();
-        let pane = f.next()?;
-        let window = f.next()?;
-        let dead = f.next()?;
-        (f.next()? == session).then_some(View {
-            pane,
-            window,
-            dead: dead == "1",
-        })
-    })
+    listing
+        .lines()
+        .filter_map(row)
+        .find(|r| r.session == session)
+        .map(|r| r.view)
+}
+
+/// Find a **dead** pane holding the window that address `at` names.
+///
+/// The second lookup, and the one that keeps a corpse from locking a pad:
+/// a column is a window *index*, so while the previous session's dead
+/// view sits there, no new window can be made at that address
+/// (`docs/27-the-slot-collision.md`).
+///
+/// Dead only, by decision: a live `anchor attach` at this address is a
+/// view somebody is reading, and this is not the gesture that closes it.
+/// Empty address never matches, for `view_for`'s reason.
+fn dead_view_at<'a>(listing: &'a str, at: &str) -> Option<View<'a>> {
+    if at.is_empty() {
+        return None;
+    }
+    listing
+        .lines()
+        .filter_map(row)
+        .find(|r| r.slot == at && r.view.dead)
+        .map(|r| r.view)
 }
 
 /// Every attached client and the pane it is looking at.
@@ -729,9 +782,11 @@ impl Tmux {
 
     /// The pane viewing `session`, creating or reviving it if it is gone.
     ///
-    /// Three cases (`docs/15-views.md`): alive, use it; dead, respawn
-    /// **in place**; absent, make one in the row session this slot
-    /// belongs to (`docs/24-the-tally-server.md`).
+    /// Four cases: by **id** — alive, use it; dead, respawn **in place**
+    /// (`docs/15-views.md`). Then by **address** — a dead view of some
+    /// other session holding this slot's window is reclaimed
+    /// (`docs/27-the-slot-collision.md`). Otherwise make one in the row
+    /// session this slot belongs to (`docs/24-the-tally-server.md`).
     fn view_pane(
         &self,
         session: &str,
@@ -751,6 +806,19 @@ impl Tmux {
             // first would lose the session mid-sequence.
             let _legacy = self.run("set-option", &clear_window_option_args(found.window));
             return Ok(found.pane.to_owned());
+        }
+        // Not found by id, so this is a new session for the slot — and the
+        // slot's window may still be held by the previous one's corpse.
+        // The column is a window index, so there is nothing to create
+        // while that is true; the corpse is also exactly the pane we
+        // want, keeping its id, its tab and its place in the row across a
+        // respawn (`docs/27-the-slot-collision.md`).
+        if let Some(stale) = dead_view_at(&listing, at) {
+            let args = respawn_pane_args(stale.pane, session, &self.anchor_bin);
+            let _reclaimed = self.run("respawn-pane", &args)?;
+            self.tag(stale.pane, session, claude, place, at)?;
+            let _legacy = self.run("set-option", &clear_window_option_args(stale.window));
+            return Ok(stale.pane.to_owned());
         }
         let pane = self.make_view(session, place)?;
         self.tag(&pane, session, claude, place, at)?;
@@ -836,14 +904,17 @@ pub fn place(session: &str, at: &str, where_: Place) -> Result<(), Error> {
 }
 
 /// The session a pane views, if it is a view at all.
+///
+/// An empty tag is not a session: a pane of yours would otherwise be
+/// reported as a view of nothing rather than as not a view.
 fn session_of(listing: &str, pane: &str) -> Option<String> {
-    listing.lines().find_map(|line| {
-        let mut f = line.split_whitespace();
-        (f.next() == Some(pane))
-            .then(|| f.nth(2))
-            .flatten()
-            .map(ToOwned::to_owned)
-    })
+    listing
+        .lines()
+        .filter_map(row)
+        .find(|r| r.view.pane == pane)
+        .map(|r| r.session)
+        .filter(|s| !s.is_empty())
+        .map(ToOwned::to_owned)
 }
 
 /// The macOS app to bring forward after switching.
@@ -965,10 +1036,11 @@ impl Jump for Tmux {
         let live = self.panes();
         let mut moved = false;
         for (client, pane) in taken {
-            if !live
-                .lines()
-                .any(|l| l.split_whitespace().next() == Some(&*pane))
-            {
+            // Through `row`, like every other read of this listing: the
+            // fields are `|`-separated and a hand-rolled split here went
+            // stale the moment that changed
+            // (`docs/27-the-slot-collision.md`).
+            if !live.lines().filter_map(row).any(|r| r.view.pane == pane) {
                 continue; // the origin closed while you were away
             }
             self.run("switch-client", &switch_args(&client, &pane))?;
@@ -1012,13 +1084,17 @@ mod tests {
     /// The same slot as geometry: absolute row 4, column 4.
     const PLACE: Place = Place { row: 4, col: 4 };
 
-    /// `#{pane_id} #{window_id} #{pane_dead} #{@tally_session}`
+    /// `#{pane_id}|#{window_id}|#{pane_dead}|#{@tally_session}|#{@tally_slot}`
+    ///
+    /// `%4` is the corpse this file is about: dead, holding slot `AT`,
+    /// tagged with a session that is not [`SESSION`]. `%5` is a live pane
+    /// at another address, and `%1` is one of yours — neither tag set.
     const LISTING: &str = "\
-%1 @1 0 \n\
-%2 @2 0 other-session\n\
-%3 @2 0 01M52GEKED8ZEJPMT2KCJ35ZWT\n\
-%4 @3 1 01M52MXB4WQTA79K5FTHMXZ8YN\n\
-%5 @3 0 \n";
+%1|@1|0||\n\
+%2|@2|0|other-session|1:4:1\n\
+%3|@2|0|01M52GEKED8ZEJPMT2KCJ35ZWT|1:4:2\n\
+%4|@3|1|01M52MXB4WQTA79K5FTHMXZ8YN|1:4:4\n\
+%5|@3|0||\n";
 
     #[test]
     fn a_view_is_created_in_the_row_session_for_its_row() {
@@ -1146,8 +1222,70 @@ mod tests {
     /// server — which is every pane you work in.
     #[test]
     fn an_untagged_pane_is_not_a_candidate() {
-        assert_eq!(view_for("%9 @9 0 \n", SESSION), None);
+        assert_eq!(view_for("%9|@9|0||\n", SESSION), None);
         assert_eq!(view_for(LISTING, ""), None, "an empty tag matches nothing");
+    }
+
+    /// Two fields can be empty now, so neither may be positional-by-luck:
+    /// an untagged pane must still parse as itself rather than shifting
+    /// the fields after it (`docs/27-the-slot-collision.md`).
+    #[test]
+    fn an_empty_tag_does_not_shift_the_fields() {
+        let r = row("%9|@9|1||").expect("parses");
+        assert_eq!(r.view.pane, "%9");
+        assert_eq!(r.view.window, "@9");
+        assert!(r.view.dead, "the field after two empties is still read");
+        assert_eq!(r.session, "");
+        assert_eq!(r.slot, "");
+    }
+
+    /// The listing has to carry the address, or the second lookup has
+    /// nothing to look in.
+    #[test]
+    fn the_listing_carries_the_address() {
+        let fmt = list_panes_args().last().expect("format").clone();
+        assert!(fmt.contains(SLOT_OPTION), "{fmt}");
+        assert!(fmt.contains(PANE_OPTION), "{fmt}");
+        assert!(
+            fmt.contains(FIELD),
+            "fields are separated by {FIELD}: {fmt}"
+        );
+        assert!(
+            !fmt.contains(' '),
+            "a space would swallow an empty tag: {fmt}"
+        );
+    }
+
+    /// The bug: a corpse from the previous session holds the slot's
+    /// window, so nothing can be created at that index until it is
+    /// reused (`docs/27-the-slot-collision.md`).
+    #[test]
+    fn a_corpse_holding_the_slot_is_found_by_address() {
+        let stale = dead_view_at(LISTING, AT).expect("the dead pane at this address");
+        assert_eq!(stale.pane, "%4");
+        assert_eq!(stale.window, "@3");
+        assert_ne!(
+            view_for(LISTING, SESSION).map(|v| v.pane),
+            Some(stale.pane),
+            "found by address precisely because the id does not match"
+        );
+    }
+
+    /// Decided in 27: a live `anchor attach` at this address is a view
+    /// somebody is reading, and a spawn is not the gesture that closes it.
+    #[test]
+    fn a_live_view_at_the_address_is_left_alone() {
+        let live = "%7|@7|0|other-session|1:4:4\n";
+        assert_eq!(dead_view_at(live, AT), None);
+    }
+
+    /// An unset address is not an address, for the reason an unset
+    /// session id is not a session id.
+    #[test]
+    fn an_untagged_pane_holds_no_address() {
+        assert_eq!(dead_view_at("%9|@9|1||\n", ""), None);
+        assert_eq!(dead_view_at(LISTING, ""), None);
+        assert_eq!(dead_view_at(LISTING, "9:9:9"), None, "nothing at that slot");
     }
 
     /// The field that can be empty goes last, so nothing after it shifts
