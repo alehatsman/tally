@@ -166,6 +166,7 @@ Not design, and nothing below is built:
 | [23-gesture-brainstorm.md](docs/23-gesture-brainstorm.md) | **brainstorm** — fork, sync, and spawn-four: three asks, and the two buttons left to pay for them |
 | [25-the-squad.md](docs/25-the-squad.md) | **spec, and the one that needs a product decision first** — `User` + `>` puts four agents in a row; the leftmost is the master and you talk only to it. It does not fit `01`'s six bullets, it spends the last free button, and it has seven open questions |
 | [28-the-level-and-the-edge.md](docs/28-the-level-and-the-edge.md) | **spec** — a hook is an edge, `claude agents --json` is a level, and the level may only veto |
+| [29-what-the-loop-holds.md](docs/29-what-the-loop-holds.md) | the daemon's state has names, the journal owns its sink, and `effect` is the vocabulary below `model` and `render` |
 
 ## License
 
