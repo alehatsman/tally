@@ -18,6 +18,7 @@
 //! has to be write-only.
 
 use std::collections::BTreeMap;
+use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
@@ -28,10 +29,71 @@ use crate::signal::{SlotState, Source};
 use crate::slot::{Pages, Slot};
 
 /// Remembers which slots were asking, so only changes are written.
+///
+/// It owns the file it writes to. The two used to be separate — a
+/// `Journal` here and an `Option<File>` beside it, threaded through two
+/// helpers as a parameter — which meant the rule that a write error
+/// retires the sink was implemented twice, and the second copy was one
+/// `flush` away from losing the transitions the journal exists to count
+/// (`docs/29-what-the-loop-holds.md`).
 #[derive(Debug, Default)]
 pub struct Journal {
     /// slot -> (session id, when it started asking)
     asking: BTreeMap<Slot, (String, i64)>,
+    /// Where the lines go, or nothing. See [`Sink`].
+    sink: Sink,
+}
+
+/// The append handle, and the one rule about it.
+///
+/// **A write that fails retires the sink and the daemon carries on.** A
+/// grid that lights up matters more than a log, which is the policy that
+/// was already here; what is new is that it is written down once instead
+/// of at each call site.
+///
+/// Unbuffered on purpose, and the flush is part of the rule rather than
+/// the caller's job: this is a few lines a day, and a buffer would hold
+/// them until a flush that `SIGKILL` never reaches — losing exactly the
+/// transitions it exists to count.
+#[derive(Debug, Default)]
+pub struct Sink(Option<File>);
+
+impl Sink {
+    /// Open `path` for appending, creating its directory.
+    ///
+    /// A failure is reported once and yields a closed sink, not an error:
+    /// there is no caller that would do anything else with one.
+    #[must_use]
+    pub fn open(path: &Path) -> Self {
+        let opened = path
+            .parent()
+            .map_or(Ok(()), std::fs::create_dir_all)
+            .and_then(|()| OpenOptions::new().create(true).append(true).open(path));
+        match opened {
+            Ok(file) => Self(Some(file)),
+            Err(e) => {
+                eprintln!("tallyd: no attention journal at {}: {e}", path.display());
+                Self(None)
+            }
+        }
+    }
+
+    /// Write one record, flush it, and retire the sink if either failed.
+    pub fn write(&mut self, line: impl FnOnce(&mut File) -> io::Result<()>) {
+        let Some(file) = self.0.as_mut() else {
+            return;
+        };
+        if let Err(e) = line(file).and_then(|()| file.flush()) {
+            eprintln!("tallyd: attention journal: {e}");
+            self.0 = None;
+        }
+    }
+
+    /// Whether anything written here lands anywhere.
+    #[must_use]
+    pub fn is_open(&self) -> bool {
+        self.0.is_some()
+    }
 }
 
 /// `~/.local/state/tally/attention.jsonl`.
@@ -67,6 +129,20 @@ impl Journal {
         Self::replay(&text, pages)
     }
 
+    /// Resume the map and open the file to append to, in that order.
+    ///
+    /// The daemon's entry point, and the only one that produces a
+    /// `Journal` that writes anything. Both halves are best effort and
+    /// report their own failure: a missing file is a first run, and an
+    /// unopenable one is a daemon that still lights the grid.
+    #[must_use]
+    pub fn open(path: &Path, pages: &Pages) -> Self {
+        Self {
+            sink: Sink::open(path),
+            ..Self::resumed(path, pages)
+        }
+    }
+
     /// The parsing half of [`Self::resumed`], separated so it can be tested
     /// against a string rather than a file.
     #[must_use]
@@ -100,10 +176,18 @@ impl Journal {
                 _ => {}
             }
         }
-        Self { asking }
+        Self {
+            asking,
+            sink: Sink::default(),
+        }
     }
 
-    /// Write a line for every slot that started or stopped asking.
+    /// Write a line for every slot that started or stopped asking, to a
+    /// sink the caller supplies.
+    ///
+    /// Kept over `impl Write` so the transitions can be asserted against
+    /// a `Vec<u8>`. The daemon calls [`Self::tick`], which is this
+    /// against the file this journal owns.
     ///
     /// # Errors
     /// Whatever the sink returns.
@@ -114,14 +198,41 @@ impl Journal {
         now: i64,
         out: &mut impl Write,
     ) -> io::Result<()> {
+        Self::transitions(&mut self.asking, resolved, pages, now, out)
+    }
+
+    /// Record this tick's transitions to the journal's own file.
+    ///
+    /// Nothing is returned: a write error retires the sink and is
+    /// reported there ([`Sink`]), and there has never been a caller that
+    /// would do anything else with one.
+    ///
+    /// `self` is destructured rather than passed whole so the map and
+    /// the sink are borrowed separately — the map is what the lines are
+    /// computed from, the sink is where they land, and nothing here
+    /// needs both at once.
+    pub fn tick(&mut self, resolved: &BTreeMap<Slot, Resolved>, pages: &Pages, now: i64) {
+        let Self { asking, sink } = self;
+        sink.write(|out| Self::transitions(asking, resolved, pages, now, out));
+    }
+
+    /// The body of [`Self::record`], over the map rather than over
+    /// `self`, so [`Self::tick`] can hold the sink at the same time.
+    fn transitions(
+        asking_now: &mut BTreeMap<Slot, (String, i64)>,
+        resolved: &BTreeMap<Slot, Resolved>,
+        pages: &Pages,
+        now: i64,
+        out: &mut impl Write,
+    ) -> io::Result<()> {
         for (slot, r) in resolved {
             let SlotState::NeedsAnswer { source } = r.state else {
                 continue;
             };
-            if self.asking.contains_key(slot) {
+            if asking_now.contains_key(slot) {
                 continue; // still asking; not a transition
             }
-            let _previous = self.asking.insert(*slot, (r.session.clone(), now));
+            let _previous = asking_now.insert(*slot, (r.session.clone(), now));
             let source = match source {
                 Source::Derived => "derived",
                 Source::Declared => "declared",
@@ -146,14 +257,13 @@ impl Journal {
             .filter(|(_, r)| matches!(r.state, SlotState::NeedsAnswer { .. }))
             .map(|(s, _)| *s)
             .collect();
-        let done: Vec<Slot> = self
-            .asking
+        let done: Vec<Slot> = asking_now
             .keys()
             .filter(|s| !still.contains(s))
             .copied()
             .collect();
         for slot in done {
-            if let Some((session, since)) = self.asking.remove(&slot) {
+            if let Some((session, since)) = asking_now.remove(&slot) {
                 let at = address(slot, pages);
                 write_line(
                     out,
@@ -184,6 +294,22 @@ impl Journal {
     /// ordering the top row sorts by.
     pub fn waiting(&self) -> &BTreeMap<Slot, (String, i64)> {
         &self.asking
+    }
+
+    /// Record a press of `►` ([`nav_next`]).
+    pub fn jumped_next(&mut self, now: i64, slot: &str, waited_ms: i64, queued: usize) {
+        self.sink
+            .write(|out| nav_next(out, now, slot, waited_ms, queued));
+    }
+
+    /// Record a press of `◄` ([`nav_back`]).
+    pub fn jumped_back(&mut self, now: i64, ok: bool) {
+        self.sink.write(|out| nav_back(out, now, ok));
+    }
+
+    /// Record a press of an overview pad ([`nav_goto`]).
+    pub fn jumped_to(&mut self, now: i64, to: u8, from: u8, lit: usize) {
+        self.sink.write(|out| nav_goto(out, now, to, from, lit));
     }
 }
 
@@ -811,5 +937,41 @@ mod tests {
             .record(&BTreeMap::new(), &Pages::default(), T0, &mut out)
             .expect("write");
         assert!(out.is_empty());
+    }
+
+    /// The sink's one rule, and the reason it is a type: a write that
+    /// fails retires it and the daemon carries on
+    /// (`docs/29-what-the-loop-holds.md`).
+    ///
+    /// The failure is made with a **read-only** handle, which is the
+    /// cheapest honest way to get `write` to return an error without a
+    /// full disk. What is asserted is not the error — it is that the
+    /// sink closed itself and that writing to it afterwards is a no-op
+    /// rather than a panic or a second report per press.
+    #[test]
+    fn a_failed_write_retires_the_sink_and_nothing_else() {
+        let path = std::env::temp_dir().join("tally-sink-retires.jsonl");
+        std::fs::write(&path, b"").expect("seed");
+        let mut sink = Sink(Some(File::open(&path).expect("read-only handle")));
+        assert!(sink.is_open());
+
+        sink.write(|out| nav_back(out, 1, true));
+        assert!(!sink.is_open(), "a failed write closes the sink");
+
+        // Still callable, still silent, still writes nothing.
+        sink.write(|out| nav_back(out, 2, true));
+        assert_eq!(std::fs::read(&path).expect("read").len(), 0);
+        std::fs::remove_file(&path).expect("clean up");
+    }
+
+    /// A journal that could not open its file still resumes its map. The
+    /// grid is the half that is load-bearing; the log is not.
+    #[test]
+    fn an_unopenable_journal_is_still_a_journal() {
+        // A directory is never an appendable file.
+        let dir = std::env::temp_dir();
+        let j = Journal::open(&dir, &Pages::default());
+        assert!(!j.sink.is_open());
+        assert_eq!(j.asking(), 0);
     }
 }
