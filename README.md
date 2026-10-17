@@ -121,7 +121,7 @@ is a product.
 ## Design
 
 Every document below is settled design that is **shipped and running**,
-except the five listed separately at the end. Where two of them disagree,
+except the three listed separately at the end. Where two of them disagree,
 the later one wins and says so in its own first paragraph — the reversals
 are kept rather than edited away, because the record of what the hardware
 changed our minds about is the most useful thing here.
@@ -146,6 +146,7 @@ spec once blocked on reading it the other way.
 | [09-testing.md](docs/09-testing.md) | testing a thing whose output is light |
 | [10-open-questions.md](docs/10-open-questions.md) | what is asserted here but not proven |
 | [11-cli.md](docs/11-cli.md) | `tally spawn` and `tally fork`, for when the folder comes from you |
+| [12-the-layout.md](docs/12-the-layout.md) | what all 81 buttons do, why the grid is flat, and which arrangements are closed |
 | [14-attention.md](docs/14-attention.md) | the bell that is never rung, and the hooks that replace it |
 | [15-views.md](docs/15-views.md) | a view is addressed as a pane — amended twice by `24` |
 | [16-the-queue.md](docs/16-the-queue.md) | the top row is a queue, not a map — and why rows are not projects |
@@ -163,9 +164,7 @@ Not design, and nothing below is built:
 
 | doc | what |
 |---|---|
-| [12-layout-proposal.md](docs/12-layout-proposal.md) | **proposal** — rows are projects. Reviewed in `13`, answered by `16`, tracked as [#8](https://github.com/alehatsman/tally/issues/8) |
-| [13-layout-review.md](docs/13-layout-review.md) | **review** of `12`, and a narrower counter-proposal |
-| [23-gesture-brainstorm.md](docs/23-gesture-brainstorm.md) | **brainstorm** — three asks, and an inventory of every gesture that *is* current: the table to read when you need to know what a button does today |
+| [23-gesture-brainstorm.md](docs/23-gesture-brainstorm.md) | **brainstorm** — three asks the surface has no buttons left for |
 | [25-the-squad.md](docs/25-the-squad.md) | **spec, and the one that needs a product decision first** — `User` + `>` puts four agents in a row; the leftmost is the master and you talk only to it. It does not fit `01`'s six bullets, it spends the last free button, and it has seven open questions |
 | [28-the-level-and-the-edge.md](docs/28-the-level-and-the-edge.md) | **spec** — a hook is an edge, `claude agents --json` is a level, and the level may only veto |
 

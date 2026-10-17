@@ -166,8 +166,9 @@ pub enum Gesture {
 /// it (`docs/16-the-queue.md`).
 ///
 /// None of these is a chord. `◄` and `►` commit nothing — they move you —
-/// so there is nothing for a hold to protect, which is exactly why
-/// `docs/13`'s *answer from the grid* needed one and this does not.
+/// so there is nothing for a hold to protect. That is the whole reason
+/// navigation won these two buttons over *answer from the grid*, which
+/// would have needed one (`docs/12-the-layout.md`).
 fn top(n: u8) -> Option<Gesture> {
     match n {
         1 => Some(Gesture::PageUp),

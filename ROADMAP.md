@@ -347,21 +347,21 @@ Exit, for step 1:
 > on: adoption needs a pane that survives its agent, and a return needs a
 > pane-level coordinate to return to.
 
-> **Steps 2 and 3 were written before anyone checked the layout docs, and
-> collided with them** — `docs/13` §5 had already spent the second tap, and
-> adoption was written against an address format #8 might replace. Both are
-> released by [docs/16](docs/16-the-queue.md): the return gesture moves to
-> its own button and addressing does not change. Recorded because a spec
-> validated against the code and not against the other specs will do this
-> again.
+> **Steps 2 and 3 were written before anyone checked the layout work, and
+> collided with it** — the second tap on a pad was already spoken for, and
+> adoption was written against an address format #8 might have replaced.
+> Both are released by [docs/16](docs/16-the-queue.md): the return gesture
+> moves to its own button and addressing does not change. Recorded because
+> a spec validated against the code and not against the other specs will do
+> this again.
 
 ---
 
 ## M8 — The top row is a queue
 
-The first hour of `attention.jsonl` answered a question M6 made askable and
-`docs/13` §10 said gates the whole layout: **61% of the time more than one
-agent is waiting, and 15% of the time exactly one is.** There is usually no
+The first hour of `attention.jsonl` answered the question M6 made askable,
+and it is the one the whole layout turns on: **61% of the time more than
+one agent is waiting, and 15% of the time exactly one is.** There is usually no
 *the* amber pad. And the choice is not close — when two or more are amber
 the gap between the longest and shortest wait is a median of 386 s.
 
@@ -385,11 +385,12 @@ Exit:
   pad, how deep the queue was, and whether you answered something younger
   than the head
 
-> **The idea this retires.** `docs/13` §5 narrowed *answer from the grid*
-> to the one answer safe to give without reading, having opened by calling
-> it "the most dangerously framed" idea in `12`. It is still a button that
-> answers an amber light rather than a command. Spending `►` on navigation
-> retires it without needing a further argument — and navigation commits
+> **The idea this retires.** *Answer from the grid*, even narrowed to the
+> one answer safe to give without reading, is still a button that answers
+> an amber light rather than a command
+> ([docs/12](docs/12-the-layout.md#closed-and-why-they-stay-closed)).
+> Spending `►` on navigation retires it without needing a further
+> argument — and navigation commits
 > nothing, which is exactly why *answer-and-advance* was rejected.
 
 > **What it costs.** `docs/05` spent four paragraphs on a rule learned in

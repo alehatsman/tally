@@ -1,8 +1,8 @@
 //! Which agent to answer first.
 //!
-//! `docs/13` §10 asked whether you need to know *which project* is blocked
-//! before you jump. The first hour of `attention.jsonl` answered a
-//! different question instead: **61% of the time more than one agent is
+//! A grouped layout rests on knowing *which project* is blocked before you
+//! jump. The first hour of `attention.jsonl` answered a different question
+//! instead: **61% of the time more than one agent is
 //! waiting**, and when two or more are, the gap between the longest and
 //! shortest wait is a median of 386 seconds.
 //!
