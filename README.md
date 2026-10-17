@@ -4,10 +4,10 @@ A Novation Launchpad Mini [MK3] as the front panel for agent sessions.
 
 ```text
   ┌───────────────────────────────┐
-  │ ● ● ● ● ● ● ● ●   pages       │        press a live pad    → jump to it
+  │ ▲ ▼ ◄ ► ▣ ◈ · ·   navigate    │        press a live pad    → jump to it
   │ ┌───────────────┐ ┌─┐         │        press > beside it   → new agent, same folder
-  │ │               │ │●│         │        hold the corner     → kill, with a preview
-  │ │   8 x 8       │ │●│ actions │        a pad that needs you flashes amber
+  │ │               │ │●│         │        hold the corner     → kill or forget, previewed
+  │ │   8 x 8       │ │●│ launch  │        a pad that needs you breathes amber
   │ │   64 slots    │ │●│         │   ┌──────────┐      ┌──────────────────┐
   │ │               │ │●│         │──▶│  tallyd  │─────▶│ anchord          │
   │ └───────────────┘ └─┘         │   │ (this)   │      │ PTY: claude      │
@@ -27,15 +27,20 @@ in.
 
 ## Status
 
-**Shipped and driving a real desk.** Twelve milestones, 352 tests, and a
-Launchpad Mini MK3 on the desk. The hardware protocol in
+**Shipped and driving a real desk.** Seventeen milestones and a Launchpad
+Mini MK3 on the desk. The hardware protocol in
 [docs/02-surface.md](docs/02-surface.md) was read out of Novation's manual
 and verified against the device ([M0](ROADMAP.md#m0--prove-the-manual));
-the grid, the jump, the chords, the pages, `tally spawn`, the queue, the
-tempo, the launch column and the overview followed
-([M1](ROADMAP.md#m1--the-grid-tells-the-truth)–[M11](ROADMAP.md#m11--the-overview)).
-Every build item in [the roadmap](ROADMAP.md) is done; what is still open
-there is the half only a week of use can close.
+the grid, the jump, the chords, `tally spawn`, the queue, the tempo, the
+launch column and the overview followed
+([M1](ROADMAP.md#m1--the-grid-tells-the-truth)–[M11](ROADMAP.md#m11--the-overview)),
+and then the surface ran out of buttons
+([M12](ROADMAP.md#m12--the-corner-carries-two-verbs)–[M16](ROADMAP.md#m16--the-arts)).
+
+Every build item in [the roadmap](ROADMAP.md) is done. What is open there
+is the half only use can close, and
+[What is next](ROADMAP.md#what-is-next) is the one section to read before
+building anything else.
 
 **The thing worth reading is what a day of use found.** The amber — the
 signal this whole product is a bet on — never fired once against the agent
@@ -45,16 +50,26 @@ there was nothing to detect. The attention half now comes from hooks the
 agent calls ([M6](ROADMAP.md#m6--the-amber-exists),
 [docs/14](docs/14-attention.md)).
 
-That is one of six times here that a surface fact only showed up on the
+That is one of seven times here that a surface fact only showed up on the
 surface, and the list is kept on purpose: the three greens, the hard amber
-flash, the title scroll, the top row, the bell that was never rung, and —
-most recently — a row of eight panes that was correct, addressable, tested,
-and on a real screen was eight 23-column slivers nobody could read
+flash, the title scroll, the top row, the bell that was never rung, the
+green working pulse that was legible at a glance and tiring by the
+afternoon ([M9](ROADMAP.md#m9--the-tempo-says-how-long)), and — most
+recently — a row of eight panes that was correct, addressable, tested, and
+on a real screen was eight 23-column slivers nobody could read
 ([docs/24](docs/24-the-tally-server.md)). Each of those cost a build to
 find and none of them could have been argued out in advance.
 
+Two of them needed more than looking. The hard amber flash and the green
+pulse both passed a glance on real hardware and failed a **day** beside the
+thing, which is a different instrument and the slowest one here.
+
 What remains is the only exit criterion that cannot be hurried — **a week
-of `attention.jsonl`, and a number out of it.**
+of `attention.jsonl`, and a number out of it.** The journal holds a little
+over a day. Nine milestones have shipped on top of a signal whose
+trustworthiness has never been measured to the standard
+[M1](ROADMAP.md#m1--the-grid-tells-the-truth) set for it, and that is the
+honest statement of where this stands.
 
 ## The name
 
@@ -76,8 +91,9 @@ about what they mean.
 - **signals** — working / idle / needs-you / exited. Liveness comes from
   anchor; *needs-you* comes from hooks the agent calls, because it never
   rang the bell ([docs/14](docs/14-attention.md))
-- **gestures** — jump, launch into a row, kill, purge, and one held
-  button that turns the grid into a map of itself
+- **gestures** — jump, launch into a row, kill, forget, move a pad
+  somewhere else, and one held button that turns the grid into a map of
+  itself
 - **jump** — the press that puts the real terminal in front of you
 
 ## What it is not
@@ -86,8 +102,10 @@ about what they mean.
 the jump target is a tmux pane. tally does make panes — one per live
 slot, on [its own tmux server](docs/24-the-tally-server.md), where a row
 is a session and a column is a window — but it makes exactly the ones the
-grid implies and gives you no way to arrange them. The layout is not a
-feature; it is the grid, reflected. Your own tmux is never touched.
+grid implies and gives you no way to arrange *them*. The layout is not a
+feature; it is the grid, reflected. **Your own tmux is never touched**,
+and that is a property of the socket rather than of good behaviour: a
+`switch-client` cannot reach a client it cannot list.
 
 **Not a session daemon.** It never owns a PTY, never holds a control lease,
 and goes away without anything noticing. anchor exists precisely so this
@@ -107,6 +125,13 @@ except the five listed separately at the end. Where two of them disagree,
 the later one wins and says so in its own first paragraph — the reversals
 are kept rather than edited away, because the record of what the hardware
 changed our minds about is the most useful thing here.
+
+Two conventions, so the reversals stay readable rather than becoming a
+diff you have to apply in your head. A ⚠️ marks a paragraph a later
+document amended; a ⛔ marks a section kept only as the record of a
+decision that was reversed. **A measurement inside a shipped document is
+history, not status** — `14` records a gap that `14` itself closed, and a
+spec once blocked on reading it the other way.
 
 | doc | what |
 |---|---|
@@ -129,9 +154,10 @@ changed our minds about is the most useful thing here.
 | [19-the-dead-pane.md](docs/19-the-dead-pane.md) | a view whose agent exited says so in place, and stays jumpable |
 | [20-the-overview.md](docs/20-the-overview.md) | `Session` held shows which of the sixty-four rows exist |
 | [21-the-arts.md](docs/21-the-arts.md) | the grid as a thing to look at, and the menu that picks one |
-| [22-the-mode-button.md](docs/22-the-mode-button.md) | what the one remaining hold modifier carries |
+| [22-the-mode-button.md](docs/22-the-mode-button.md) | the corner carries two verbs — Stop and Move — and a double-tap swaps them |
 | [24-the-tally-server.md](docs/24-the-tally-server.md) | tally's own tmux server: a row is a session, a column is a window |
 | [26-the-claude-session-id.md](docs/26-the-claude-session-id.md) | the dead pane names the *conversation*, not the PTY |
+| [27-the-slot-collision.md](docs/27-the-slot-collision.md) | a corpse must not hold the slot: a view is found by address as well as by id |
 
 Not design, and nothing below is built:
 
@@ -139,8 +165,8 @@ Not design, and nothing below is built:
 |---|---|
 | [12-layout-proposal.md](docs/12-layout-proposal.md) | **proposal** — rows are projects. Reviewed in `13`, answered by `16`, tracked as [#8](https://github.com/alehatsman/tally/issues/8) |
 | [13-layout-review.md](docs/13-layout-review.md) | **review** of `12`, and a narrower counter-proposal |
-| [23-gesture-brainstorm.md](docs/23-gesture-brainstorm.md) | **brainstorm** — every gesture the surface has, the two free buttons, and three asks |
-| [25-the-squad.md](docs/25-the-squad.md) | **spec** — `User` + `>` puts four agents in a row; the leftmost is the master and you talk only to it |
+| [23-gesture-brainstorm.md](docs/23-gesture-brainstorm.md) | **brainstorm** — three asks, and an inventory of every gesture that *is* current: the table to read when you need to know what a button does today |
+| [25-the-squad.md](docs/25-the-squad.md) | **spec, and the one that needs a product decision first** — `User` + `>` puts four agents in a row; the leftmost is the master and you talk only to it. It does not fit `01`'s six bullets, it spends the last free button, and it has seven open questions |
 | [28-the-level-and-the-edge.md](docs/28-the-level-and-the-edge.md) | **spec** — a hook is an edge, `claude agents --json` is a level, and the level may only veto |
 
 ## License
