@@ -139,7 +139,7 @@ spec once blocked on reading it the other way.
 | [02-surface.md](docs/02-surface.md) | the hardware: MIDI, programmer mode, palette, what it costs |
 | [03-model.md](docs/03-model.md) | slots, pages, and where the binding actually lives |
 | [04-signals.md](docs/04-signals.md) | how a pad knows the agent needs an answer |
-| [05-interaction.md](docs/05-interaction.md) | gestures and the colour language |
+| [05-interaction.md](docs/05-interaction.md) | the colour language, the gestures, and what a press does not do |
 | [06-jump.md](docs/06-jump.md) | the press that moves your eyes to the right window |
 | [07-seams.md](docs/07-seams.md) | what we ask anchor for, and where teleport fits |
 | [08-lifecycle.md](docs/08-lifecycle.md) | who starts tallyd, and why Live mode must be restored |
@@ -148,7 +148,7 @@ spec once blocked on reading it the other way.
 | [11-cli.md](docs/11-cli.md) | `tally spawn` and `tally fork`, for when the folder comes from you |
 | [12-the-layout.md](docs/12-the-layout.md) | what all 81 buttons do, why the grid is flat, and which arrangements are closed |
 | [14-attention.md](docs/14-attention.md) | the bell that is never rung, and the hooks that replace it |
-| [15-views.md](docs/15-views.md) | a view is addressed as a pane — amended twice by `24` |
+| [15-views.md](docs/15-views.md) | a view is addressed as a pane: it outlives its agent, and a jump is a round trip |
 | [16-the-queue.md](docs/16-the-queue.md) | the top row is a queue, not a map — and why rows are not projects |
 | [17-the-tempo.md](docs/17-the-tempo.md) | the breathing rate says how long the oldest thing has waited |
 | [18-the-launch-column.md](docs/18-the-launch-column.md) | `>` spawns into its row, and the row already knows the folder |

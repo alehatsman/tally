@@ -53,7 +53,7 @@ Three more that are cheap and catch the mistakes that look plausible:
 
 > ⚠️ **`scroll()` was in this list, and the feature went.** The title scroll
 > was built, sanitised, tested and
-> [deleted the same hour](05-interaction.md#the-title-scroll--tried-and-abandoned).
+> [deleted the same hour](05-interaction.md#the-pad-cannot-say-what-it-wants).
 > `STOP_SCROLL` survives as the way to recover a device left mid-scroll by
 > something else.
 

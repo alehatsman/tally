@@ -278,7 +278,7 @@ left-to-right). `<colourspec>` here is `00 <palette>` or `01 <r> <g> <b>`.
 any byte ≥ `0x80` inside a SysEx is read as a status byte and ends the
 message early. Titles are UTF-8, so they are sanitised before they get here
 — the rule is in
-[05-interaction.md](05-interaction.md#the-title-scroll--tried-and-abandoned),
+[05-interaction.md](05-interaction.md#the-pad-cannot-say-what-it-wants),
 and it belongs to this layer to enforce.
 
 Two properties make this usable rather than a gimmick: the scroll **overlays
@@ -298,7 +298,7 @@ the grid.
 > characters for longer. Kept documented because the device does do this
 > and the next person will want to try it; the finding that it is
 > unreadable is the part worth not re-deriving
-> ([05](05-interaction.md#the-title-scroll--tried-and-abandoned)).
+> ([05](05-interaction.md#the-pad-cannot-say-what-it-wants)).
 >
 > `STOP_SCROLL` stays in the code regardless: it is how a device left
 > mid-scroll by anything else is put back.

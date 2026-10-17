@@ -1,69 +1,40 @@
 # 15 — Where a view lives
 
-Three open issues ask three questions — [#1](https://github.com/alehatsman/tally/issues/1)
-where a spawned view lands, [#2](https://github.com/alehatsman/tally/issues/2)
-what happens when a view's agent dies under you, and
-[#3](https://github.com/alehatsman/tally/issues/3) how you get back from a
-jump. Each of them names the other two, and each of them is blocked on the
-same sentence being wrong.
+A view is the thing a pad press puts in front of you: a tmux pane running
+`anchor attach`. This document is about the unit it is addressed by, why it
+outlives the agent in it, and how you get back from a jump.
 
-This document fixes the sentence.
+**A view is addressed as a pane.** The identity is a *pane* option — never
+a window or session one — and everything else here follows from that.
 
-> ⚠️ **Amended twice by [24](24-the-tally-server.md).** *Adoption is
-> gone* — views live on tally's own tmux server now, and a pane on your
-> personal server cannot be one. And *the container changed*: `24` was
-> itself amended from pane-per-column to **window-per-column**, so a view
-> is created with `new-window`, not `split-window`. What this document
-> settled survives that and is the reason it works — the **identity** is
-> a pane option (`-p`), never a window or session one, so the unit a view
-> is addressed by is still a pane. `remain-on-exit`, respawn in place and
-> origin-as-a-pane-id are unchanged.
->
-> Read the headline below as *a view is addressed as a pane*, which is
-> what the rest of the document argues and what shipped.
+The container around it is [24](24-the-tally-server.md)'s: tally's own tmux
+server, a row is a session, a column is a window. A view is created with
+`new-window` and is the one pane in it. None of that changes the unit it is
+addressed by, which is why the two documents compose rather than compete.
 
-## The claim
-
-**A view is a pane, not a window.**
-
-[06-jump.md](06-jump.md) says a window, and said it for a good reason: when
-the only thing that creates views is `tallyd`, under launchd, with no client
-attached, a window in a dedicated session is the only place that is safe to
-put one. That is still true of the views `tallyd` creates. It is not true of
-views in general, and all three issues are consequences of treating the
-special case as the definition.
-
-Change the unit from window to pane and the three questions collapse into
-one shape:
-
-| issue | as a window question | as a pane question |
-|---|---|---|
-| #1 adopt the pane I ran from | a window cannot be a pane you already have | the pane you ran from **is** the unit |
-| #2 the kill detaches me | the window closes, the session empties, the client falls out | panes have `remain-on-exit`; nothing above them closes |
-| #3 no way back | "back" is a window, except when it is not | origin is a pane id, which is the whole address |
-
-None of these is a patch beside the others. They are one change, read three
-ways, which is why this is one document rather than three.
+**Why a pane and not a window.** A window option is inherited by every pane
+in the window, so a window-scoped identity is a claim about panes tally may
+not have created — and the moment anything splits a view, two panes claim
+one session and a jump lands on either. A pane is also the unit that can
+outlive its command and the unit a return gesture can name.
 
 ## What was measured
 
 Everything below was run against a live tmux **3.6b** server on this
 machine. Where something is documented but not yet observed, it says so.
 
-✅ **A window option is inherited by every pane in the window.** With
-today's code — `set-option -w` (`src/jump.rs`) — a view window's option
-is visible from each of its panes, and splitting a view window gives two
-panes that both claim the same anchor session:
+✅ **A window option is inherited by every pane in the window.** Under
+`set-option -w`, splitting a view gives two panes that both claim the same
+anchor session, and a jump lands on either:
 
 ```text
 %99  [01M5311CGQ2DED0GKQAG23RTKN]    <- the view
 %102 [01M5311CGQ2DED0GKQAG23RTKN]    <- a split of it, claiming the same session
 ```
 
-This is the same class of bug as the missing `-w` that
-[06-jump.md](06-jump.md#recovering-a-view) records, one level down. It
-does not bite today only because nothing splits a view window. #1 makes
-splitting normal, so it would.
+Same class of bug as the missing `-w` in
+[06-jump.md](06-jump.md#recovering-a-view), one level down. **This is the
+measurement the pane scope exists for.**
 
 ✅ **A pane option is not inherited by siblings.** `set-option -p` on one
 pane leaves the other blank — `%103 [SESS_A]`, `%104 []`. Pane scope is
@@ -71,12 +42,11 @@ the fix, not an addition beside the window scope.
 
 ✅ **`remain-on-exit` is pane-scoped in 3.6.** `set-option -p -t <pane>
 remain-on-exit on` is accepted and applies to that pane alone — the sibling
-reports `roe=off`. This matters more than it looks: under #1 the view is a
-pane in **your** window, and a window-scoped option would change how your
-other panes behave.
+reports `roe=off`. Scope matters for the same reason as the identity: a
+window-scoped option is a claim about panes tally did not create.
 
-✅ **The #2 chain, reproduced and broken.** A session whose only pane's
-command exits is destroyed:
+✅ **A session whose only pane's command exits is destroyed** — which is
+the detach, reproduced:
 
 ```text
 command exits, no remain-on-exit   -> session DESTROYED   <-- the detach
@@ -85,7 +55,7 @@ command exits, remain-on-exit on   -> session SURVIVES, pane dead=1
 
 ✅ **A dead pane keeps its option and its content.** `%106 dead=1
 [SESS_C]`, and `capture-pane` still returns the lines the command printed.
-The corpse is readable, which is what #2 asks for.
+The corpse is readable, which is the whole point of keeping it.
 
 ✅ **`respawn-pane` reuses the pane and its id.** `%109` before, `%109`
 after, `dead=1` → `dead=0`. So a view can be brought back **in place** —
@@ -117,13 +87,16 @@ thing you asked for.
 
 ## Identity moves to the pane
 
-`@tally_session` keeps its name and its job. It changes scope.
+`@tally_session` is the identity, and it lives at pane scope.
 
-| | today | after |
-|---|---|---|
-| set | `set-option -w -t <window>` | `set-option -p -t <pane>` |
-| read | `list-windows -a -F '#{window_id} #{@tally_session}'` | `list-panes -a -F '#{pane_id} #{@tally_session}'` |
-| focus | `switch-client -c <client> -t <window_id>` | `switch-client -c <client> -t <pane_id>` |
+| | |
+|---|---|
+| set | `set-option -p -t <pane> @tally_session <id>` |
+| read | `list-panes -a -F '…'`, parsed by position ([27](27-the-slot-collision.md)) |
+| focus | `switch-client -c <client> -t <pane_id>` |
+
+`switch_args` takes a target string and does not care what kind it is, so
+focusing a pane costs the same call as focusing a window.
 
 The focus line is unchanged in shape: `switch_args` (`src/jump.rs`)
 takes a target string and does not care what kind it is. That is the whole
@@ -141,22 +114,21 @@ for good rather than lying dormant until someone splits a window.
 ## A view pane outlives its command
 
 Every pane tally owns gets `remain-on-exit on`, set at pane scope at the
-moment it is tagged. (It said *created or adopted* until
-[24](24-the-tally-server.md) removed adoption; the rule is unchanged, the
-second case simply no longer exists.)
+moment it is tagged.
 
 The consequences, in the order you meet them:
 
 - **Kill a session you are watching: you stay attached, looking at the
   corpse.** The pane survives `anchor attach` exiting; the window survives
   the pane; the `tally` session survives the window; your client survives
-  all of it. The chain in #2 is broken at its first link, which is the only
-  link tally owns.
-- **An agent that exits on its own does the same thing.** #2 is right that
-  this was never kill-specific; kill was just the reliable trigger.
-- **Dark is not forgotten, now literally.**
-  [05-interaction.md:295](05-interaction.md) already promised that the row
-  and its scrollback stay. Until now the scrollback stayed in *anchor* and
+  all of it. The chain is broken at its first link, which is the only link
+  tally owns.
+- **An agent that exits on its own does the same thing.** This is not
+  kill-specific; kill is just the reliable trigger.
+- **Dark is not forgotten, literally.**
+  [05-interaction.md](05-interaction.md#kill-is-the-one-that-needs-the-care)
+  promises that the row and its scrollback stay. Without this the
+  scrollback stayed in *anchor* and
   the pane you were looking at vanished. Now both stay.
 
 **A dead view pane does not mean a dead agent**, and this is the trap worth
@@ -177,88 +149,29 @@ find the pane whose @tally_session is this session
 └─ not found     -> create a view under `tally`, tag it, switch
 ```
 
-The middle case is new and it is the one that makes adoption survivable.
-Without it, killing an agent in an adopted pane leaves a corpse in *your*
-window, and the next press opens the view somewhere else — so the pad
-quietly stops meaning the pane you put it in. With it, the pad keeps its
-promise: press it and the thing comes back **where you left it**, because
-`respawn-pane` keeps the pane id and therefore the tag.
+**The middle case is what keeps a pad's promise.** Without it, an agent
+dying leaves a corpse and the next press opens the view somewhere else, so
+the pad quietly stops meaning the place you put it. With it, press the pad
+and the thing comes back **where you left it** — `respawn-pane` keeps the
+pane id and therefore the tag, the column and the window.
 
-#1 worried that a closed adopted pane has no pane to recreate in, and that
-the fallback to a `tally` window is a behaviour change rather than an
-accident. That is still true and still the answer — but it now applies only
-to a pane you actually *closed*, not to one whose agent merely died.
+A pane you actually *closed* has nothing to respawn into, and falls to the
+third case. That is a behaviour difference rather than an accident: a dead
+pane is a thing you are meant to read, and a closed one you chose to be rid
+of.
 
-## Adoption: `tally spawn` from a pane
-
-> ⛔ **Superseded by [24](24-the-tally-server.md). This section is the
-> record of a decision that was reversed, not current behaviour.**
-> Everything below was true and shipped; it stopped being true when
-> views moved to tally's own tmux server, because a pane on your
-> personal server cannot be a view on tally's. `tally spawn` now places
-> the view in the row session the pad belongs to and leaves your shell
-> where it is. The half this section was really defending — *the folder
-> comes from where you are standing* — survives untouched.
->
-> ✅ **Cleared by [16](16-the-queue.md).** Addressing stays
-> `page:row:col`, declared, so there is no one-way migration to build
-> this twice against.
-
-Spawning from a shell means standing somewhere on purpose. `tally spawn`
-run **inside tmux** adopts the pane it was invoked in.
-
-```text
-tally spawn 1:1
-  resolve the address, read $PWD                   ) every refusal path
-  list sessions, refuse an occupied pad            ) exits here, with the
-  anchor create ...                                ) shell still alive
-  --- the claim is accepted; only now does anything become irreversible ---
-  set-option -p -t $TMUX_PANE @tally_session <id>
-  set-option -p -t $TMUX_PANE remain-on-exit on
-  exec anchor attach <id>
-```
-
-**Nothing execs before the claim is accepted.** That ordering is the whole
-safety argument, and it is why the error paths in
-[11-cli.md](11-cli.md#errors) need no changes: they all happen above the
-line. A bad address, a held pad, an unreachable anchord — the shell prints
-and returns, exactly as today.
-
-| where it runs | what it does | why |
-|---|---|---|
-| inside tmux | adopts `$TMUX_PANE`, execs | you navigated here on purpose |
-| inside tmux, `--detach` | creates a view under `tally`, prints, returns | scripts, and the old behaviour when you want it |
-| outside tmux | creates a view under `tally`, prints, returns | nothing to adopt that tally can later find |
-| `tallyd`, from a pad | creates a view under `tally` | no `$TMUX`, possibly no client at all ([06](06-jump.md)) |
-
-The last two rows are today's behaviour, unchanged. Adoption is an addition
-to the lookup's *inputs*, not a second lookup.
-
-**Outside tmux falls back rather than adopting the terminal.** A bare
-terminal running `anchor attach` is a perfectly good view and a completely
-unfindable one: there is no pane to tag, so a pad press could never focus
-it and would open a second view onto the same session. The smaller change
-is also the honest one.
-
-**An adopted pane is not renamed.** `window_name` (`src/jump.rs`) keeps
-doing its job for views tally creates. The window an adopted pane lives in
-is yours, it probably holds other things, and naming it `1:1:1-5ZWT` would
-be tally redecorating a room it was invited into.
-
-**No `tl.spec` still applies**, and so does its consequence — the respawn
-chord does nothing on a pad claimed this way ([11-cli.md](11-cli.md#what-it-does-not-do)).
-Adoption does not change what a shell-spawned session knows about itself.
+The address is a lookup too, and the second one: a corpse still occupying a
+column's window index will refuse a new view with `index in use`, so a dead
+pane at the slot is reclaimed by `@tally_slot` before anything is created
+([27](27-the-slot-collision.md)).
 
 ## The return trip
 
-> ✅ **Cleared by [16](16-the-queue.md), with rule 3 replaced.** The
-> return gesture is `◄` on the top row, not a second press on a pad — it
-> gets its own button, with an affordance, and no tap is overloaded. The
-> other three rules below are unchanged and are what `◄` is built on.
+The gesture is `◄` on the top row ([16](16-the-queue.md)): its own button,
+with its own affordance, so no tap on a pad carries a second meaning.
 
-A jump is one-directional today because `jump` (`src/jump.rs`) switches
-the client without first reading where it was. The information exists for
-one instant and is dropped.
+What it needs is the thing a bare `switch-client` throws away — where the
+client was standing before it moved.
 
 **Record it, one deep, per client.**
 
@@ -268,7 +181,7 @@ before switching:  tmux list-clients -F '#{client_name} #{pane_id}'
                    remember it as that client's origin
 ```
 
-Four rules, each answering one of #3's open questions:
+Three rules, and each of them is load-bearing:
 
 1. **Per client.** A jump switches every attached client on purpose
    (`Jump::jump`), so "where I was" is per client and never global.
@@ -280,42 +193,35 @@ Four rules, each answering one of #3's open questions:
    would let you walk back through five agents, which is not a thing
    anybody has wanted while holding a grid.
 
-   ⚠️ This rule first read *"only non-views count"*, which assumed you
-   jump from nvim. Every pane this grid is used from is an anchor session,
-   so nothing was ever recorded and `◄` was dark forever — caught by the
-   journal an hour after shipping. See
-   [16](16-the-queue.md#back-and-where-you-were).
-3. **The gesture is a second press on the pad you are already on.** No new
-   button, no new colour, and the device already has the concept: the top
-   row's rule is *one bright thing, and it is where you are*. Per client
-   falls out of it for free — a client sitting on that view returns, a
-   client that is not jumps, and both are correct at the same time.
-4. **Staleness degrades to nothing.** If the origin pane is gone, the press
+   **A view is a valid origin**, and that is the half that is easy to get
+   wrong. Excluding them assumes you jump *from* nvim; every pane this grid
+   is used from is an anchor session, so excluding them records nothing and
+   `◄` is dark forever. What the exclusion was protecting — walking back
+   through agents one at a time — is held by *first jump wins* instead,
+   which does not care what kind of pane you started in
+   ([16](16-the-queue.md#back-and-where-you-were)).
+3. **Staleness degrades to nothing.** If the origin pane is gone, the press
    does nothing and says so in the log. It must not pick a nearby pane, the
    window the pane was in, or the last session. Landing somewhere arbitrary
    is worse than not moving, because not moving is something you can
    understand from across the room.
 
-**`switch-client -l` is what this replaces.** It returns to the last
-*session*, which covers exactly the case where you jumped from a different
-session and nothing else: not the window, not the pane, and not the case
-where you were already inside `tally`. Under #1 views stop living in a
-separate session at all, at which point `-l` covers nothing.
+**`switch-client -l` does not do this job.** It returns to the last
+*session* — not the window, not the pane, and not the case where you were
+already inside tally's server, which is every case on this grid.
 
-**There is still no focused colour.**
-[05-interaction.md](05-interaction.md) rejects one on two grounds — tallyd
-would have to poll tmux every tick, and white would overwrite *working* on
-the one pad whose working state you most want to see. Both still hold. The
-return gesture needs no indicator because you are looking at the thing: the
-pad you are on is the pad whose view fills your terminal. The tmux lookup
-happens **on the press**, not on the tick, which is what keeps the first
-objection answered.
+**There is no focused colour**, and the return gesture needs none: you are
+looking at the thing, so the pad you are on is the pad whose view fills
+your terminal. The tmux lookup happens **on the press**, never on the tick,
+which is what keeps [05](05-interaction.md#the-colour-language)'s objection
+answered — tallyd polling tmux every tick to know where you are is the cost
+that rejected a focused colour in the first place.
 
 ### Where the origin is kept
 
 In tallyd's memory, keyed by client name. A tallyd restart loses it, and
-the degradation is rule 4 — the first press after a restart jumps instead
-of returning, which is what it does today.
+the degradation is rule 3: the first press after a restart jumps instead of
+returning.
 
 The alternative, named so it is not reinvented later: a global user option
 per client (`@tally_origin_<client>`), which survives a tallyd restart and
@@ -400,34 +306,26 @@ after a purge reports what it cleared, not from inside `act`.
 
 ### CLI
 
-> ⛔ **Superseded by [24](24-the-tally-server.md).** `tally spawn` always
-> returns now, and `--detach` kept its name while losing this meaning: it
-> declines **the view**, not the hand-over, because there is no hand-over
-> left to decline.
-
-`tally spawn` gains `--detach` and, inside tmux, stops returning.
-[11-cli.md](11-cli.md#tally-spawn) needs both, and the table there gains a
-row: **pane — adopted unless `--detach`**.
+`tally spawn` places the view on tally's server and returns to your shell.
+`--detach` declines **the view**: the session runs, the pad lights, and the
+first press is what opens it ([11](11-cli.md#tally-spawn)).
 
 ## Edge cases
 
-> ⚠️ **The rows naming an *adopted* pane are superseded by
-> [24](24-the-tally-server.md)** — there are no adopted panes. Every
-> other row still holds, and holds for the same reason: they are about a
-> pane outliving its command, which is unchanged. [24](24-the-tally-server.md#edge-cases)
-> carries the table for views on tally's own server.
+These are about a pane outliving its command.
+[24](24-the-tally-server.md#edge-cases) carries the ones about the server
+it lives on.
 
 | situation | behaviour |
 |---|---|
-| adopted pane, agent killed | pane stays, dead, holding the scrollback; pad goes dark |
-| adopted pane, agent killed, pad pressed again | `respawn-pane` revives the view in place — but the session is gone, so `anchor attach` fails there and the pane shows why |
-| adopted pane closed by you | next press creates a view under `tally`; the pad still works, in a new place |
-| you detach from an adopted view | pane dead, agent alive, pad still green; next press revives it in place |
-| view window split by you | only the tagged pane matches; the split is yours |
-| legacy window-tagged view | matches on first lookup, then re-tagged to the pane and the window tag cleared |
-| `tally spawn` outside tmux | view under `tally`, prints and returns, as today |
-| `tally spawn --detach` inside tmux | view under `tally`, prints and returns |
-| spawn refused (held pad, bad address, anchord down) | nothing tagged, nothing exec'd, shell alive |
+| view's agent killed | pane stays, dead, holding the scrollback; pad goes dark |
+| pad pressed again after a kill | `respawn-pane` revives the view in place — but the session is gone, so `anchor attach` fails there and the pane shows why |
+| view's window closed by you | next press creates one again; the pad still works |
+| you detach from a view | pane dead, agent alive, pad still green; next press revives it in place |
+| a view's window split by you | only the tagged pane matches; the split is yours |
+| a corpse holding the column's index | reclaimed by address, in place ([27](27-the-slot-collision.md)) |
+| `tally spawn --detach` | no view; the first press opens one |
+| spawn refused (held pad, bad address, anchord down) | nothing tagged, nothing created, shell alive |
 | two clients, one on the view, one not | the on-view client returns, the other jumps; both in one press |
 | origin pane closed before you return | nothing moves; a log line says why |
 | origin recorded, tallyd restarted | no origin; the press jumps, which is today's behaviour |
@@ -442,21 +340,13 @@ row: **pane — adopted unless `--detach`**.
   criterion is explicit about this and it survives intact.
 - **`@tally_session` keeps its name**, so anything of yours reading it keeps
   working — it is read from panes either way.
-- **The lease still lives in the pane running `anchor attach`**
-  ([06](06-jump.md#who-holds-the-lease)). Adoption moves where the single
-  writer sits; it does not add one.
+- **The lease lives in the pane running `anchor attach`**
+  ([06](06-jump.md#who-holds-the-lease)). There is one writer per PTY and
+  this layer never becomes it.
 - **tallyd still has no socket** and the grid is still downstream of
   anchor's state ([08](08-lifecycle.md#one-process-no-socket)).
 - **The colour language is untouched.** No new state, no new colour, no
   focused pad. The one gesture this adds reuses a press that exists.
-
-## Amendments this forces
-
-| file | change |
-|---|---|
-| [06-jump.md](06-jump.md) | the unit is a pane; three-case recovery; identity at pane scope; jump becomes a round trip |
-| [05-interaction.md](05-interaction.md) | what a second press on the pad you are on means; purge also closes the view |
-| [11-cli.md](11-cli.md) | ⛔ reversed by [24](24-the-tally-server.md): `spawn` places a view and returns. The doc was amended to match |
 
 ## Validation
 
@@ -476,83 +366,13 @@ built:
   overwrite it
 - origin is per client, and two clients do not share one
 - a missing origin returns `Ok(false)`, not an error
-- `tally spawn` builds its adopt sequence in the order above, with the exec
-  last
+**Only the hardware says:**
 
-**Only the hardware says** — this is the fourth time the project has needed
-this list, after the three greens, the hard amber, and the title scroll:
-
-- [ ] `switch-client -t <pane>` actually moves an attached client's pane,
-      not just its session (the one 📖 above)
-- [ ] kill a session while focused on its adopted pane: still attached,
-      corpse readable, layout intact
-- [ ] kill the only live session: the `tally` session survives
-- [ ] press the pad you are on: back in nvim, cursor where you left it
+- [ ] `switch-client -t <pane>` moves an attached client's pane, not just
+      its session (the one 📖 above)
+- [ ] kill a session while focused on its view: still attached, corpse
+      readable, layout intact
+- [ ] kill the only live session: the row session survives
+- [ ] `◄` lands you where you were standing, cursor intact
 - [ ] jump from two terminals at once; return on both, to different places
-- [ ] spawn into a split, split again, press the pad: lands on the right
-      pane of the two
-- [ ] a week of this without `--detach` existing in muscle memory
-
-The last one is the real test and it is the same shape as M6's: the
-criterion that cannot be hurried.
-
-## What is cleared to build
-
-The pane claim is right and the three steps below are the right
-decomposition. **Two of the three were held**, and the reason was never in
-this document — it was the open layout question, tracked as
-[#8](https://github.com/alehatsman/tally/issues/8) and answered by
-[16](16-the-queue.md): addressing stays declared, and the return gesture
-gets its own button.
-
-| step | closes | cleared | why |
-|---|---|---|---|
-| 1. identity to the pane | **#2** | ✅ | nothing in any layout changes whether a pane closes when its command exits |
-| 2. adoption | #1 | ✅ | [16](16-the-queue.md) keeps addressing declared and unchanged |
-| 3. the return trip | #3 | ✅ | [16](16-the-queue.md) gives it `◄`, its own button |
-
-> **All three are cleared as of [16](16-the-queue.md).** What follows is
-> the record of why two of them were held, kept because the reasoning is
-> the useful part — a spec validated against the code and not against the
-> other specs will do this again.
-
-**The #3 conflict is the one worth stating plainly.** The return gesture
-was proposed here as *no new button, no new colour* — and that was true
-and not sufficient, because the press was already spoken for. A tap on a
-bound slot jumps (`05`), and the layout work in flight at the time wanted
-the second tap for answering; this document would have added *and a press
-while you are already looking at it returns you*. Three meanings on one
-press, separated by state that is not on the surface. That is the shape of
-the three greens, the two bright page colours and the title scroll — each
-of which was legible and unmemorable, and each of which took hardware to
-disprove.
-
-The return trip was not wrong; the **gesture** was, and it could only be
-chosen once the top row had a settled job. `◄` is that button
-([16](16-the-queue.md)), and no tap carries a second meaning.
-
-**Step 1 does not wait.** The detach is a daily bug, it is plumbing beneath
-every layout in both documents, and fixing it changes nothing a user sees
-except that it stops happening.
-
-## Sequencing
-
-Three steps, in dependency order, each shippable alone:
-
-1. **Identity to the pane**, plus `remain-on-exit`, plus revive-in-place.
-   Closes **#2** on its own, because the detach is fixed the moment the
-   pane stops closing. Nothing user-visible changes except that the bug
-   stops.
-2. **Adoption.** Closes **#1**. Depends on step 1 for the pane to be a
-   findable unit, and on revive-in-place for an adopted pane to be
-   survivable.
-3. **The return trip.** Closes **#3**. Depends on step 1 for the origin to
-   be a pane-level coordinate at all.
-
-#2 asked whether it should be fixed first or together with #1. First — and
-not as a compromise: it is the step the other two are built on.
-
-Steps 2 and 3 were held behind
-[#8](https://github.com/alehatsman/tally/issues/8) and are released by
-[16](16-the-queue.md). Step 3's gesture is `◄`, not the second pad press
-proposed above.
+- [ ] a view's window split by hand: only the tagged pane matches
