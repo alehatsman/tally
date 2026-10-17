@@ -1,11 +1,12 @@
 # 16 — The top row is a queue, not a map
 
-A counter-proposal to [12](12-layout-proposal.md) and
-[13](13-layout-review.md), tracked as
+Why the top row is `▲▼◄►` and not eight page buttons, and why `►` is the
+most used of them. The grid it sits above is flat and the reasons are in
+[12](12-the-layout.md); tracked as
 [#8](https://github.com/alehatsman/tally/issues/8).
 
-Both of those documents answer the question *where is the blocked agent*.
-The first hour of real data says that is not the question.
+The obvious question to build a layout around is *where is the blocked
+agent*. The first hour of real data says that is not the question.
 
 ## The measurement
 
@@ -23,9 +24,10 @@ The first hour of real data says that is not the question.
 ```
 
 **61% of the time there is a choice to make. 15% of the time there is
-not.** `13` §10 asks whether you need to know which project is blocked
-before you jump, and guesses the honest answer will be *"I press the amber
-one and go"*. It is not. There is usually no *the* amber one.
+not.** The intuition a grouping layout rests on is that you need to know
+*which project* is blocked before you jump — and that the honest answer
+will turn out to be *"I press the amber one and go"*. It is not. There is
+usually no *the* amber one.
 
 And the choice is not close. When two or more pads are amber, the gap
 between the longest wait and the shortest is **median 386 s, max 1382 s**.
@@ -34,14 +36,15 @@ decision.
 
 ⚠️ **One hour, and an unrepresentative one** — five agents running while
 one of them was being worked with. A quiet afternoon inverts the table.
-This does not replace the week `13` §10 asks for; it re-aims it, and
-[§7](#the-instrument) makes the week measure the right thing.
+One hour does not settle it; a week does, and
+[§7](#the-instrument) is what makes that week measure the right thing.
 
-## Why this kills row = project
+## Why grouping is not the instrument
 
-`12` and `13` are right that triage is the bottleneck. Rows are the wrong
-instrument for it, for four reasons, in increasing order of how hard they
-are to repair.
+Triage is the bottleneck — that much is right. Arranging the grid is the
+wrong tool for it, for four reasons, in increasing order of how hard they
+are to repair ([12](12-the-layout.md#closed-and-why-they-stay-closed)
+carries the same list as the closed-alternatives record).
 
 **It answers "where" when the question is "which first".** With five pads
 amber, knowing that row 4 is the work repo does not rank them. Grouping is
@@ -49,29 +52,27 @@ a *locating* aid, and at five lit pads out of sixty-four there is no
 locating problem. There is an ordering problem, 61% of the time, and a row
 orders nothing.
 
-**`13` already rejected it, in its own words, two sections later.**
-*Searched and rejected* kills row = urgency band with *"the pads move while
-you reach for them. You cannot build muscle memory against a target that
-relocates, and a mis-press is a kill."* §4.1 then decides rows are
-**derived, not declared**, which relocates pads on a slower clock. The
-consequence was filed under *Still open* — *"derived row order when nothing
-is pinned … whether that is good enough"* — rather than recognised as the
-rejection the same document had already made.
+**Any scheme that relocates a pad is already closed.** The rule is *the
+pads move while you reach for them* — you cannot build muscle memory
+against a target that relocates, and a mis-press is a kill. It closes row
+= urgency band outright, and it closes rows-as-projects too the moment the
+rows are **derived rather than declared**: that relocates pads on a slower
+clock, which is the same defect running at a speed that hides it.
 
 **The grouping already exists, by hand, and costs nothing.** The five slots
 that asked for attention this hour were `1:1:1`, `1:2:1`, `1:3:1`, `1:8:1`,
 `1:8:2` — one project per row, lane 1 durable, lane 2 the overflow. That is
-`13`'s layout, running today, as a convention over declared addresses. It
-is stable because you chose it. What the proposal adds on top is taking the
-addresses away from you and letting the daemon assign them, which is the
-one part [03](03-model.md#a-slot-is-not-a-session) says you cannot have:
-*a grid you cannot learn is a grid you look at instead of feel.*
+one project per row, as a convention over declared addresses. It is
+stable because you chose it. What a grouping scheme adds on top is taking
+the addresses away from you and letting the daemon assign them, which is
+the one part [03](03-model.md#a-slot-is-not-a-session) says you cannot
+have: *a grid you cannot learn is a grid you look at instead of feel.*
 
 **It invents a capacity cliff.** Eight rows of seven lanes, for a workload
-of five live sessions across four projects, two at most in any one. §4.3
-has to add signalling *because a row can fill* — a limit flat addressing
-does not have. `12` opens by diagnosing "capacity for a workload of about
-twenty" as the error it is correcting, and this is that error rotated
+of five live sessions across four projects, two at most in any one. A row
+that can *fill* needs signalling to say so — a limit flat addressing does
+not have. The diagnosis grouping starts from is that 512 slots is capacity
+for a workload of about twenty; a lane limit is that same error rotated
 ninety degrees.
 
 ## The queue
@@ -103,10 +104,10 @@ for the same reason.
 
 ## The top row
 
-The silkscreen stops being decoration. `13`'s own scorecard calls `◄ ►`
-**"thin — the weakest pair here"**, mapping them to *leave focus* and
-*commit the safe default*. Under a queue they become the most literal
-buttons on the device.
+The silkscreen stops being decoration. `◄ ►` are the hardest pair on this
+device to spend well — every job proposed for them has been thin — and
+under a queue they become the most literal buttons on it: go to the thing
+that is waiting, come back from it.
 
 ```text
   ▲      ▼      ◄      ►   │ ▣     ·    ·    ·  │  ◈
@@ -189,23 +190,21 @@ pages apart is a rule about a thing that is not happening. If pages become
 load-bearing later, this is the first decision to revisit, and the reason
 it was made is written here so it can be.
 
-### What this cuts from `13`
+### What a navigation row costs the alternatives
 
-**§5's `►` = commit the safe default.** Approve-without-reading loses its
-button. `13` argued itself into narrowing that gesture to the one answer
-safe to give without reading, having opened by calling the idea *"the most
-dangerously framed"* — and the narrowing is still a button that answers an
-amber light rather than a command. Spending `►` on navigation retires it
-without a further argument.
+**`►` cannot also be *commit the safe default*.** Approve-without-reading
+has no button here. Narrowing it to the one answer that is safe to give
+unread does not rescue it: it is still a button that answers an amber light
+rather than a command ([12](12-the-layout.md#closed-and-why-they-stay-closed)).
+Spending `►` on navigation retires the idea without needing a further
+argument, because **navigation commits nothing.**
 
-**Focus mode goes with it.** `▲▼` are pages, `◄` is back, `►` is next; none
-of them is conditional on a mode, so there is no mode. `13`'s *"one mode,
-entered by a deliberate press, indicated by a dimmed row and four white
-arrows"* has nothing left to enter.
+**There is no focus mode.** `▲▼` scroll, `◄` is back, `►` is next; none of
+them is conditional on anything, so there is no mode to enter and nothing
+to escape from.
 
-**A tap on a pad keeps its one meaning**: jump. `13` §5 gave a second tap a
-second job, which [15](15-views.md#the-return-trip) then tried to give a
-third. Both are withdrawn — `◄` is the return gesture, on its own button,
+**A tap on a pad keeps its one meaning**: jump. A second tap is not a
+return and not a confirm — `◄` is the return gesture, on its own button,
 visible, with an affordance.
 
 ## Back, and where you were
@@ -222,8 +221,9 @@ one deep, first jump wins, cleared by `◄`
 ```
 
 So `next → next → next → back` lands where you started, not three agents
-deep. **The queue is a trip; home is one press.** Chained jumps were `13`'s
-and #3's hardest open question and the queue answers it by construction:
+deep. **The queue is a trip; home is one press.** Chained jumps were the
+hardest open question [#3](https://github.com/alehatsman/tally/issues/3)
+carried, and the queue answers it by construction:
 there is no reason to walk back through agents when the only place you
 want is the one you started from.
 
@@ -260,22 +260,22 @@ about what you actually press.
 parses and the restart readback skips anything that is not a state line.
 One reader change, no migration.
 
-A week of this answers `13` §10 with data rather than opinion:
+A week of this settles the grouping question with data rather than
+opinion:
 
 - **how many jumps came from `next` versus from a pad.** If you keep
   hand-picking, the queue is wrong and grouping deserves its second look.
 - **how deep the queue was when you pressed.** If `queued` is almost always
-  1, the 61% was an artefact of one unusual hour and `12`'s whole premise
-  is weaker than this document assumes.
+  1, the 61% was an artefact of one unusual hour and the case for a flat
+  grid is weaker than this document assumes.
 - **how long the thing you chose had been waiting.** If you consistently
   answer something younger than the head, the ordering is wrong — recency
-  or project may beat age, and that is the version of §10's experiment
-  worth running.
+  or project may beat age, and that is the experiment worth running next.
 
-This replaces the row-4 perceptual test as the gate, because it measures
-the decision rather than a proxy for it. The row-4 test only matters if
-rows are the answer, and the first thing to find out is whether they are
-the question.
+This is the gate rather than a perceptual test of whether you can count to
+the fourth row without looking, because it measures the decision rather
+than a proxy for it. Counting rows only matters if rows are the answer, and
+the first thing to find out is whether they are the question.
 
 ## What this unblocks
 
@@ -284,11 +284,12 @@ behind #8. This clears both:
 
 | held on | because | now |
 |---|---|---|
-| step 3, the return trip | `13` §5 had already spent the second tap | `◄` is the gesture; no tap is overloaded |
+| step 3, the return trip | the second tap on a pad was already spoken for | `◄` is the gesture; no tap is overloaded |
 | step 2, adoption | `page:row:col` might be replaced one-way | addressing is unchanged and declared |
 
-Neither was blocked on rows being a good idea. Both were blocked on not
-knowing, which is the cost of 776 lines with no decision attached.
+Neither was blocked on grouping being a good idea. Both were blocked on not
+knowing, which is what an open layout question costs everything downstream
+of it.
 
 ## Edge cases
 

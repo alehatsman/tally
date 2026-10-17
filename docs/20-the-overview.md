@@ -205,10 +205,11 @@ not a better map but a smaller address space.
 ## Rejected
 
 **A compacted list — occupied rows only, packed from the top.** Fewer dark
-pads and a shorter reach. Rejected on precedent: [13](13-layout-review.md)
-killed row-as-urgency because *the pads move while you reach for them*,
-and this is that same proposal wearing the sparsity argument as a hat. A
-map whose addresses are stable is worth more than a map that is short.
+pads and a shorter reach. Rejected on the rule that already closes
+row-as-urgency — *the pads move while you reach for them*
+([12](12-the-layout.md#closed-and-why-they-stay-closed)) — and this is
+that same proposal wearing the sparsity argument as a hat. A map whose
+addresses are stable is worth more than a map that is short.
 
 **A latched mode.** See *The gesture*. It is the one option that makes the
 grid mean two things.

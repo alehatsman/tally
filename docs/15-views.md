@@ -499,10 +499,11 @@ criterion that cannot be hurried.
 ## What is cleared to build
 
 The pane claim is right and the three steps below are the right
-decomposition. **Two of the three are not cleared**, and the reason is not
-in this document — it is in
-[`docs/12`](12-layout-proposal.md) and [`docs/13`](13-layout-review.md),
-tracked as [#8](https://github.com/alehatsman/tally/issues/8).
+decomposition. **Two of the three were held**, and the reason was never in
+this document — it was the open layout question, tracked as
+[#8](https://github.com/alehatsman/tally/issues/8) and answered by
+[16](16-the-queue.md): addressing stays declared, and the return gesture
+gets its own button.
 
 | step | closes | cleared | why |
 |---|---|---|---|
@@ -518,16 +519,17 @@ tracked as [#8](https://github.com/alehatsman/tally/issues/8).
 **The #3 conflict is the one worth stating plainly.** The return gesture
 was proposed here as *no new button, no new colour* — and that was true
 and not sufficient, because the press was already spoken for. A tap on a
-bound slot jumps (`05`); a tap on an amber slot enters answer mode and a
-second tap jumps (`13` §5); this document adds *and a press while you are
-already looking at it returns you*. Three meanings on one press, separated
-by state that is not on the surface. That is the shape of the three greens,
-the two bright page colours and the title scroll — each of which was
-legible and unmemorable, and each of which took hardware to disprove.
+bound slot jumps (`05`), and the layout work in flight at the time wanted
+the second tap for answering; this document would have added *and a press
+while you are already looking at it returns you*. Three meanings on one
+press, separated by state that is not on the surface. That is the shape of
+the three greens, the two bright page colours and the title scroll — each
+of which was legible and unmemorable, and each of which took hardware to
+disprove.
 
-It does not mean the return trip is wrong. It means the gesture has to be
-chosen **after** #8 decides what the top row and the arrows are for, not
-before — because #8 is where the rest of the gesture budget is being spent.
+The return trip was not wrong; the **gesture** was, and it could only be
+chosen once the top row had a settled job. `◄` is that button
+([16](16-the-queue.md)), and no tap carries a second meaning.
 
 **Step 1 does not wait.** The detach is a daily bug, it is plumbing beneath
 every layout in both documents, and fixing it changes nothing a user sees

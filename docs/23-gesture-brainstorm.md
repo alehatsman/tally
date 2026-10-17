@@ -28,21 +28,18 @@ spent a document rejecting.
 
 ### What each position does today
 
-| position | resting | tap | held |
-|---|---|---|---|
-| grid pad, unbound | off | spawn its spec | — |
-| grid pad, bound | green / amber / red / dark red | jump | — |
-| `Top(1)` `▲` | dark grey if somewhere to go | scroll up one row | **500 ms → `⌂` home** |
-| `Top(2)` `▼` | dark grey if somewhere to go | scroll down one row | — |
-| `Top(3)` `◄` | white if an origin is recorded | back to where you were standing | — |
-| `Top(4)` `►` | amber pulsing if anything waits | jump to the longest-waiting amber | — |
-| `Top(5)` `Session` | dark grey, always | — | **the overview**: grid becomes 64 rows, tap = goto ([20](20-the-overview.md)) |
-| `Top(6)` `Drums` | dark, white while playing | next art / back to the grid ([21](21-the-arts.md)) | — |
-| `Top(7)` `Keys` | **off** | **nothing** | **nothing** |
-| `Top(8)` `User` | ~~off~~ | ~~nothing~~ | **squad in a row, with `>`** ([25](25-the-squad.md)) |
-| `Action(1..7)` `>` | dark grey if the row can inherit | launch into that row ([18](18-the-launch-column.md)) | — |
-| `Action(8)` `Stop` | red | — (double-tap reserved for Move, [22](22-the-mode-button.md)) | **kill alive / purge ended** |
-| `Logo` | health light | — | — |
+**[12](12-the-layout.md#every-position-as-it-stands) is the table.** It is
+the current surface and it is kept in one place; what matters here is only
+what is *left over*:
+
+| free | today |
+|---|---|
+| `Top(7)` `Keys` | off, does nothing — the last genuinely unspent button |
+| `Top(8)` `User` | off, does nothing — and [25](25-the-squad.md) proposes it for `User` + `>` |
+
+Everything else on the device is spent. That is the constraint the three
+asks below run into, and the bar for taking a button is a button taken
+from something that works ([18](18-the-launch-column.md)).
 
 Off the surface, in the shell: `tally spawn`, `tally purge`, `tally mute`,
 `tally attention` ([11](11-cli.md)).
