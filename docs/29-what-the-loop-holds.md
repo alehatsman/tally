@@ -196,7 +196,13 @@ and the one this change must not weaken.
 a cycle once the other direction is gone, and it is the right direction:
 composition depends on rendering.
 
-## What this deliberately does not do
+## What this change deliberately did not do
+
+> ✅ **The last three bullets were done afterwards, in a second pass**, and
+> [the section after them](#the-second-pass) records what that cost. They
+> stay written as they were, because the reason for deferring them was
+> good and is the reason they were a separate diff: a refactor that claims
+> no behaviour change has to be readable as one.
 
 - **No behaviour change.** Not one pad changes colour, not one byte changes
   on the wire, not one journal line changes shape. The validation below is
@@ -219,11 +225,60 @@ composition depends on rendering.
   must be reviewed for behaviour change bigger for a reason that is not
   behaviour.
 
+## The second pass
+
+Three of the deferred items and one stale sentence, taken together once
+the four findings had landed and been merged. Each is small; the point of
+listing them is that none of them is a behaviour change either, and the
+same evidence applies.
+
+**`cli::address` asks `slot::parse` first.** The three-part form is that
+function's grammar, so what a human may type and what a `tl.slot` label
+may carry can no longer drift. The hand-rolled walk survives below it and
+runs only for an address that grammar rejected — and only to say *which*
+part was wrong, which is the whole reason `cli` had its own copy. The
+two-part `row:col` form is this command's own convenience and never
+becomes a label. One new test asserts the agreement in both directions.
+
+**`anchor::Frame` is `anchor::Packet`; `jump::View` is `jump::Pane`.** In
+a crate whose main currency is a `Frame` of 81 cells and whose window onto
+the address space is a `View`, both names were taken. `watch.rs` imported
+one of each. anchor's wire vocabulary still says *frame* where it is
+quoting anchor's protocol — a frame header is a frame header — and only
+the values this crate holds were renamed. `Pane`'s own field went from
+`pane` to `id`, because a `Pane` with a `pane` field reads worse than the
+`View` it replaced.
+
+**`art.rs` is a directory.** One file per piece, plus `rng`, `colour` and
+`sprite` for what they share; `mod.rs` keeps `Piece`, `Reel`, the
+dispatcher and the suite, which is mostly about the reel rather than about
+any one piece. Each piece's entry point is now `paint`, named by its
+module instead of repeating it.
+
+The split paid for itself once, immediately: `SEED` lived in `life` and is
+read by all four stateful boards, which a 2,084-line file had no way to
+show. It now lives in `rng`, next to the generator it seeds. That is the
+argument for splitting a file that was never *wrong* — not that the code
+improves, but that the couplings become addressable.
+
+**And one sentence in [08](08-lifecycle.md) that was never true.** It
+described the signal handling as a `tokio::signal` stream raced against
+the reconcile tick. There is no async runtime here and the dependency
+budget never bought one; the handler is a relaxed atomic store that the
+16 ms loop reads. The design the sentence described was sound, which is
+why nobody caught it — it is the ordinary way a document goes wrong, by
+being written next to the code instead of from it.
+
 ## Validation
 
 The whole point is that this is provably inert, so the evidence is the
-suite plus two things it cannot see.
+suite plus two things it cannot see. It covers both passes: the renames
+and the `art/` split are exactly as inert as the four findings were, and
+are held to the same bar.
 
+0. **Counts, for both passes.** 362 tests before; 370 after the four
+   findings; **371** after the second pass. Every addition is a test for
+   something new, never a rewrite of one that stopped passing.
 1. **The existing suite, unchanged in count and in content.** No test is
    rewritten to match a new shape. Tests move with the code they test —
    `effect`'s tests follow it out of `model` — and are otherwise identical.
