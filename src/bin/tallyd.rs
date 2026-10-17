@@ -352,37 +352,40 @@ fn next_art(reel: &mut Option<Reel>) {
     }
 }
 
-/// The two top-row buttons the art treats specially: the one that moves
-/// along the reel, and the one that is allowed through it.
-const ARTS_BUTTON: Button = Button::Top(6);
-/// `►`. See [`left_art`].
-const NEXT_BUTTON: Button = Button::Top(4);
-
-/// End the art if this press should, and say whether the press itself is
-/// then **swallowed**.
+/// Route a press while an art is playing, and say whether it is
+/// **swallowed** (`docs/21-the-arts.md`).
 ///
-/// Takes `repaint` the way [`beat`] takes its cursor, so `main` is left
-/// with one branch rather than three — the complexity cap here is real
-/// and this loop is already against it.
+/// In this mode the surface is a menu, not a grid. `Drums` and the eight
+/// launchers each pick a piece, and nothing else on the board does
+/// anything at all — a pad press lands on a sine wave, not a session, so
+/// it is eaten rather than acted on.
 ///
-/// **Every press except `Drums`, not every gesture.** This is read from
-/// the raw button and before `chords.feed`, because `feed` answers `None`
-/// for a held modifier — so a `CC19` press used to reach the corner's
-/// double-tap clock and silently toggle Stop/Move behind a plasma field,
-/// where nothing on the surface could show that it had changed. You
-/// reached for the grid; the art is over, and nothing else happened.
-///
-/// `►` is the one that still acts: making you press it twice would be the
-/// toy charging rent on the one gesture this product exists to provide
-/// (`docs/21-the-arts.md`).
-fn left_art(reel: &mut Option<Reel>, repaint: &mut bool, button: Button, down: bool) -> bool {
-    if !down || reel.is_none() || button == ARTS_BUTTON {
+/// `►` is the way out, and the only one. It is read here, before the
+/// corner's double-tap clock and before `chords.feed`, which is what
+/// keeps a press in this mode from reaching either of them: `feed`
+/// answers `None` for a held modifier, so routing on the gesture instead
+/// would let `CC19` toggle Stop/Move behind a plasma field.
+fn art_press(reel: &mut Option<Reel>, repaint: &mut bool, button: Button, down: bool) -> bool {
+    if !down || reel.is_none() {
         return false;
     }
-    *reel = None;
-    *repaint = true;
-    eprintln!("tallyd: arts off");
-    button != NEXT_BUTTON
+    if button == tally::art::LEAVE_BUTTON {
+        *reel = None;
+        *repaint = true;
+        eprintln!("tallyd: arts off");
+        // Not swallowed: `►` still goes where it was always going, so
+        // leaving the art and answering the thing that is waiting are one
+        // press and not two.
+        return false;
+    }
+    if let Some(piece) = Piece::at(button) {
+        if reel.as_ref().map(Reel::piece) != Some(piece) {
+            eprintln!("tallyd: arts {}", piece.name());
+        }
+        *reel = Some(Reel::new(piece));
+        *repaint = true;
+    }
+    true
 }
 
 /// Advance the art one frame, on every other wake.
@@ -406,8 +409,22 @@ fn advance_art(reel: Option<&mut Reel>, wake: &mut bool) {
 /// a plasma field is showing none of it.
 fn art_surface(reel: &Reel, reachable: bool, queued: usize) -> tally::surface::Frame {
     let mut frame = reel.frame();
-    frame.set(Button::Top(4), tally::render::next(queued > 0));
-    frame.set(Button::Top(6), tally::render::arts(true));
+    // The menu: one button a piece, white on the one that is playing.
+    for piece in Piece::REEL {
+        frame.set(piece.selector(), tally::render::arts(piece == reel.piece()));
+    }
+    // The way out, and the thing that is waiting. `►` carries both, and
+    // amber wins when there is any, because amber always does.
+    frame.set(
+        tally::art::LEAVE_BUTTON,
+        if queued > 0 {
+            tally::render::next(true)
+        } else {
+            tally::render::leave()
+        },
+    );
+    // All the attention is attention you cannot see, because the grid is
+    // showing a plasma field.
     frame.set(
         Button::Logo,
         tally::render::logo(tally::render::Health {
@@ -746,7 +763,7 @@ fn main() -> ExitCode {
                         // an art swallows the press whole, so neither
                         // gets to act on one the eye never aimed at a
                         // session (`docs/21-the-arts.md`).
-                        if left_art(&mut reel, &mut repaint, button, down) {
+                        if art_press(&mut reel, &mut repaint, button, down) {
                             continue;
                         }
                         // Same reason, same place: a double-tap is two

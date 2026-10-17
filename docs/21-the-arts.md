@@ -34,7 +34,31 @@ made the row a queue. The rule the top row runs on is *dark does nothing,
 lit does exactly one thing*, and this keeps it: dark while no art is
 playing, white while one is.
 
-One button, nine pieces, and a press moves to the next:
+One button gets you in. After that the surface is a **menu**, not a
+grid: `Drums` holds the piece you arrived on and the eight launchers down
+the right column hold the rest, one each, in reel order.
+
+```text
+  Drums  ─ Bestiary        > 1 ─ Claude      > 5 ─ Fire
+                           > 2 ─ Plasma      > 6 ─ Tetris
+  ►      ─ back to work    > 3 ─ Life        > 7 ─ Pacman
+                           > 4 ─ Rain        > 8 ─ Uprising
+```
+
+**The lit one is the one playing.** White on the piece you are watching,
+dim on the eight you are not, which is the same white-and-dim the rest of
+the surface uses for *here* and *there*. The button you pressed to get in
+is the button that is lit when you arrive — a mode that opened by
+highlighting some other button would be lying about itself in its first
+frame.
+
+The eight launchers are not launchers in here and the corner is not a
+corner. Nothing they normally do is reachable while an art is playing, so
+there is nothing to collide with, and a vertical row of eight is the only
+menu this surface has room for.
+
+The reel order still exists, because it is what the pieces are listed in
+and what the menu is numbered by:
 
 ```text
 dark → Bestiary → Claude → Plasma → Life → Rain → Fire → Tetris
@@ -52,17 +76,27 @@ lost: keep pressing and you arrive back where you started.
 
 ## Leaving
 
-**Every other press exits.** A press on the grid, an action, an arrow —
-whatever it was, the art stops, the grid comes back, and the press itself
-is swallowed.
+**`►` is the only way out.** The play triangle, and nothing else. It is
+lit white for as long as an art is playing, because the top row's rule is
+*dark does nothing* and this always does exactly one thing.
+
+It also still goes where it was always going. If something is waiting,
+`►` pulses amber instead of white, and one press both ends the art and
+takes you to the pad that wants you. Making that two presses would be the
+toy charging rent on the one gesture this product exists to provide.
+
+**Everything else is swallowed.** A pad press lands on a sine wave, not a
+session, so it is eaten rather than acted on — you cannot spawn, jump,
+kill or forget anything from inside an art, and the grid you come back to
+is the one you left.
 
 *Press*, not *gesture*, and the distinction is load-bearing. It is read
-from the raw button before `chords.feed`, because `feed` answers `None`
-for a held modifier and for the release half of a double-tap. Reading it
-from the gesture instead left `CC19` able to reach the corner's
-double-tap clock while an art was playing and toggle Stop/Move behind a
-plasma field — a mode change with nothing on the surface able to report
-it, discovered only on coming out of the art
+from the raw button before both the corner's double-tap clock and
+`chords.feed`, because `feed` answers `None` for a held modifier and for
+the release half of a double-tap. Routing on the gesture instead left
+`CC19` able to reach that clock while an art was playing and toggle
+Stop/Move behind a plasma field — a mode change with nothing on the
+surface able to report it, discovered only on coming out of the art
 ([22](22-the-mode-button.md)). That is deliberate. You left art mode by *reaching for the
 thing you actually wanted*, and the pad under your finger a quarter second
 ago was a sine wave, not a session. Acting on it would be acting on a grid

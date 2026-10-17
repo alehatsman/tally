@@ -144,6 +144,17 @@ pub fn arts(playing: bool) -> Cell {
     }
 }
 
+/// How `►` is lit while an art is playing: white, always.
+///
+/// It is the only button in that mode that returns you to the working
+/// grid, so it is never dark — the top row's rule is *dark does nothing*,
+/// and this always does exactly one thing (`docs/21-the-arts.md`). The
+/// same white as `◄` and as a held modifier, saying the same thing: this
+/// is live right now.
+pub fn leave() -> Cell {
+    Cell::Static(WHITE)
+}
+
 /// How `◄` is lit: white when there is somewhere to go back to.
 ///
 /// One of the two control colours, and the same white the right column

@@ -74,6 +74,29 @@ impl Piece {
         Self::REEL.get(next).copied()
     }
 
+    /// Which button picks this piece while an art is playing.
+    ///
+    /// The right column top to bottom, with `Drums` holding the first —
+    /// the piece you are already on when you arrive, so the button you
+    /// pressed to get in is the button that is lit when you get there.
+    ///
+    /// Eight launchers and the corner are not launchers or a corner in
+    /// here. Nothing they normally do is reachable while an art is
+    /// playing, so there is nothing to collide with, and a vertical row
+    /// of eight is the only menu this surface has room for.
+    pub fn selector(self) -> Button {
+        let at = Self::REEL.iter().position(|&p| p == self).unwrap_or(0);
+        match at {
+            0 => ARTS_BUTTON,
+            n => Button::Action(u8::try_from(n).unwrap_or(1).min(8)),
+        }
+    }
+
+    /// The piece this button picks, if it picks one.
+    pub fn at(button: Button) -> Option<Self> {
+        Self::REEL.into_iter().find(|p| p.selector() == button)
+    }
+
     /// How long the longest piece runs before it starts over, in art
     /// frames. Public so a caller can walk a whole piece without knowing
     /// how any of them are built.
@@ -184,6 +207,12 @@ impl Reel {
         f
     }
 }
+
+/// The button that opens an art and holds the first one: `Drums`.
+pub const ARTS_BUTTON: Button = Button::Top(6);
+/// `►`, the play triangle — and the only way back to the working grid
+/// while an art is playing (`docs/21-the-arts.md`).
+pub const LEAVE_BUTTON: Button = Button::Top(4);
 
 /// The pieces that carry no state: frame *n* is a function of *n*.
 ///
@@ -2013,5 +2042,43 @@ mod tests {
         assert_eq!(Piece::REEL.first(), Some(&Piece::Bestiary));
         // And the mark is still one press away, not buried.
         assert_eq!(Piece::after(Some(Piece::Bestiary)), Some(Piece::Claude));
+    }
+
+    /// Every piece has a button, no two share one, and `►` is not one of
+    /// them — it is the way out and must never also be a selector.
+    #[test]
+    fn every_piece_has_its_own_button_and_none_is_the_exit() {
+        let mut seen = Vec::new();
+        for piece in Piece::REEL {
+            let button = piece.selector();
+            assert_ne!(button, LEAVE_BUTTON, "{piece:?} sits on the way out");
+            assert!(!seen.contains(&button), "{piece:?} shares a button");
+            assert_eq!(
+                Piece::at(button),
+                Some(piece),
+                "{piece:?} does not round trip"
+            );
+            seen.push(button);
+        }
+        assert_eq!(seen.len(), Piece::REEL.len());
+    }
+
+    /// The button you press to get in is the button that is lit when you
+    /// arrive. Anything else is a mode that starts by lying about itself.
+    #[test]
+    fn drums_holds_the_piece_it_opens_on() {
+        assert_eq!(Piece::at(ARTS_BUTTON), Piece::REEL.first().copied());
+        assert_eq!(Piece::REEL.first().map(|p| p.selector()), Some(ARTS_BUTTON));
+    }
+
+    /// The other eight live down the right column, in reel order, and
+    /// nowhere else. A selector on the top row would be a button whose
+    /// normal job is navigation.
+    #[test]
+    fn the_menu_is_the_right_column() {
+        for (n, piece) in Piece::REEL.iter().skip(1).enumerate() {
+            let row = u8::try_from(n + 1).unwrap_or(1);
+            assert_eq!(piece.selector(), Button::Action(row), "{piece:?}");
+        }
     }
 }
