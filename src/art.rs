@@ -20,8 +20,7 @@ use crate::surface::{Button, Cell, Frame};
 /// Which art is playing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Piece {
-    /// Claude's own mark, blooming open and turning. The first press,
-    /// because the first press should say who made it.
+    /// Claude's own mark, blooming open and turning.
     Claude,
     /// Four summed sines across the grid. Stateless, and therefore the one
     /// piece that cannot drift, stall or need reseeding.
@@ -36,7 +35,10 @@ pub enum Piece {
     Tetris,
     /// A chomping Pac-Man, and the ghost that takes its turn.
     Pacman,
-    /// Pixel animals, one at a time, each breathing a little.
+    /// Pixel animals, one at a time, each breathing a little. **The first
+    /// press.** Everything else here is a field, a simulation or a logo;
+    /// this is the one that is somebody, and it is the one that makes a
+    /// person lean in rather than nod.
     Bestiary,
     /// The joke: tally's own colour language, telling a story about tally.
     Uprising,
@@ -48,6 +50,7 @@ impl Piece {
     /// Three that are only pretty, two that are classics, and the joke
     /// last — a reel ends on the thing worth filming.
     pub const REEL: [Self; 9] = [
+        Self::Bestiary,
         Self::Claude,
         Self::Plasma,
         Self::Life,
@@ -55,7 +58,6 @@ impl Piece {
         Self::Fire,
         Self::Tetris,
         Self::Pacman,
-        Self::Bestiary,
         Self::Uprising,
     ];
 
@@ -1291,7 +1293,7 @@ fn pacman(n: u32, frame: &mut Frame) {
 
 /// Frames per pose. Two poses an animal, so this is also how long one
 /// breath lasts.
-const BEAST_POSE: u32 = 18;
+const BEAST_POSE: u32 = 15;
 /// How long each animal keeps the grid: six poses, about three seconds.
 const BEAST_HOLD: u32 = BEAST_POSE * 6;
 
@@ -2003,10 +2005,13 @@ mod tests {
         );
     }
 
-    /// Claude goes first. The first press should say who made it.
+    /// The animals go first. Everything else in the reel is a field, a
+    /// simulation or a logo; this is the one that is somebody.
     #[test]
-    fn the_reel_opens_on_claude() {
-        assert_eq!(Piece::after(None), Some(Piece::Claude));
-        assert_eq!(Piece::REEL.first(), Some(&Piece::Claude));
+    fn the_reel_opens_on_the_animals() {
+        assert_eq!(Piece::after(None), Some(Piece::Bestiary));
+        assert_eq!(Piece::REEL.first(), Some(&Piece::Bestiary));
+        // And the mark is still one press away, not buried.
+        assert_eq!(Piece::after(Some(Piece::Bestiary)), Some(Piece::Claude));
     }
 }
