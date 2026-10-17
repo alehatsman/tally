@@ -257,7 +257,7 @@ fn perform(ctx: &Context<'_>, gesture: Gesture, at: Slot, pages: &Pages, tmux: &
                     // happen for a slot that parsed, but an empty string
                     // is a legal name and falls back to the old form.
                     let label = at.label(pages).unwrap_or_default();
-                    if let Err(e) = tmux.jump(&r.session, &label) {
+                    if let Err(e) = tmux.jump(&r.session, &label, at.place()) {
                         eprintln!("tallyd: {e}");
                     }
                 }
@@ -574,7 +574,7 @@ fn navigate(
             };
             let at = h.at.label(pages).unwrap_or_default();
             eprintln!("tallyd: next -> {at} ({queued} waiting)");
-            if let Err(e) = tmux.jump(&h.session, &at) {
+            if let Err(e) = tmux.jump(&h.session, &at, h.at.place()) {
                 eprintln!("tallyd: {e}");
             }
             // Follow the jump with the eyes, by the smallest scroll that
@@ -705,7 +705,7 @@ fn main() -> ExitCode {
         // Said plainly, not fatal. A missing server is the normal state at
         // login; the grid is still truthful without one, and the jump
         // starts a server when it has to.
-        eprintln!("tallyd: no tmux server yet; a jump will start one");
+        eprintln!("tallyd: tally's tmux server is not up yet; a jump will start one");
     }
     // What was on the grid last tick, so a press knows what it hit.
     let mut grid: std::collections::BTreeMap<Slot, model::Resolved> =

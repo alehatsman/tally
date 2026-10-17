@@ -23,16 +23,31 @@ use std::fmt;
 use std::process::{Command, Output};
 use std::sync::Mutex;
 
-/// The tmux session that holds view panes tally creates for itself.
+/// The tmux socket tally runs its own server on (`docs/24-the-tally-server.md`).
 ///
-/// A dedicated one, because `tallyd` runs under launchd with no `$TMUX`
-/// and possibly **no attached client at all** — so every tmux default that
-/// means "the current one" resolves to something arbitrary. Views tally
-/// opens must not land in the middle of whatever you were working in.
+/// **A separate server, not a separate session.** A session is not an
+/// isolation boundary: `list-clients` returns every client on the server,
+/// and `jump` switches all of them, so a press used to yank the terminal
+/// you were reading a diff in. A named socket cannot see your clients and
+/// therefore cannot move them — measured, `docs/24`.
+pub const SOCKET: &str = "tally";
+
+/// The session the terminal window lands on when no agent is in front of
+/// you.
 ///
-/// A view you hand it — `tally spawn` adopting the pane you ran it from —
-/// lives wherever you are instead, which is the point of adopting it.
-pub const VIEW_SESSION: &str = "tally";
+/// Not a row, because a row session may not exist yet and `attach` to an
+/// empty server exits with `no sessions`. It is one window running your
+/// shell, and it is the one stray shell this module is allowed to make:
+/// it is what the window shows when there is nothing to show.
+pub const HOME_SESSION: &str = "tally";
+
+/// The **pane** option carrying a slot address, `page:row:col`.
+///
+/// Read by the pane border and the pane title, and by the placement rule
+/// that keeps columns in order. Identity still lives in [`PANE_OPTION`] —
+/// this one is for the eye and for geometry, and a pane that lost it is
+/// still a findable view.
+pub const SLOT_OPTION: &str = "@tally_slot";
 
 /// The **pane** option carrying an anchor session id.
 ///
@@ -76,12 +91,15 @@ pub trait Jump {
     /// Focus the view for `session`, creating or reviving it if it is gone.
     ///
     /// `at` is the slot address the pad carries — `page:row:col` — and is
-    /// used only to name a view this creates. It is passed rather than
-    /// derived because this module knows about tmux and nothing else.
+    /// what a view this creates is labelled with. `where_` is the same
+    /// address as geometry, and says which row session and which column
+    /// the pane belongs in (`docs/24-the-tally-server.md`). Both are
+    /// passed rather than derived because this module knows about tmux and
+    /// nothing else.
     ///
     /// # Errors
     /// Whatever stopped it.
-    fn jump(&self, session: &str, at: &str) -> Result<(), Error>;
+    fn jump(&self, session: &str, at: &str, where_: Place) -> Result<(), Error>;
 
     /// Put each client back where it was standing before it jumped.
     ///
@@ -133,39 +151,123 @@ fn list_panes_args() -> Vec<String> {
     ]
 }
 
-/// Args creating a view pane for `session`, detached, in [`VIEW_SESSION`].
-fn new_window_args(session: &str, at: &str, anchor_bin: &str) -> Vec<String> {
-    vec![
-        "new-window".into(),
-        "-d".into(),
-        "-P".into(),
-        "-F".into(),
-        "#{pane_id}".into(),
-        "-t".into(),
-        format!("{VIEW_SESSION}:"),
-        "-n".into(),
-        view_name(session, at),
-        format!("{anchor_bin} attach {session}"),
-    ]
+/// Where on the grid a view belongs: the **absolute** row (1-64, the
+/// stacked row space `Slot::absolute_row` produces) and the column.
+///
+/// Passed in rather than derived because this module knows about tmux and
+/// nothing else — a page *name* is config, and config does not get to
+/// rename sixty-four tmux sessions when it changes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Place {
+    /// 1-64, the absolute row. Names the session.
+    pub row: u8,
+    /// 1-8, 1 at the left. Orders the pane within it.
+    pub col: u8,
 }
 
-/// Args creating the view session *with* its first view already in it.
+/// The session name for an absolute row: `r07`.
 ///
-/// `new-session -d -s tally` on its own leaves a stray shell window that
+/// Zero-padded to two digits because the only place you read these is a
+/// `list-sessions` dump, and an unsorted one is a list you search instead
+/// of scan.
+fn row_session(row: u8) -> String {
+    format!("r{row:02}")
+}
+
+/// Args creating the row session *with* its first view already in it.
+///
+/// `new-session -d -s r07` on its own leaves a stray shell window that
 /// nothing asked for and nothing cleans up. Creating the session around
-/// the first view means one is never made.
-fn new_session_args(session: &str, at: &str, anchor_bin: &str) -> Vec<String> {
+/// the first view means one is never made. (The one stray shell that *is*
+/// wanted is [`HOME_SESSION`], and it is made deliberately.)
+fn new_row_session_args(place: Place, session: &str, anchor_bin: &str) -> Vec<String> {
+    let name = row_session(place.row);
     vec![
         "new-session".into(),
         "-d".into(),
         "-s".into(),
-        VIEW_SESSION.into(),
+        name.clone(),
         "-P".into(),
         "-F".into(),
         "#{pane_id}".into(),
         "-n".into(),
-        view_name(session, at),
+        name,
         format!("{anchor_bin} attach {session}"),
+    ]
+}
+
+/// Args splitting a view pane into an existing row.
+///
+/// `before` inserts to the left of `target` rather than the right, which
+/// is how a column lands in order when the row already holds a higher one
+/// — measured on 3.6b: creating col 1, col 4, then col 2 with `-hb` gives
+/// `pane_left` 0 / 27 / 54 in column order (`docs/24`).
+///
+/// `-d` because creating a view must not move anybody: the switch is a
+/// separate, deliberate step.
+fn split_args(target: &str, before: bool, session: &str, anchor_bin: &str) -> Vec<String> {
+    vec![
+        "split-window".into(),
+        if before { "-hb" } else { "-h" }.into(),
+        "-d".into(),
+        "-t".into(),
+        target.into(),
+        "-P".into(),
+        "-F".into(),
+        "#{pane_id}".into(),
+        format!("{anchor_bin} attach {session}"),
+    ]
+}
+
+/// Args listing one row's panes with the column each claims.
+///
+/// Scoped to the row and carrying **one** possibly-empty field, last, for
+/// the same reason [`list_panes_args`] is shaped that way.
+fn row_panes_args(row: u8) -> Vec<String> {
+    vec![
+        "list-panes".into(),
+        "-t".into(),
+        row_session(row),
+        "-F".into(),
+        format!("#{{pane_id}} #{{{SLOT_OPTION}}}"),
+    ]
+}
+
+/// Args re-evening a row after a pane was added to it.
+///
+/// **On creation only.** Resizing a pane by hand is a thing you did, and
+/// tally does not get to undo it on the next tick.
+fn even_layout_args(row: u8) -> Vec<String> {
+    vec![
+        "select-layout".into(),
+        "-t".into(),
+        row_session(row),
+        "even-horizontal".into(),
+    ]
+}
+
+/// Args stopping tmux renaming a row window after whatever is running in
+/// it. The name is an address; addresses are not opinions.
+fn automatic_rename_off_args(row: u8) -> Vec<String> {
+    vec![
+        "set-option".into(),
+        "-w".into(),
+        "-t".into(),
+        format!("{}:", row_session(row)),
+        "automatic-rename".into(),
+        "off".into(),
+    ]
+}
+
+/// Args creating the home session, detached, running the login shell.
+fn new_home_session_args() -> Vec<String> {
+    vec![
+        "new-session".into(),
+        "-d".into(),
+        "-s".into(),
+        HOME_SESSION.into(),
+        "-n".into(),
+        HOME_SESSION.into(),
     ]
 }
 
@@ -183,6 +285,55 @@ fn set_option_args(pane: &str, session: &str) -> Vec<String> {
         pane.into(),
         PANE_OPTION.into(),
         session.into(),
+    ]
+}
+
+/// Args tagging `pane` with the address it occupies.
+///
+/// Separate from [`set_option_args`] because the two answer different
+/// questions and go stale at different times: the session id is identity
+/// and changes when the pad is rebound; the address is geometry and
+/// changes never.
+fn set_slot_args(pane: &str, at: &str) -> Vec<String> {
+    vec![
+        "set-option".into(),
+        "-p".into(),
+        "-t".into(),
+        pane.into(),
+        SLOT_OPTION.into(),
+        at.into(),
+    ]
+}
+
+/// Args giving `pane` a readable title: the column, the address, and a
+/// short tail of the session id.
+///
+/// The tail stays for the reason the old window name kept it: a slot
+/// outlives the sessions in it, so a dead pane and its replacement can
+/// both claim one address, and two panes labelled `work:7:3` is a row you
+/// cannot read.
+fn pane_title_args(pane: &str, place: Place, at: &str, session: &str) -> Vec<String> {
+    vec![
+        "select-pane".into(),
+        "-t".into(),
+        pane.into(),
+        "-T".into(),
+        pane_title(place, at, session),
+    ]
+}
+
+/// Args drawing the pane title on the border of a row's window.
+///
+/// Window-scoped on purpose, unlike every other option here: it is how a
+/// *row* is drawn, and a row window holds nothing but tally's panes.
+fn border_status_args(row: u8) -> Vec<String> {
+    vec![
+        "set-option".into(),
+        "-w".into(),
+        "-t".into(),
+        format!("{}:", row_session(row)),
+        "pane-border-status".into(),
+        "top".into(),
     ]
 }
 
@@ -293,20 +444,15 @@ fn kill_pane_args(pane: &str) -> Vec<String> {
     vec!["kill-pane".into(), "-t".into(), pane.into()]
 }
 
-/// A name you can read: the pad it belongs to, then a short tail of the
-/// session id.
+/// A title you can read: the column, the pad it belongs to, then a short
+/// tail of the session id.
 ///
-/// `1:4:4-Z8YN` rather than `tl-Z8YN`. The address is the part you
-/// actually know — it is where your finger goes, and it is what the
-/// `tl.slot` label says — whereas four characters of a ULID identify the
-/// session to nobody. The tail stays because a slot outlives the sessions
-/// in it: run something on `1:4:4` twice and the old view may still be
-/// open, and two windows called `1:4:4` is a list you cannot read.
-///
-/// **Only views tally creates get named.** An adopted pane lives in a
-/// window that is yours and probably holds other things; renaming it would
-/// be tally redecorating a room it was invited into.
-fn view_name(session: &str, at: &str) -> String {
+/// `c3 · work:7:3 · Z8YN`. The address is the part you actually know — it
+/// is where your finger goes, and it is what the `tl.slot` label says —
+/// whereas four characters of a ULID identify the session to nobody, and
+/// the column is what tells you which of the panes in front of you this
+/// is without counting from the left.
+fn pane_title(place: Place, at: &str, session: &str) -> String {
     let tail: String = session
         .chars()
         .rev()
@@ -315,10 +461,40 @@ fn view_name(session: &str, at: &str) -> String {
         .into_iter()
         .rev()
         .collect();
+    let col = place.col;
     if at.is_empty() {
-        return format!("tl-{tail}");
+        return format!("c{col} · {tail}");
     }
-    format!("{at}-{tail}")
+    format!("c{col} · {at} · {tail}")
+}
+
+/// The column a pane claims, from a `row_panes_args` listing.
+///
+/// Untagged panes — a shell somebody split in by hand — have no column
+/// and are skipped: they are not views, and placing a view relative to
+/// one would order the row by something that is not an address.
+fn row_columns(listing: &str) -> Vec<(&str, u8)> {
+    listing
+        .lines()
+        .filter_map(|line| {
+            let (pane, at) = line.trim_end().split_once(' ')?;
+            let col = at.rsplit(':').next()?.parse().ok()?;
+            (1..=8).contains(&col).then_some((pane, col))
+        })
+        .collect()
+}
+
+/// Where a new pane for `col` goes: the pane to split, and whether to
+/// insert before it.
+///
+/// The first column to the **right** of `col`, split before it; failing
+/// that the rightmost pane, split after. `None` when the row holds no
+/// tagged pane at all, which means the session has to be created.
+fn placement<'a>(columns: &[(&'a str, u8)], col: u8) -> Option<(&'a str, bool)> {
+    if let Some(&(pane, _)) = columns.iter().find(|&&(_, c)| c > col) {
+        return Some((pane, true));
+    }
+    columns.last().map(|&(pane, _)| (pane, false))
 }
 
 /// A view found in a `list-panes` listing.
@@ -402,6 +578,12 @@ pub struct Tmux {
     /// In memory, so a `tallyd` restart loses it — and the degradation is
     /// that `◄` goes dark until you jump again, which is honest.
     origin: Mutex<BTreeMap<String, String>>,
+    /// The socket its server listens on — [`SOCKET`] unless
+    /// `TALLY_TMUX_SOCKET` says otherwise.
+    ///
+    /// Held rather than read per command so that one process cannot drive
+    /// two servers because the environment changed under it.
+    socket: String,
 }
 
 impl Default for Tmux {
@@ -416,6 +598,10 @@ impl Tmux {
         Self {
             anchor_bin: anchor_bin.into(),
             origin: Mutex::new(BTreeMap::new()),
+            socket: std::env::var("TALLY_TMUX_SOCKET")
+                .ok()
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| SOCKET.to_owned()),
         }
     }
 
@@ -426,14 +612,26 @@ impl Tmux {
     /// one. It is the jump that has no target, and the jump starts a server
     /// when it has to (`docs/06-jump.md`).
     pub fn server_running(&self) -> bool {
-        Command::new("tmux")
+        self.tmux()
             .arg("has-session")
             .output()
             .is_ok_and(|o| o.status.success())
     }
 
-    fn run(what: &'static str, args: &[String]) -> Result<Output, Error> {
-        let out = Command::new("tmux")
+    /// A `tmux` invocation pointed at **tally's** server and no other.
+    ///
+    /// Every command in this module goes through here. A call that forgot
+    /// the socket would land on your personal server, which is the bug
+    /// this whole document set out to fix (`docs/24-the-tally-server.md`).
+    fn tmux(&self) -> Command {
+        let mut cmd = Command::new("tmux");
+        let _socket = cmd.arg("-L").arg(&self.socket);
+        cmd
+    }
+
+    fn run(&self, what: &'static str, args: &[String]) -> Result<Output, Error> {
+        let out = self
+            .tmux()
             .args(args)
             .output()
             .map_err(|e| Error::NoTmux(e.to_string()))?;
@@ -446,28 +644,30 @@ impl Tmux {
         })
     }
 
-    fn stdout(what: &'static str, args: &[String]) -> Result<String, Error> {
-        Ok(String::from_utf8_lossy(&Self::run(what, args)?.stdout).into_owned())
+    fn stdout(&self, what: &'static str, args: &[String]) -> Result<String, Error> {
+        Ok(String::from_utf8_lossy(&self.run(what, args)?.stdout).into_owned())
     }
 
-    /// Does [`VIEW_SESSION`] exist?
-    fn view_session_exists() -> bool {
-        Command::new("tmux")
-            .args(["has-session", "-t", VIEW_SESSION])
+    /// Does a session by this name exist on tally's server?
+    fn session_exists(&self, name: &str) -> bool {
+        self.tmux()
+            .args(["has-session", "-t", name])
             .output()
             .is_ok_and(|o| o.status.success())
     }
 
-    fn panes() -> String {
-        Self::stdout("list-panes", &list_panes_args()).unwrap_or_default()
+    fn panes(&self) -> String {
+        self.stdout("list-panes", &list_panes_args())
+            .unwrap_or_default()
     }
 
-    fn client_panes() -> Vec<(String, String)> {
-        let listing = Self::stdout(
-            "list-clients",
-            &["list-clients", "-F", "#{client_name} #{pane_id}"].map(str::to_owned),
-        )
-        .unwrap_or_default();
+    fn client_panes(&self) -> Vec<(String, String)> {
+        let listing = self
+            .stdout(
+                "list-clients",
+                &["list-clients", "-F", "#{client_name} #{pane_id}"].map(str::to_owned),
+            )
+            .unwrap_or_default();
         clients(&listing)
             .into_iter()
             .map(|(c, p)| (c.to_owned(), p.to_owned()))
@@ -476,50 +676,94 @@ impl Tmux {
 
     /// Mark `pane` as the view for `session`, and make it outlive its
     /// command. Idempotent, so it runs on every resolve and repairs views
-    /// created before either rule existed.
-    fn tag(pane: &str, session: &str) -> Result<(), Error> {
+    /// created before any of these rules existed.
+    fn tag(&self, pane: &str, session: &str, place: Place, at: &str) -> Result<(), Error> {
         // The tag first: the dead-line format reads `@tally_session`, and
         // a pane that has not got one yet would die saying nothing.
-        let _opt = Self::run("set-option", &set_option_args(pane, session))?;
-        let _roe = Self::run("set-option", &remain_on_exit_args(pane))?;
-        let _fmt = Self::run("set-option", &dead_pane_format_args(pane))?;
+        let _opt = self.run("set-option", &set_option_args(pane, session))?;
+        let _roe = self.run("set-option", &remain_on_exit_args(pane))?;
+        let _fmt = self.run("set-option", &dead_pane_format_args(pane))?;
+        // The address and the title are for the eye. A failure here is a
+        // view that reads badly, not a view that cannot be found, so it
+        // does not take the jump down with it.
+        let _slot = self.run("set-option", &set_slot_args(pane, at));
+        let _title = self.run("select-pane", &pane_title_args(pane, place, at, session));
         Ok(())
     }
 
     /// The pane viewing `session`, creating or reviving it if it is gone.
     ///
-    /// Three cases, where there used to be two (`docs/15-views.md`):
-    /// alive, switch to it; dead, respawn **in place** and switch to it;
-    /// absent, create one under [`VIEW_SESSION`].
-    fn view_pane(&self, session: &str, at: &str) -> Result<String, Error> {
-        let listing = Self::panes();
+    /// Three cases (`docs/15-views.md`): alive, use it; dead, respawn
+    /// **in place**; absent, make one in the row session this slot
+    /// belongs to (`docs/24-the-tally-server.md`).
+    fn view_pane(&self, session: &str, place: Place, at: &str) -> Result<String, Error> {
+        let listing = self.panes();
         if let Some(found) = view_for(&listing, session) {
             if found.dead {
                 let args = respawn_pane_args(found.pane, session, &self.anchor_bin);
-                let _revived = Self::run("respawn-pane", &args)?;
+                let _revived = self.run("respawn-pane", &args)?;
             }
-            Self::tag(found.pane, session)?;
+            self.tag(found.pane, session, place, at)?;
             // After the pane owns the tag, never before: an inherited tag
             // is the only thing identifying a legacy view, and clearing it
             // first would lose the session mid-sequence.
-            let _legacy = Self::run("set-option", &clear_window_option_args(found.window));
+            let _legacy = self.run("set-option", &clear_window_option_args(found.window));
             return Ok(found.pane.to_owned());
         }
-        // Creating the session *around* its first view, rather than making
-        // an empty one and adding to it, is what keeps a stray shell window
-        // from appearing. `new-session -d` on a dead server also starts one,
-        // which is why a missing tmux is not a startup failure.
-        let (what, args) = if Self::view_session_exists() {
-            ("new-window", new_window_args(session, at, &self.anchor_bin))
-        } else {
-            (
-                "new-session",
-                new_session_args(session, at, &self.anchor_bin),
-            )
-        };
-        let pane = Self::stdout(what, &args)?.trim().to_owned();
-        Self::tag(&pane, session)?;
+        let pane = self.make_view(session, place)?;
+        self.tag(&pane, session, place, at)?;
         Ok(pane)
+    }
+
+    /// Put a new view pane in its row, creating the row if it is not there.
+    ///
+    /// Splitting into the row is what makes a column a pane; creating the
+    /// session *around* the first view is what keeps a stray shell from
+    /// appearing. `new-session -d` on a dead server also starts one, which
+    /// is why a missing tally server is not a startup failure.
+    fn make_view(&self, session: &str, place: Place) -> Result<String, Error> {
+        let row = place.row;
+        let listing = self
+            .stdout("list-panes", &row_panes_args(row))
+            .unwrap_or_default();
+        let columns = row_columns(&listing);
+        let Some((target, before)) = placement(&columns, place.col) else {
+            let args = new_row_session_args(place, session, &self.anchor_bin);
+            let pane = self.stdout("new-session", &args)?.trim().to_owned();
+            self.dress_row(row);
+            return Ok(pane);
+        };
+        let args = split_args(target, before, session, &self.anchor_bin);
+        let pane = self.stdout("split-window", &args)?.trim().to_owned();
+        // On creation only: a row somebody resized by hand stays that way
+        // until the next time it gains a pane.
+        let _even = self.run("select-layout", &even_layout_args(row));
+        Ok(pane)
+    }
+
+    /// Set the window options a row wants, once, when it is made.
+    ///
+    /// Best-effort: an undressed row is a row that renames itself and
+    /// draws no borders, which is ugly and still correct.
+    fn dress_row(&self, row: u8) {
+        let _rename = self.run("set-option", &automatic_rename_off_args(row));
+        let _border = self.run("set-option", &border_status_args(row));
+    }
+
+    /// Make sure there is something for a terminal to attach to, and that
+    /// a terminal is attached to it.
+    ///
+    /// A jump that lands on a server nobody is looking at succeeds
+    /// invisibly, which is the one failure the grid cannot show you. So
+    /// zero clients means open the window (`docs/24-the-tally-server.md`).
+    fn ensure_terminal(&self) {
+        if !self.client_panes().is_empty() {
+            return;
+        }
+        if !self.session_exists(HOME_SESSION) {
+            let _home = self.run("new-session", &new_home_session_args());
+        }
+        open_terminal(&self.socket);
     }
 
     /// Remember where each client is standing, if a trip is not already
@@ -541,20 +785,21 @@ impl Tmux {
     }
 }
 
-/// Claim `pane` as the view for `session`: tag it, and make it outlive
-/// the command about to replace this process.
+/// Tell the pads where the view for `session` goes, without looking at it.
 ///
-/// Used by `tally spawn` to adopt the pane it was run in. It is a free
-/// function rather than a [`Jump`] method because the caller has no grid,
-/// no origin table and nothing to jump *to* — it is already standing
-/// where the view is going (`docs/15-views.md`).
+/// Used by `tally spawn`: the session has just been created from a shell,
+/// and the agent should appear in the tally window straight away rather
+/// than on the first press. Your shell stays exactly where it is — a pane
+/// on your personal server cannot be a view on tally's
+/// (`docs/24-the-tally-server.md#what-this-costs`).
 ///
 /// # Errors
-/// Whatever tmux said. The caller must treat a failure as fatal **before**
-/// it execs: a pane that runs the attach without carrying the tag is a
-/// view no pad can ever find.
-pub fn adopt(pane: &str, session: &str) -> Result<(), Error> {
-    Tmux::tag(pane, session)
+/// Whatever tmux said. Not fatal to the caller: the session exists either
+/// way, and the next press makes the view.
+pub fn place(session: &str, at: &str, where_: Place) -> Result<(), Error> {
+    let tmux = Tmux::default();
+    let _pane = tmux.view_pane(session, where_, at)?;
+    Ok(())
 }
 
 /// The session a pane views, if it is a view at all.
@@ -591,18 +836,75 @@ fn raise() {
     }
 }
 
+/// The command that opens the window looking at tally's server.
+///
+/// Split out from the running of it for the reason every other command in
+/// this module is: the arguments are the part worth testing.
+///
+/// `-na` forces a **new** window even though the app is already running,
+/// which is the difference between this and [`raise`]: that one focuses
+/// what exists, this one exists because nothing does.
+///
+/// One string, overridable as `TALLY_TERMINAL_CMD`, for the same reason
+/// [`terminal_app`] is: it is machine-specific and the rest is not. The
+/// override is split on spaces, which is enough for a path and some flags
+/// and deliberately not a shell.
+fn terminal_command(socket: &str, app: &str, override_cmd: Option<&str>) -> (String, Vec<String>) {
+    let attach = [
+        "tmux".to_owned(),
+        "-L".to_owned(),
+        socket.to_owned(),
+        "attach".to_owned(),
+        "-t".to_owned(),
+        HOME_SESSION.to_owned(),
+    ];
+    let Some(cmd) = override_cmd.map(str::trim).filter(|c| !c.is_empty()) else {
+        let mut args = vec![
+            "-na".to_owned(),
+            app.to_owned(),
+            "--args".to_owned(),
+            "--title".to_owned(),
+            HOME_SESSION.to_owned(),
+            "-e".to_owned(),
+        ];
+        args.extend(attach);
+        return ("open".to_owned(), args);
+    };
+    let mut parts = cmd.split(' ').filter(|p| !p.is_empty());
+    let bin = parts.next().unwrap_or("true").to_owned();
+    let mut args: Vec<String> = parts.map(ToOwned::to_owned).collect();
+    args.extend(attach);
+    (bin, args)
+}
+
+/// Open the window that looks at tally's server. Best-effort, like
+/// [`raise`]: the view exists whether or not anything shows it.
+fn open_terminal(socket: &str) {
+    let app = terminal_app().unwrap_or_else(|| "Alacritty".to_owned());
+    let over = std::env::var("TALLY_TERMINAL_CMD").ok();
+    let (bin, args) = terminal_command(socket, &app, over.as_deref());
+    let _opened = Command::new(bin).args(args).output();
+}
+
 impl Jump for Tmux {
-    fn jump(&self, session: &str, at: &str) -> Result<(), Error> {
-        let pane = self.view_pane(session, at)?;
-        let clients = Tmux::client_panes();
+    fn jump(&self, session: &str, at: &str, where_: Place) -> Result<(), Error> {
+        let pane = self.view_pane(session, where_, at)?;
+        // Before the clients are listed, not after: a jump with nothing
+        // attached used to succeed invisibly, and the window it opens is
+        // a client by the time the switch runs.
+        self.ensure_terminal();
+        let clients = self.client_panes();
         self.record_origins(&clients, &pane);
 
-        // Switch **every** client. A jump means "put this in front of me",
-        // and which terminal "me" is sitting at is not knowable from here.
+        // Switch **every** client — but every client is now one of
+        // tally's, because they are the only ones on this socket. Your
+        // personal server cannot be listed from here and so cannot be
+        // moved (`docs/24-the-tally-server.md`).
+        //
         // Zero clients is not an error: the view exists and is correct,
         // and it is there the next time you attach.
         for (client, _) in &clients {
-            Tmux::run("switch-client", &switch_args(client, &pane))?;
+            self.run("switch-client", &switch_args(client, &pane))?;
         }
         raise();
         Ok(())
@@ -621,7 +923,7 @@ impl Jump for Tmux {
         if taken.is_empty() {
             return Ok(false);
         }
-        let live = Tmux::panes();
+        let live = self.panes();
         let mut moved = false;
         for (client, pane) in taken {
             if !live
@@ -630,7 +932,7 @@ impl Jump for Tmux {
             {
                 continue; // the origin closed while you were away
             }
-            Tmux::run("switch-client", &switch_args(&client, &pane))?;
+            self.run("switch-client", &switch_args(&client, &pane))?;
             moved = true;
         }
         if moved {
@@ -644,19 +946,19 @@ impl Jump for Tmux {
     }
 
     fn viewing(&self) -> Vec<String> {
-        let panes = Tmux::panes();
-        Tmux::client_panes()
+        let panes = self.panes();
+        self.client_panes()
             .into_iter()
             .filter_map(|(_, pane)| session_of(&panes, &pane))
             .collect()
     }
 
     fn close(&self, session: &str) -> Result<(), Error> {
-        let listing = Tmux::panes();
+        let listing = self.panes();
         let Some(found) = view_for(&listing, session) else {
             return Ok(());
         };
-        let _closed = Tmux::run("kill-pane", &kill_pane_args(found.pane))?;
+        let _closed = self.run("kill-pane", &kill_pane_args(found.pane))?;
         Ok(())
     }
 }
@@ -668,6 +970,8 @@ mod tests {
     const SESSION: &str = "01M52GEKED8ZEJPMT2KCJ35ZWT";
     /// The slot the pad lives on, as `page:row:col`.
     const AT: &str = "1:4:4";
+    /// The same slot as geometry: absolute row 4, column 4.
+    const PLACE: Place = Place { row: 4, col: 4 };
 
     /// `#{pane_id} #{window_id} #{pane_dead} #{@tally_session}`
     const LISTING: &str = "\
@@ -677,30 +981,88 @@ mod tests {
 %4 @3 1 01M52MXB4WQTA79K5FTHMXZ8YN\n\
 %5 @3 0 \n";
 
+    /// `#{pane_id} #{@tally_slot}`, one row's worth.
+    const ROW: &str = "\
+%3 1:4:1\n\
+%7 1:4:4\n\
+%9 \n";
+
     #[test]
-    fn views_tally_creates_go_to_a_dedicated_session() {
-        let args = new_window_args(SESSION, AT, "anchor");
+    fn a_view_is_created_in_the_row_session_for_its_row() {
+        let args = new_row_session_args(PLACE, SESSION, "anchor");
         assert!(
             args.contains(&"-d".to_owned()),
             "detached: do not steal focus to create it"
         );
-        let at = args.iter().position(|a| a == "-t").expect("-t");
-        assert_eq!(args.get(at + 1).map(String::as_str), Some("tally:"));
+        let at = args.iter().position(|a| a == "-s").expect("-s");
+        assert_eq!(args.get(at + 1).map(String::as_str), Some("r04"));
         assert!(
             args.last()
                 .is_some_and(|c| c == &format!("anchor attach {SESSION}")),
-            "the view runs the attach"
+            "the row session's first pane IS a view, not a stray shell"
         );
     }
 
-    /// A freshly created window has exactly one pane, so the id it prints
-    /// is the view. Printing a window id instead would hand the rest of
-    /// this module the wrong kind of target.
+    /// The row names the session and nothing else does: a page rename
+    /// must not orphan the panes in it.
+    #[test]
+    fn a_row_session_is_named_by_the_absolute_row_zero_padded() {
+        assert_eq!(row_session(1), "r01");
+        assert_eq!(row_session(7), "r07");
+        assert_eq!(row_session(64), "r64");
+    }
+
+    /// Creating a view must not move anybody: the switch is a separate,
+    /// deliberate step.
+    #[test]
+    fn splitting_a_view_into_a_row_does_not_steal_focus() {
+        let args = split_args("%3", false, SESSION, "anchor");
+        assert!(args.contains(&"-d".to_owned()));
+        assert!(args.contains(&"-h".to_owned()), "a row splits sideways");
+        assert!(
+            args.last()
+                .is_some_and(|c| c == &format!("anchor attach {SESSION}")),
+            "the pane runs the attach"
+        );
+    }
+
+    /// Measured on 3.6b: `-hb` inserts to the left, `-h` to the right, so
+    /// the columns of a row read left to right whatever order they
+    /// arrived in (`docs/24-the-tally-server.md`).
+    #[test]
+    fn a_column_lands_in_column_order() {
+        let columns = row_columns(ROW);
+        assert_eq!(columns, vec![("%3", 1), ("%7", 4)], "untagged panes skip");
+        // Before the first higher column.
+        assert_eq!(placement(&columns, 2), Some(("%7", true)));
+        assert_eq!(placement(&columns, 3), Some(("%7", true)));
+        // Past every column there is: after the rightmost.
+        assert_eq!(placement(&columns, 6), Some(("%7", false)));
+        // An empty row has nothing to split; the session gets created.
+        assert_eq!(placement(&[], 1), None);
+    }
+
+    /// A pane somebody split in by hand carries no address. Ordering the
+    /// row against one would place a view by something that is not an
+    /// address at all.
+    #[test]
+    fn an_untagged_pane_does_not_order_a_row() {
+        assert!(row_columns("%9 \n").is_empty());
+        assert!(row_columns("%9 not-an-address\n").is_empty());
+        assert!(
+            row_columns("%9 1:4:9\n").is_empty(),
+            "column 9 does not exist"
+        );
+    }
+
+    /// A freshly created session has exactly one pane, so the id it
+    /// prints is the view. Printing a window id instead would hand the
+    /// rest of this module the wrong kind of target.
     #[test]
     fn creating_a_view_prints_a_pane_not_a_window() {
         for args in [
-            new_window_args(SESSION, AT, "anchor"),
-            new_session_args(SESSION, AT, "anchor"),
+            new_row_session_args(PLACE, SESSION, "anchor"),
+            split_args("%3", true, SESSION, "anchor"),
         ] {
             let f = args.iter().position(|a| a == "-F").expect("-F");
             assert_eq!(args.get(f + 1).map(String::as_str), Some("#{pane_id}"));
@@ -713,7 +1075,8 @@ mod tests {
     #[test]
     fn no_command_relies_on_a_current_session_or_client() {
         assert!(switch_args("/dev/ttys000", "%7").contains(&"-c".to_owned()));
-        assert!(new_window_args(SESSION, AT, "anchor").contains(&"-t".to_owned()));
+        assert!(split_args("%3", false, SESSION, "anchor").contains(&"-t".to_owned()));
+        assert!(new_row_session_args(PLACE, SESSION, "anchor").contains(&"-s".to_owned()));
         for args in [
             set_option_args("%7", SESSION),
             remain_on_exit_args("%7"),
@@ -849,49 +1212,95 @@ mod tests {
         assert_eq!(session_of(LISTING, "%404"), None, "not on the server");
     }
 
-    /// The address leads, because that is the part you know: it is where
-    /// your finger goes and what the `tl.slot` label says.
+    /// The column leads, because it is what tells you which of the
+    /// panes in front of you this is without counting from the left; the
+    /// address follows, because that is where your finger goes.
     #[test]
-    fn a_view_is_named_after_the_pad_it_belongs_to() {
-        assert_eq!(view_name(SESSION, AT), "1:4:4-5ZWT");
-        assert_eq!(view_name(SESSION, "work:3:5"), "work:3:5-5ZWT");
+    fn a_pane_is_titled_after_the_pad_it_belongs_to() {
+        assert_eq!(pane_title(PLACE, AT, SESSION), "c4 · 1:4:4 · 5ZWT");
+        assert_eq!(
+            pane_title(Place { row: 19, col: 5 }, "work:3:5", SESSION),
+            "c5 · work:3:5 · 5ZWT"
+        );
     }
 
     /// A slot outlives the sessions in it. Run something on the same pad
-    /// twice while the old view is open and two of them share a name.
+    /// twice while the old view is open and two panes share an address.
     #[test]
-    fn two_sessions_on_one_pad_get_different_names() {
-        let first = view_name("01M52GEKED8ZEJPMT2KCJ35ZWT", AT);
-        let second = view_name("01M52MXB4WQTA79K5FTHMXZ8YN", AT);
+    fn two_sessions_on_one_pad_get_different_titles() {
+        let first = pane_title(PLACE, AT, "01M52GEKED8ZEJPMT2KCJ35ZWT");
+        let second = pane_title(PLACE, AT, "01M52MXB4WQTA79K5FTHMXZ8YN");
         assert_ne!(first, second);
-        assert!(first.starts_with(AT) && second.starts_with(AT));
+        assert!(first.contains(AT) && second.contains(AT));
     }
 
     #[test]
-    fn a_nameless_pad_still_produces_a_usable_name() {
-        assert_eq!(view_name("ab", ""), "tl-ab");
-        assert_eq!(view_name("", ""), "tl-");
-        assert_eq!(view_name("", AT), "1:4:4-");
+    fn a_nameless_pad_still_produces_a_usable_title() {
+        assert_eq!(pane_title(PLACE, "", "ab"), "c4 · ab");
+        assert_eq!(pane_title(PLACE, "", ""), "c4 · ");
+        assert_eq!(pane_title(PLACE, AT, ""), "c4 · 1:4:4 · ");
     }
 
-    /// Creating the view session must not leave a shell window behind.
+    /// The home session is the one stray shell that is wanted: it is
+    /// what the window shows when nothing is in front of you, and what
+    /// `attach` needs to exist at all.
     #[test]
-    fn the_view_session_is_created_around_its_first_view() {
-        let args = new_session_args(SESSION, AT, "anchor");
-        assert!(args.contains(&"-d".to_owned()));
-        let at = args.iter().position(|a| a == "-s").expect("-s");
-        assert_eq!(args.get(at + 1).map(String::as_str), Some(VIEW_SESSION));
+    fn the_home_session_is_a_shell_and_the_rows_are_not() {
+        let home = new_home_session_args();
+        assert!(home.contains(&"-d".to_owned()));
+        let at = home.iter().position(|a| a == "-s").expect("-s");
+        assert_eq!(home.get(at + 1).map(String::as_str), Some(HOME_SESSION));
         assert!(
-            args.last()
-                .is_some_and(|c| c == &format!("anchor attach {SESSION}")),
-            "the session's first pane IS a view, not a stray shell"
+            !home.iter().any(|a| a.starts_with("anchor ")),
+            "the home session runs your shell, not an attach"
         );
     }
 
     #[test]
     fn the_option_name_is_the_one_docs_promise() {
         assert_eq!(PANE_OPTION, "@tally_session");
-        assert_eq!(VIEW_SESSION, "tally");
+        assert_eq!(SLOT_OPTION, "@tally_slot");
+        assert_eq!(HOME_SESSION, "tally");
+        assert_eq!(SOCKET, "tally");
+    }
+
+    /// The window has to be told which server to look at: an `attach`
+    /// with no socket lands on your personal one, which is the whole
+    /// thing this is separating.
+    #[test]
+    fn the_terminal_is_opened_against_tallys_socket() {
+        let (bin, args) = terminal_command("tally", "Alacritty", None);
+        assert_eq!(bin, "open");
+        assert!(
+            args.contains(&"-na".to_owned()),
+            "a new window, not a focus"
+        );
+        let l = args.iter().position(|a| a == "-L").expect("-L");
+        assert_eq!(args.get(l + 1).map(String::as_str), Some("tally"));
+        assert!(args.ends_with(&["-t".to_owned(), HOME_SESSION.to_owned()]));
+    }
+
+    /// The override replaces how the window is opened, never what it
+    /// attaches to.
+    #[test]
+    fn the_terminal_override_still_attaches_to_tallys_server() {
+        let (bin, args) = terminal_command("other", "Alacritty", Some("wezterm start --"));
+        assert_eq!(bin, "wezterm");
+        assert_eq!(
+            args,
+            [
+                "start",
+                "--",
+                "tmux",
+                "-L",
+                "other",
+                "attach",
+                "-t",
+                HOME_SESSION
+            ]
+        );
+        // An override that is only whitespace is not an override.
+        assert_eq!(terminal_command("tally", "Alacritty", Some("  ")).0, "open");
     }
 
     // ── origin: the half `◄` is built on ───────────────────────────────

@@ -27,12 +27,12 @@ spawn   Claim a pad for a session started in the current directory, and
   tally spawn 1:1                      claude, here, on page 1
   tally spawn 3:4:4                    claude, here, on page 3
   tally spawn work:3:4 -- cargo test   a different command
-  tally spawn --detach 1:1             spawn it and come back
+  tally spawn --detach 1:1             spawn it, open no view
 
-Inside tmux this pane becomes the view: the shell is replaced by the
-attach, and the pad focuses this pane. --detach keeps the old behaviour
-and is what a script wants. Outside tmux there is nothing to adopt, so
-it prints and returns either way.
+The view opens on tally's own tmux server, in the row session the pad
+belongs to, and this shell stays exactly where it is
+(docs/24-the-tally-server.md). --detach opens no view at all: the pad
+lights, and the press is what opens it.
 
 The directory is always the one you are standing in, which is the whole
 point; there is no --cwd. Two-part addresses are row:col on the first
@@ -85,13 +85,14 @@ pub struct Claim {
     pub command: String,
     /// `argv[1..]`.
     pub args: Vec<String>,
-    /// Spawn and come back, instead of handing this pane over.
+    /// Spawn it and open no view for it.
     ///
-    /// Inside tmux the default is to **adopt**: the pane you ran this in
-    /// becomes the view and the shell is replaced
-    /// (`docs/15-views.md#adoption-tally-spawn-from-a-pane`). A script
-    /// that wants the old spawn-and-return says so. Outside tmux there is
-    /// nothing to adopt and this changes nothing.
+    /// It used to mean *do not hand this pane over*, which was the only
+    /// thing adoption could be turned off. Views live on tally's own tmux
+    /// server now and your shell is never handed over
+    /// (`docs/24-the-tally-server.md`), so what is left to decline is the
+    /// view itself: the session runs, the pad lights, and nothing opens
+    /// until you press it.
     pub detach: bool,
 }
 

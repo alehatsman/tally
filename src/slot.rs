@@ -79,6 +79,21 @@ impl Slot {
         Some(format!("{page}:{}:{}", self.row, self.col))
     }
 
+    /// Where this slot's view lives on tally's tmux server: the absolute
+    /// row names the session, the column orders the pane
+    /// (`docs/24-the-tally-server.md`).
+    ///
+    /// Here rather than in `jump`, so the dependency points this way:
+    /// addresses know about tmux geometry, and the tmux module knows
+    /// nothing about pages.
+    #[must_use]
+    pub fn place(self) -> crate::jump::Place {
+        crate::jump::Place {
+            row: self.absolute_row(),
+            col: self.col,
+        }
+    }
+
     /// The button this slot occupies when its page is on the grid.
     pub fn button(self) -> Button {
         Button::Grid {
