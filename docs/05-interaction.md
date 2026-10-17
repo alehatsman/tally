@@ -63,20 +63,6 @@ rather than act on. The pad you act on is amber.
 is reserved, so nothing else on the surface is ever that colour, and
 nothing else on the resting surface ever moves.
 
-There is exactly one exemption, and it is a preview rather than a state:
-under a held Move with a pad in hand, that one pad **flashes**
-([22](22-the-mode-button.md#the-colours)). It breaks both halves of this
-heading at once, and it is allowed to, because both were measured on the
-surface at **rest** — a pad in your hand is not. It is one pad, it lasts
-as long as your thumb, and the grid it is on has no amber to be confused
-with, because a held modifier repaints all 64.
-
-It flashes rather than pulses for a reason that is not taste: both
-figures run on the one clock ([17](17-the-tempo.md)), so speeding this
-pad up by the clock would speed amber up too and lie about how long
-something has been waiting. A flash is one beat where a pulse is two,
-which is the only way to be faster without touching the tempo.
-
 **The alphabet is colour; motion is one bit on top of it.** Breathing does
 not say *something is happening here*, it says **something is asking** —
 the one thing worth interrupting for, and the only hue that was ever a
@@ -104,6 +90,21 @@ Both point the same way, and the rule is worth stating once: **what reads
 well at a glance can wear badly by the afternoon.** A surface you sit next
 to all day has a constraint a surface you glance at does not, and no
 amount of looking at it for ten seconds will find that constraint.
+
+**And there is exactly one exemption**, which is a preview rather than a
+state: under a held Move with a pad in hand, that one pad **flashes**
+([22](22-the-mode-button.md#the-colours)). It breaks both halves of this
+heading at once, and it is allowed to, because both were measured on the
+surface at **rest** — a pad in your hand is not. It is one pad, it lasts
+as long as your thumb, and the grid it is on has no amber to be confused
+with, because a held modifier repaints all 64.
+
+It flashes rather than pulses for a reason that is not taste: both
+figures run on the one clock ([17](17-the-tempo.md)), so speeding this
+pad up by the clock would speed amber up too and lie about how long
+something has been waiting. A flash is one beat where a pulse is two,
+which is the only way to be faster without touching the tempo.
+
 
 **`lost` is deliberately not animated at all**, and this is the case that
 proves the rule holds. It arrives in **bulk**: anchord restarts and every
