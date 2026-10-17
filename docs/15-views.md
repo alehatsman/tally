@@ -51,7 +51,7 @@ Everything below was run against a live tmux **3.6b** server on this
 machine. Where something is documented but not yet observed, it says so.
 
 ✅ **A window option is inherited by every pane in the window.** With
-today's code — `set-option -w` (`src/jump.rs:110`) — a view window's option
+today's code — `set-option -w` (`src/jump.rs`) — a view window's option
 is visible from each of its panes, and splitting a view window gives two
 panes that both claim the same anchor session:
 
@@ -125,7 +125,7 @@ thing you asked for.
 | read | `list-windows -a -F '#{window_id} #{@tally_session}'` | `list-panes -a -F '#{pane_id} #{@tally_session}'` |
 | focus | `switch-client -c <client> -t <window_id>` | `switch-client -c <client> -t <pane_id>` |
 
-The focus line is unchanged in shape: `switch_args` (`src/jump.rs:142`)
+The focus line is unchanged in shape: `switch_args` (`src/jump.rs`)
 takes a target string and does not care what kind it is. That is the whole
 diff for the third row.
 
@@ -240,7 +240,7 @@ unfindable one: there is no pane to tag, so a pad press could never focus
 it and would open a second view onto the same session. The smaller change
 is also the honest one.
 
-**An adopted pane is not renamed.** `window_name` (`src/jump.rs:167`) keeps
+**An adopted pane is not renamed.** `window_name` (`src/jump.rs`) keeps
 doing its job for views tally creates. The window an adopted pane lives in
 is yours, it probably holds other things, and naming it `1:1:1-5ZWT` would
 be tally redecorating a room it was invited into.
@@ -256,7 +256,7 @@ Adoption does not change what a shell-spawned session knows about itself.
 > gets its own button, with an affordance, and no tap is overloaded. The
 > other three rules below are unchanged and are what `◄` is built on.
 
-A jump is one-directional today because `jump` (`src/jump.rs:314`) switches
+A jump is one-directional today because `jump` (`src/jump.rs`) switches
 the client without first reading where it was. The information exists for
 one instant and is dropped.
 
@@ -271,7 +271,7 @@ before switching:  tmux list-clients -F '#{client_name} #{pane_id}'
 Four rules, each answering one of #3's open questions:
 
 1. **Per client.** A jump switches every attached client on purpose
-   (`src/jump.rs:322`), so "where I was" is per client and never global.
+   (`Jump::jump`), so "where I was" is per client and never global.
    Two terminals jump to the same place from two different origins and both
    go home correctly.
 2. **One deep, and the first jump of a trip wins.** Jump to pad A, then to
@@ -332,8 +332,8 @@ to clear them, and it should be a gesture that already exists.
 
 **Purge closes the view pane.** Purge already means "make anchord forget
 it" and already acts on every purgeable row behind a pad
-(`src/act.rs:171`), including the dark-because-killed ones
-(`src/model.rs:232`). Extending it to close those sessions' view panes keeps
+(`Act::chord`), including the dark-because-killed ones
+(`model::purgeable`). Extending it to close those sessions' view panes keeps
 the mental model in one sentence: **purge clears the pad, so it clears the
 view.**
 
@@ -395,7 +395,7 @@ return decision — *is this client on that view right now* — is therefore
 answered in one place, by the thing that already has the listing open.
 
 `tally::act` still never opens a terminal and `tally::jump` still never
-opens a socket (`src/bin/tallyd.rs:79`). `close` is called from `perform`
+opens a socket (`src/bin/tallyd.rs`). `close` is called from `perform`
 after a purge reports what it cleared, not from inside `act`.
 
 ### CLI
@@ -438,7 +438,7 @@ row: **pane — adopted unless `--detach`**.
 ## What does not change
 
 - **`VIEW_SESSION` stays `tally`**, and is still created *around* its first
-  view so no stray shell window appears (`src/jump.rs:126`). #2's acceptance
+  view so no stray shell window appears (`src/jump.rs`). #2's acceptance
   criterion is explicit about this and it survives intact.
 - **`@tally_session` keeps its name**, so anything of yours reading it keeps
   working — it is read from panes either way.

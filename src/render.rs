@@ -132,10 +132,10 @@ pub fn overview(summary: Option<SlotState>, in_window: bool) -> Cell {
 /// How `Drums` is lit: dim at rest, white while an art is playing.
 ///
 /// It is never dark, because unlike the rest of the row it never has
-/// nothing to do — a press always moves you along the reel, and the reel
-/// wraps back to the working grid (`docs/21-the-arts.md`). White is the
-/// same white the right column uses while a modifier is held, and says
-/// the same thing: *this is what you are doing right now*.
+/// nothing to do — there is always a reel to start
+/// (`docs/21-the-arts.md`). White is the same white the right column
+/// uses while a modifier is held, and says the same thing: *this is what
+/// you are doing right now*. Getting back out is `►`, not this button.
 pub fn arts(playing: bool) -> Cell {
     if playing {
         Cell::Static(WHITE)

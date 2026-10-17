@@ -1,25 +1,38 @@
-# 27 — The amber is an edge; the status is a level
+# 28 — The amber is an edge; the status is a level
 
 **Status: spec, not built.** It adds a reader to [14](14-attention.md) and
-no writer, and it is deliberately held until `14`'s own open prerequisite
-is closed ([open question 3](#open-questions)).
+no writer. It is held on one thing and one thing only — the week of
+`attention.jsonl` the README is waiting on ([open question 3](#open-questions)) —
+because a veto changes what gets recorded, and measuring the architecture
+`14` specified is worth more than measuring it already patched.
 
 [14](14-attention.md) put attention on hooks, on both edges, because the
 agent never rings. It is right, it is built that way, and this document
 does not reopen it.
 
-It names one prerequisite that is still open:
+⚠️ **The first draft of this paragraph was held on something else, and was
+wrong about it.** It quoted `14`'s measurement —
 
 > **It was never built.** `LABEL_ATTENTION` appears in the codebase three
 > times: the constant, a reader, and a test. Nothing removes it, anywhere.
-> […] A `Notification` hook installed against today's binary sticks a pad
-> amber permanently.
 
-A stuck pad is not a tuning problem. It is the whole product failing in the
+— and read it as a live prerequisite. It is not. That is the state of the
+tree `14` *found*, and `14` is the milestone that fixed it: `tally
+attention off` removes the label, on `UserPromptSubmit` and `PreToolUse`,
+and has since M6. **A measurement inside a shipped document is history, not
+status**, and this is what it costs to read one as the other — a spec that
+blocked itself on work that was already done.
+
+What survives the correction is the reason this is worth building at all. A
+stuck pad is not a tuning problem; it is the whole product failing in the
 one direction it cannot afford — **the grid saying *answer me* about an
-agent that is working.** This document is about a fact that was measured
-while specifying something else ([25](25-the-squad.md)), and that happens
-to make the stuck pad impossible to sustain.
+agent that is working.** The falling-edge hooks make that unlikely. They do
+not make it impossible: a hook that never fires because the agent was
+killed mid-turn, a `settings.json` that drifts, a wrapper that is not
+Claude Code at all. An edge that is missed is lost forever; a level needs
+no falling edge. This document is about a fact measured while specifying
+something else ([25](25-the-squad.md)), and about using it as a guardrail
+under a rail that already exists.
 
 ## What was measured
 
@@ -59,10 +72,10 @@ sentence is the entire argument below.
 `Notification` raise, `UserPromptSubmit` and `PreToolUse` lower. Edges are
 cheap, they push, and they are exactly right when both of them fire.
 
-**An edge that is missed is lost forever.** That is not hypothetical here —
-the falling edge was never implemented, so today the rising one would stick
-a pad amber until the session died. Every edge system needs its falling
-edge to be perfect. A level needs no falling edge at all: you ask, and the
+**An edge that is missed is lost forever.** Every edge system needs its
+falling edge to be perfect, and this one's is four hook lines in a file on
+a machine — correct today, and the kind of thing that is correct until it
+silently is not. A level needs no falling edge at all: you ask, and the
 answer is true *now*.
 
 So the two are not competitors. They fail in opposite directions, which is
@@ -82,9 +95,9 @@ tl.attention unset                       ->  nothing, whatever status says
 
 **One direction only, and the direction matters.** A veto cannot invent an
 amber, cannot miss one, and cannot disagree with a hook about a pad that is
-dark. The only thing it can do is end the failure
-[14](14-attention.md#3-nothing-clears-tlattention--a-gap-not-a-bug-report)
-names as a prerequisite.
+dark. The only thing it can do is end a stuck one —
+[the failure `14` found](14-attention.md#3-nothing-clears-tlattention--a-gap-not-a-bug-report)
+and fixed, here made unreachable rather than merely unlikely.
 
 ### Why this is not the floor that `14` rejected
 
@@ -153,9 +166,9 @@ cost. **The failure is slow, so the check can be.**
 
 - hooks are attention: `Stop`, `Notification`, `UserPromptSubmit`,
   `PreToolUse`, with `|| true`, exactly as [14](14-attention.md) specifies
-- the falling-edge hooks are **still a prerequisite**. A veto makes a stuck
-  pad survivable; it does not make it correct, and a design that leans on
-  the guardrail instead of the rail is the same bug wearing a hat
+- the falling-edge hooks are **the rail, and they shipped**. A veto makes a
+  stuck pad survivable; it does not make it correct, and a design that
+  leans on the guardrail instead of the rail is the same bug wearing a hat
 - `anchor ls` is the roster and the reconcile tick is the clock
 - the colour language, the queue, the tempo, the precedence table in
   [04](04-signals.md) — a veto changes which pads reach rule 4, not what the
@@ -174,11 +187,12 @@ cost. **The failure is slow, so the check can be.**
    a legitimate amber. That is the one way this can do harm.
 3. **Does the week of `attention.jsonl` change shape?** The
    [README](../README.md) is waiting on a number, and a veto changes what
-   gets recorded. Better to land the falling-edge hooks first and measure
-   the architecture `14` actually specified, rather than measure it already
-   patched.
+   gets recorded. **This is the one thing holding the document**: the
+   falling-edge hooks landed in M6, so what is left is to run a week on the
+   architecture `14` actually specified rather than measure it already
+   patched. The journal holds a day; the gate is seven.
 4. **Who else is on the grid?** `isayes`, `codex` and bare shells have no
    `claude agents` row. The veto simply never fires for them, which is
-   correct, but it means the stuck-pad failure is still fully live for every
-   non-Claude pad — and [14](14-attention.md)'s prerequisite is the only fix
-   those have.
+   correct, but it means a stuck pad has no guardrail at all on anything
+   that is not Claude Code — the falling-edge hooks are the only thing
+   those have, and they are the only thing they will have.

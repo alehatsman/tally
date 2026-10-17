@@ -8,6 +8,11 @@ ergonomics last.** Here the risk is in an unusual place — the hardware is
 documented but unverified, and the *attention signal* is the thing the
 product lives or dies by. The launcher is the easy half.
 
+> **Read [What is next](#what-is-next) before anything else here.** The
+> rule above stopped holding at M10: everything since has shipped with
+> open exit criteria, and one of them has been open since M1. That section
+> says which, and what closes them.
+
 ---
 
 ## M0 — Prove the manual
@@ -583,6 +588,278 @@ Exit:
 
 ---
 
+## M12 — The corner carries two verbs
+
+[M10](#m10--the-right-column-launches) closed with a rule: *"that is the
+first time this surface has had nothing spare, and the bar for the next
+idea is now a button taken from something that works."* Two ideas then
+arrived and neither could have a button.
+
+So `CC19` carries both, and a **double-tap** swaps them. That is not a
+trick: Novation silkscreened *Stop Solo Mute* on that corner because in
+Ableton it cycles modes by repeated presses. They put a mode switch there
+and printed its menu on it ([docs/22](docs/22-the-mode-button.md)).
+
+Scope: **Stop** — kill what is alive, purge what has ended, on one hold,
+because the two target sets are disjoint and the preview already colours
+by consequence. **Move** — pick a pad up and put it down, which is one
+`tl.slot` write and the agent never learns it happened. Both thresholds
+live in `tallyd`'s 16 ms loop, so `chord.rs` stays pure and emits no mode
+change.
+
+Exit:
+- ✅ **red and dark red are tellable apart under a thumb**, on a grid, at
+  arm's length — the one perceptual claim this design rests on, and it
+  holds. Had it failed, the honest fix was splitting kill and purge back
+  onto separate gestures and the merge would have been a mistake
+- ✅ the dark pads lighting up under Stop read as *there is history here*,
+  not as *I broke something* — which is what makes purge's targets
+  affordable, since a pad hiding ended rows draws as nothing until you hold
+- ✅ a double-tap is reachable without looking; 250 ms and 400 ms are
+  untouched since, so the guesses were right
+- ⬜ a week of logs: does the mode ever sit on Move, and does anything get
+  purged from the grid that never got purged from the shell
+
+> **This overturns [M10](#m10--the-right-column-launches) deliberately.**
+> `docs/18` rejected a merged kill/purge because *"it widens the blast
+> radius of the single gesture `05` spends a section protecting"*. It does.
+> The cost is named rather than argued away: under the old chord the dark
+> two-thirds of the grid was a free miss, and a thumb one pad off now
+> forgets a dead row's log. What makes it affordable is that **the hold is
+> what reveals them** — they stop being invisible at the exact moment they
+> become targets.
+
+> **The first press froze the surface, and no test could have caught it.**
+> A double-tap completes on the *release*, and `tallyd` flipped the mode
+> before `chord.rs` saw that release — so the button went down under one
+> verb and came up under another, and a release matched by **verb**
+> stranded the old one in `held` forever. `modifier()` then answered `Some`
+> with nothing under the thumb: the whole grid sat in a held preview, in
+> red or turquoise, with no sequence of presses able to recover. Only a
+> restart cleared it.
+>
+> Every unit test fed presses through `Chords` alone, where the mode never
+> moves. The toggle lives in `tallyd`, the stranding happened in
+> `chord.rs`, **and the bug was in neither — it was in the order the two
+> ran.** Fixed by matching a release on the *button*, which makes the
+> pairing true by construction rather than dependent on two pieces of state
+> staying in step.
+
+---
+
+## M13 — tally's own tmux server
+
+**One line of shipped code was the whole bug.** `jump` switched *every
+client on the server*, so pressing a pad while you were reading a diff in
+`main` yanked your personal terminal into a view. A jump is supposed to put
+an agent in front of you; it is not supposed to take your terminal away
+to do it ([docs/24](docs/24-the-tally-server.md)).
+
+The fix is a boundary, not a filter: **a named socket is a separate
+server, and `switch-client` cannot reach a client it cannot list.**
+
+Scope: `tmux -L tally`; a row is a session `r01`…`r64`, named by the
+**absolute** row because a page name is config and config is editable; a
+column is a window, so the window index simply *is* the column; a home
+session for the terminal window to land on; and `tally spawn` stops
+adopting the pane you ran it in, because a pane on your personal server
+cannot be a view on tally's.
+
+Exit:
+- ✅ `list-sessions` on the personal socket is unchanged by any press, and
+  a jump with a client attached to `main` leaves it on `main`
+- ✅ a view whose command dies keeps its pane, its tag and its column, and
+  the next jump respawns it in place
+- ✅ a jump with no tally terminal open opens one and lands in the view
+- ⬜ a week of living in a second terminal window: is a dedicated window
+  for agents a relief or a thing you keep losing
+
+> **The column was a pane, and eight of them was unreadable.** This
+> document shipped pane-per-column, measured and correct, and a row of
+> eight agents turned out to be eight 23-column slivers reflowing megabytes
+> of scrollback. What was wrong was never the addressing — it was that a
+> split shows you all eight at once when the thing you do with a row is
+> read **one** of them. A column is a tab now. The pane rules are kept in
+> `docs/24` rather than deleted, for the same reason `docs/15` keeps its
+> adoption section.
+
+> **And then a corpse held the slot shut.** `remain-on-exit` keeps a dead
+> view's pane, which keeps its *window index* — and a window index is a
+> namespace. Kill a session, spawn a new one on the same pad, press it:
+> `create window failed: index 4 in use`, and the grid has no way to show
+> you an error. The identity lookup was right; what was missing is that
+> **the address is also a lookup**, and tally had been writing
+> `@tally_slot` on every pane since this milestone without ever reading it
+> back ([docs/27](docs/27-the-slot-collision.md)).
+>
+> Caught something else on the way: `back()` parsed the same pane listing
+> with its own `split_whitespace`, so changing the separator would have
+> made every origin look closed and `◄` silently stop working. Every read
+> of that listing goes through one function now.
+
+---
+
+## M14 — `tally fork`, and four at a time
+
+Two gaps in the CLI, both of them *the folder is the thing a shell knows*
+pointed at a case `spawn` could not reach
+([docs/11](docs/11-cli.md)).
+
+Scope: `tally fork <src> <dst>` — spawn, with the directory coming from a
+pad you can see rather than from `$PWD`, inheriting `command` and
+`login_shell` from the newest session that pad has ever held, dead rows
+included. And `--count N` on both, claiming N consecutive pads rightwards
+in the address's row, refusing the whole command if any one of them is
+taken.
+
+Exit:
+- ✅ the occupancy rule is the grid's, checked before anything is created,
+  and a `--count` running past column 8 is refused rather than wrapped
+- ⬜ a week in which either is used. `fork` is *another one of those* and
+  `--count` is *spawn four on a goal*; both are guesses about how work
+  arrives, which is the thing this project has been wrong about before
+
+> **Arguments are dropped, for the third time and the same reason.** A pad
+> running `claude --resume <id>` describes one conversation, and copying
+> its argv would put a second agent on it. `>` learned this
+> ([M10](#m10--the-right-column-launches)), `fork` inherits it, and the
+> sentence is now in three places because it is the rule that keeps *same
+> place, fresh agent* from quietly becoming *clone*.
+
+> **There is no `--goal`, and there cannot be.** Spawning four agents on a
+> goal is free — the goal is `argv`, after `--`, exactly as it always was.
+> *Redirecting* four already-running agents onto a goal is out of scope by
+> construction: tally attaches as an observer and never holds the control
+> lease, so it cannot type into a live PTY and must not learn how.
+
+---
+
+## M15 — The dead pane names the conversation
+
+[M7](#m7--where-views-live) gave a killed view a corpse you can read, and
+`docs/19` put anchor's session id on it. **It is the wrong id.** An anchor
+session is a PTY that is now gone; what you want after killing an agent is
+the *conversation*, and `anchor attach <ulid>` resumes nothing
+([docs/26](docs/26-the-claude-session-id.md)).
+
+Scope: `CLAUDE_CODE_SESSION_ID` → `tl.claude` → `@tally_claude` → the
+`remain-on-exit-format` line. Four hops, each of them something tally
+already does with `tl.attention` or `@tally_session`, and **nothing new
+asked of anchor.**
+
+Exit:
+- ✅ the id rides the attention hook rather than a `SessionStart` hook of
+  its own: the expensive half is finding the session, and a second hook
+  would pay a `ps -A` and a `list` again, per turn, for a value that
+  changes approximately never
+- ✅ an unset `@tally_claude` takes the conditional's false branch and
+  expands to nothing, so a view of a plain shell keeps the line `19`
+  shipped
+- ⬜ on the live grid: spawn a pad, press it, let one turn happen, hold
+  Stop, and read the dead tab
+
+> **The order was wrong in the first draft, and 80 columns said so.**
+> `19`'s rule is *payload early, because truncation eats the tail*, and the
+> draft kept the anchor id first on the grounds that it is the half that is
+> always there. Half a UUID resumes nothing; half an anchor id costs
+> nothing, because it names a PTY that is gone by the time you are reading
+> the line. The conversation goes first.
+
+---
+
+## M16 — The arts
+
+The only milestone here that is not about work, and the second reason is
+the real one.
+
+**It is a demo.** The pitch is *the agents you are running are a physical
+object on your desk*, and that pitch is made by a photograph. Eleven lit
+pads is a true picture of a working day and a bad picture of what the
+hardware can do.
+
+**It is a pixel test nobody has to remember to run.** Every piece is a
+*total* function of the surface — all 64 pads, every frame. A dead pad, a
+mis-flipped row, a diff that stopped converging, a palette entry that is
+not the colour the manual says: all visible inside two seconds of plasma,
+and none of them visible on a grid where eleven pads are lit and the other
+fifty-three are correctly dark ([docs/21](docs/21-the-arts.md)).
+
+Scope: `Drums` enters; the right column becomes a menu of nine pieces;
+`►` is the only way out and still goes to whatever is waiting; every other
+press is swallowed. The logo keeps telling the truth, because while the
+grid is a plasma field *all* attention is attention you cannot see.
+
+Exit:
+- ✅ the swallow is read from the **raw button**, before the corner's
+  double-tap clock and before `chords.feed` — routing on the gesture let
+  `CC19` toggle Stop/Move behind a plasma field, a mode change with nothing
+  on the surface able to report it
+- ⬜ it survives contact with someone who has not seen it before, which is
+  the only test a demo has
+
+> **Seventeen seconds to the punchline, and nobody waited.** The Uprising
+> ends on a yellow smile. Everything worked, every test was green, the
+> renderer drew the face correctly at frame 759 — and the first person to
+> press the button never saw it, because nobody holds a button they have
+> just discovered for eighteen seconds. The pacing is asserted in
+> **seconds** now, not frames, because seconds are the unit the complaint
+> was made in.
+
+> **It is the largest file in the crate, and that is worth saying out
+> loud.** `src/art.rs` is bigger than `model.rs` and bigger than
+> `jump.rs` — sixteen percent of the code, for nine animations behind a
+> button. Both arguments above are real and neither is an argument for it
+> growing. **The reel is closed at nine.** A tenth piece is a button taken
+> from something that works, and the bar `M10` set applies to pixels too.
+
+---
+
+## What is next
+
+Nothing here is a build item. Everything that was one is done, and what is
+left is the half only use can close.
+
+**The gate, unchanged since [M1](#m1--the-grid-tells-the-truth):** a week
+of `attention.jsonl`, and a number out of it — how many ambers sent you to
+a session that did not want anything. [M6](#m6--the-amber-exists) is what
+made the number possible by giving the signal a source that fires. The
+journal currently holds a little over a day. **Nine milestones have shipped
+on top of a signal whose trustworthiness has never been measured to the
+standard this document set for it**, and that is the honest statement of
+where the project stands.
+
+Four other weeks are owed, and they are cheap because they are already
+being recorded:
+
+| what | read it from | what it decides |
+|---|---|---|
+| is `►` reached for, and how deep is the queue | `kind:"nav"`, `via:"next"` | if `queued` is almost always 1, the 61% that justified [M8](#m8--the-top-row-is-a-queue) was one unusual hour, and [#8](https://github.com/alehatsman/tally/issues/8)'s grouping argument gets its second look |
+| is the map reached for, and does `lit` move off seven | `via:"overview"` | if `lit` sits at seven for a month, the follow-up is not a better map, it is a **smaller address space** |
+| is `>` used at all | `tally purge` / shell history against nav lines | if the shell still wins, the launch column has again been given work it does not want |
+| does the corner ever sit on Move | the mode in the daemon log | if it does not, [M12](#m12--the-corner-carries-two-verbs) spent a double-tap on nothing and solo gets its second look |
+
+**Two specs are written and unbuilt**, and both are deliberately held:
+
+- [28](docs/28-the-level-and-the-edge.md) — `claude agents --json` as a
+  *veto* over a stale amber, never a source of one. Held on the week above,
+  because a veto changes what gets recorded and measuring the architecture
+  [14](docs/14-attention.md) specified is worth more than measuring it
+  already patched.
+- [25](docs/25-the-squad.md) — a squad is a ledger file, the row is its
+  face. **It does not fit [01-scope](docs/01-scope.md)'s six bullets**, it
+  spends the last free button, and it carries seven open questions. That is
+  not a reason it is wrong; it is the reason it needs a decision about what
+  this product is before it needs an implementation.
+
+**And the rule this section exists to restate.** The sequencing principle
+at the top of this file — *no milestone starts before the previous one's
+exit criteria are met* — has not held since M9. M10 through M16 all shipped
+with ⬜ in them. That was affordable while the ⬜ were perceptual gates a
+day of use would close anyway. It stops being affordable at the one gate
+that has been open since M1.
+
+---
+
 ## Later, unscheduled
 
 - ~~the `settings.json` line for the `Notification` hook~~ — **M6**. It was
@@ -590,6 +867,13 @@ Exit:
   of this product exist
 - teleport URL as a secondary jump target
 - a second device — only with a second device in the room
+- **peek** — *what is this pad?* A real hole: the surface cannot name a
+  pad, and some share of 341 daily jumps are identification rather than
+  work. It is the only idea in [22](docs/22-the-mode-button.md) that needs
+  machinery it does not have — a sink to print into. Deferred, not dead;
+  holding Stop answers part of it for free
+- **solo**, if a week of Move shows people arranging and still being
+  dragged away ([22](docs/22-the-mode-button.md))
 
 ---
 
@@ -608,9 +892,22 @@ M8  the top row queue ← 61% of the time there is no *the* amber pad
 M9  the tempo         ← p50 187s, p90 1076s, and the pad looks the same
 M10 the launch column ← the row already knows the folder
 M11 the overview      ← 7 rows of 64, and already discontiguous
+M12 the two verbs     ← there were no spare buttons left
+M13 tally's server    ← a jump was taking your terminal away
+M14 fork + --count    ← the folder can come from a pad you can see
+M15 the conversation  ← anchor's id resumes nothing
+M16 the arts          ← a demo, and a pixel test of all 64 at once
 ```
 
 M6 is out of order on purpose. It is M1's work, and it is here rather than
 there because the thing that proved M1 incomplete was a day of real use —
 which is the only instrument that could have found it, and the only one M1
 had not yet run.
+
+**M12 through M16 are one night and a morning**, and the ordering above is
+when each landed rather than a sequence of risks. By M11 the risky
+subsystems were all retired, so the principle at the top of this file —
+*the risky subsystem first, the ergonomics last* — had done its job and
+stopped constraining anything. What replaced it as the constraint was the
+surface running out of buttons, which is why M12 is the one that reads
+like a trade.

@@ -287,7 +287,7 @@ the same time. So, plainly, what is not known:
 - **550 ms per poll is heavy for a 2 s tick.** A hook pushes; this polls.
 
 **It was measured here and it is decided elsewhere.**
-[27](27-the-level-and-the-edge.md) is that page: a hook is an edge and
+[28](28-the-level-and-the-edge.md) is that page: a hook is an edge and
 `status` is a level, they fail in opposite directions, and the level gets
 one job — vetoing an amber that the hook raised and never lowered. The
 squad reads the same field for its own reasons; neither use makes
@@ -327,7 +327,7 @@ does.** A fresh worktree is a path Claude Code has never seen, and
 worktrees, so this is not an edge case, it is every member of every
 squad. Sitting on that dialog, the session is **absent from
 `claude agents --json` entirely**, which is the row
-[27](27-the-level-and-the-edge.md) measured and the reason that command
+[28](28-the-level-and-the-edge.md) measured and the reason that command
 can never be a liveness source.
 
 So spawning has a step the first draft did not know about:
@@ -946,7 +946,7 @@ shells, and the grid is about all of them; `status` exists only for Claude
 members, and a squad is the only thing that needs it.
 
 ⚠️ **That line did not survive the day.**
-[27](27-the-level-and-the-edge.md) spends it: `waitingFor` is the amber,
+[28](28-the-level-and-the-edge.md) spends it: `waitingFor` is the amber,
 the amber is `tallyd`'s business, and `tallyd` is given one read of
 `claude agents` — to **clear** a stale `tl.attention`, never to raise one.
 The roster is still `anchor ls` alone. The rule bent in exactly one
@@ -1001,7 +1001,7 @@ remember rather than feel.
 ## Open questions
 
 1. ~~**Does `waitingFor` replace the hook, corroborate it, or neither?**~~
-   **Answered, and it moved out** — [27](27-the-level-and-the-edge.md).
+   **Answered, and it moved out** — [28](28-the-level-and-the-edge.md).
    Neither: it corroborates, and it is allowed to *clear* a stale amber and
    nothing else. It cannot replace the hooks, because a finished turn —
    the moment [14](14-attention.md) says the grid exists to report — reads

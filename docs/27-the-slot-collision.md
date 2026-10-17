@@ -37,16 +37,16 @@ tallyd: tmux new-window: create window failed: index 4 in use
 | | |
 |---|---|
 | 1 | The kill ends the PTY; `remain-on-exit` keeps the pane, so window `r01:4` stays — tagged with the **old** session (`docs/19`). |
-| 2 | The new session is a new id. `view_for` (`src/jump.rs:534`) looks that id up and misses: the corpse carries the other one. |
-| 3 | Miss means create. `make_view` → `new_window_args` targets `r01:4` (`src/jump.rs:233`). |
-| 4 | Index in use. `view_pane` returns `Err`, `jump` dies at `src/jump.rs:930`, and the grid has no way to show you an error. |
+| 2 | The new session is a new id. `view_for` (`src/jump.rs`) looks that id up and misses: the corpse carries the other one. |
+| 3 | Miss means create. `make_view` → `new_window_args` targets `r01:4` (`src/jump.rs`). |
+| 4 | Index in use. `view_pane` returns `Err`, `jump` dies on it, and the grid has no way to show you an error. |
 
 Killing the pane by hand frees the index, which is why the workaround
 works and why it looked like a tmux problem rather than ours.
 
 **The identity lookup is right and stays.** What is missing is that the
 *address* is also a lookup, and tally has been writing it on every pane
-since 24 (`@tally_slot`, `src/jump.rs:329`) without ever reading it back.
+since 24 (`@tally_slot`, `Tmux::tag`) without ever reading it back.
 
 ## Goal
 
@@ -63,7 +63,7 @@ otherwise→ make_view                                  (24, unchanged)
 ```
 
 The reclaim path is the **respawn branch that already exists** — the pane
-keeps its id across `respawn-pane` (measured, `src/jump.rs:459`), so it
+keeps its id across `respawn-pane` (measured, `src/jump.rs`), so it
 keeps its place in the row, its tab index, and its window. `tag` then
 rewrites `@tally_session`, `@tally_claude`, the title and the tab name, in
 that order, exactly as it does for any other view. Nothing new is invented
@@ -112,7 +112,7 @@ Neither a ULID nor a `page:row:col` address can contain one.
 | dead pane at the slot, different session | **reclaimed** — this bug |
 | live pane at the slot, different session | fails as today, by decision above |
 | no pane at the slot | `make_view`, as today |
-| untagged pane (yours, adopted window) | never matches: an empty address is not an address |
+| untagged pane — anything tally did not create | never matches: an empty address is not an address |
 | two panes tagged with one address | first wins; cannot arise — a pane never moves windows, and only one pane can hold an index |
 | pane created before this shipped | has `@tally_slot` already (24); reclaim works on it |
 
@@ -164,7 +164,7 @@ rewritten. Nothing was created and nothing was destroyed.
 ### Caught by this, not by review
 
 `back()` was parsing the same listing with its own `split_whitespace`
-(`src/jump.rs:1041`, pre-fix). Changing the separator would have made every
+(`src/jump.rs`, pre-fix). Changing the separator would have made every
 origin look closed and `◄` silently stop working. Every read of the pane
 listing now goes through `row`, which is why there is exactly one place
 that knows the format.

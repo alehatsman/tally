@@ -324,7 +324,7 @@ so there is nothing for a hold to protect.
 `Jump` gains `back()`, already specified in
 [15](15-views.md#the-rust-seam).
 
-**One rename is forced.** `Button::Page(u8)` (`src/surface/addr.rs:22`)
+**One rename is forced.** `Button::Page(u8)` (`src/surface/addr.rs`)
 becomes `Button::Top(u8)`: four of the eight no longer have anything to do
 with pages, and `Page(5)` meaning *a dark unassigned button* is a name that
 lies. The CC mapping is untouched — `Top(1)` is still `CC91`.

@@ -53,8 +53,10 @@ pub enum Action {
 impl Action {
     /// Which action a right-column button carries, if any.
     ///
-    /// `CC49`–`CC79` are unassigned and stay that way: an inert button
-    /// that lights up like a live one is an invitation to press it.
+    /// Exactly one does. `CC89`–`CC29` became the seven `>` launchers
+    /// when the column stopped being four hold-modifiers
+    /// (`docs/18-the-launch-column.md`), so the corner is the only
+    /// modifier left — and it is the one the silkscreen labels *Stop*.
     ///
     /// **Takes the mode**, because the corner carries two verbs now and
     /// which one is live is surface state, not a property of the button

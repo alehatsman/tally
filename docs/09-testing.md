@@ -4,9 +4,25 @@ The output of this program is light. That is not untestable, but it does
 mean the tests have to be about bytes, and the thing that cannot be tested
 has to be named.
 
-## Three layers, three kinds of test
+## The shape the suite ended up in
 
-### 1. The surface — pure byte functions
+359 tests, all of them in `#[cfg(test)]` modules beside the code, none of
+them needing a device, a daemon or a socket. That is not discipline; it is
+a consequence of where the boundaries were drawn, and it is the property to
+protect:
+
+> **Every module that decides something is pure.** `chord` takes presses
+> and emits gestures. `model` takes a session list and emits a frame.
+> `queue` takes a map and emits a head. `tempo` takes an age and emits a
+> number. `render`, `slot`, `art`, `osc`, `signal` and `surface` are the
+> same shape. The three that touch the world — `anchor`, `device`, `jump` —
+> are tested on the **arguments they build**, not on the calls they make.
+
+The tests that cannot be written are the ones about what a colour looks
+like and what a day beside it feels like, and those are
+[the last section](#what-a-green-suite-does-not-prove).
+
+## 1. The surface — pure byte functions
 
 Encoding is total and has no I/O in it:
 
@@ -15,7 +31,6 @@ pad(row, col)                    -> index
 index(CC99)                      -> Logo
 frame(model)                     -> Vec<colourspec>
 diff(prev, next)                 -> one SysEx, only changed pads
-scroll("edit tests/pty.rs?", 37) -> Vec<u8>
 ```
 
 Golden tests against
@@ -33,12 +48,16 @@ Three more that are cheap and catch the mistakes that look plausible:
 - **Decimal-in-hex.** `pad` of logical (8,1) is `0x0B`, not `0x11`. The
   address space is decimal row-column and the wire is hex, and the two
   coincide for columns 1–9 of row 0 and nowhere else.
-- **Title sanitisation.** An em-dash, a box-drawing character and a 200-byte
-  title in; printable ASCII ≤64 bytes out, and **no byte ≥ `0x80` ever
-  reaches a SysEx** — that one is a property test, not an example, because
-  it is the failure that truncates a message mid-flight.
+- **No byte ≥ `0x80` ever reaches a SysEx.** A property test rather than an
+  example, because it is the failure that truncates a message mid-flight.
 
-### 2. The signals — a fake anchor
+> ⚠️ **`scroll()` was in this list, and the feature went.** The title scroll
+> was built, sanitised, tested and
+> [deleted the same hour](05-interaction.md#the-title-scroll--tried-and-abandoned).
+> `STOP_SCROLL` survives as the way to recover a device left mid-scroll by
+> something else.
+
+## 2. The signals — a fake anchor
 
 This is the part that is worth real tests, because it is the part with
 opinions in it. Feed recorded PTY byte streams through the deriver:
@@ -59,13 +78,21 @@ opinions in it. Feed recorded PTY byte streams through the deriver:
   `NeedsAnswer` (it is not a timer)
 - OSC title split across a chunk boundary → one title, not two fragments
 - 10MB of output with no bell → `Working` throughout, no allocation growth
-- exit frame → `Exited`, and the watcher ends
-- bell then exit → `Exited`, **not** `NeedsAnswer` — the precedence table
+- exit frame → a terminal state, and the watcher ends
+- bell then exit → terminal, **not** `NeedsAnswer` — the precedence table
   ([04](04-signals.md#precedence)) in one assertion
 - declared signal (`tl.attention`) overrides a derived one, and survives its
   source going quiet
 - `tl.mute` present → renders `Working`/`Quiet`, never amber, from either
   source
+
+> ⚠️ **Every one of these passes and none of them fires in real life.**
+> Claude Code emits zero ground-state bells, so rule 5 is unreachable
+> against the agent this grid actually runs ([14](14-attention.md)). The
+> suite is green because the detector is *correct*; the amber comes from a
+> hook. That is the most useful thing this file has to say about what a
+> green suite means — **a working detector with nothing to detect looks
+> exactly like a working feature.**
 
 And one set that is not about bytes at all, against a fake `list`:
 
@@ -76,11 +103,58 @@ And one set that is not about bytes at all, against a fake `list`:
 - an unreachable `list` → the model is unchanged and the logo goes red; the
   grid does **not** empty
 
-teleport's fixtures are the starting point. Record a real Claude Code
-session once — `anchor logs <id>` gives the exact bytes — and that
-recording becomes the fixture that outlives the heuristics.
+## 3. The gestures — pure, and the reason they are
 
-### 3. The whole thing — against a real device, by hand
+`chord` takes a button and a direction and answers with a gesture or
+nothing. It has no clock, no session list and no device, and the
+[four chord rules](05-interaction.md#the-exact-rules-of-a-chord) are
+asserted directly against it: a modifier down after the slot does nothing,
+the action fires on press-down, hold duration means nothing, and releasing
+a modifier without tapping is a no-op.
+
+**The two timed gestures are deliberately not in there.** Holding `▲` past
+500 ms means *home*, and two taps on `CC19` inside 400 ms swap the corner's
+verb — both live in `tallyd`'s 16 ms loop, which already has `elapsed` on
+the line that calls `feed`. The consequence is stated so nobody goes
+looking: `Gesture::Home` is in the enum, `chord.rs` never emits it, and a
+test asserts exactly that.
+
+> **The bug that justifies the split is also where the split hurts.** The
+> mode toggle froze the surface on its first press: `tallyd` flipped the
+> verb before `chord.rs` saw the release, so the release was matched
+> against a verb that no longer existed and the modifier stranded in `held`
+> forever, with no sequence of presses able to clear it. Every unit test
+> fed presses through `Chords` alone, where the mode never moves. **The
+> toggle lives in `tallyd`, the stranding happened in `chord.rs`, and the
+> bug was in neither — it was in the order the two ran**
+> ([22](22-the-mode-button.md)). Matching a release by *button* rather than
+> by verb makes the pairing true by construction, which is the only kind of
+> fix a unit test can hold onto.
+>
+> It is not the only bug of that shape here — routing art-mode presses on
+> the *gesture* rather than the raw button let `CC19` reach the same clock
+> behind a plasma field ([21](21-the-arts.md)) — and the shape is worth
+> naming once: **two correct modules, run in the wrong order.** A suite
+> that tests each of them alone cannot see it.
+
+## 4. The world-facing three
+
+`anchor`, `device` and `jump` are tested on the arguments they construct
+and never on the calls they make:
+
+- every tmux invocation has an args test — `-p` and not `-w` on a pane
+  option, an explicit `-t` on anything that would otherwise resolve to
+  "the current one", `remain-on-exit-format` expanding `#{@tally_session}`
+  through a conditional rather than carrying a literal id that would be
+  stale the moment a pane is rebound
+- the pane listing is parsed by position with an explicit `|` separator,
+  and the parse is asserted to hold with **two** empty fields. That test
+  exists because a stray `split_whitespace` in `back()` would have silently
+  broken `◄` when the separator changed ([27](27-the-slot-collision.md))
+- `Jump` is a trait with one real implementation, so `tallyd`'s press
+  handling runs against a fake that records what it was asked for
+
+## 5. The whole thing — against a real device, by hand
 
 There is no way around this, and pretending otherwise is how a surface ships
 with its rows upside down. A written manual checklist, run before each
@@ -90,32 +164,52 @@ milestone:
 [ ] plug in; tallyd finds the port by substring, confirms model via device inquiry
 [ ] every pad pressed lands on the slot directly under the finger
 [ ] bottom-left pad is slot (1,1), not (8,1)
-[ ] top row switches pages; right column holds as modifiers
-[ ] kill chord highlights only killable pads while held
-[ ] release without tapping does nothing
-[ ] hold a pad: title scrolls, top row and logo stay lit, release restores
+[ ] ▲▼ slide the window one row; ▲ held past 500ms lands on row 1
+[ ] ◄ returns you; ► goes to the longest-waiting amber and scrolls to it
+[ ] hold Session: lit rows and a grey run read as a map; a tap crosses to a
+    far row in one gesture
+[ ] hold CC19: alive pads red, pads hiding ended rows dark red, the rest dim
+[ ] double-tap CC19: the corner goes turquoise, and the next hold previews
+    Move rather than Stop
+[ ] release any modifier without tapping -- nothing happens, every time
+[ ] chord ordering: tap a slot, then grab CC19 -- nothing is killed
+[ ] two modifiers down: nothing fires, and the preview disappearing says so
+[ ] tap Drums: the grid is an art, pads are swallowed, ► is the way out and
+    still goes to whatever is waiting
+[ ] a jump leaves your personal tmux server alone -- list-sessions unchanged
+[ ] kill a session you are watching: still attached, corpse readable, and
+    the dead line names the conversation
 [ ] unplug mid-run: no crash; replug: full repaint, correct state
 [ ] SIGTERM tallyd: device returns to Live mode, Setup menu works again
 [ ] SIGKILL tallyd, restart: device recovers to the correct grid
 [ ] stop anchord: logo goes dark red, grid does not clear
-[ ] chord ordering: tap a slot, then grab kill -- nothing is killed
-[ ] hold kill, hold a slot for two seconds -- it kills, it does not scroll
 [ ] with no tmux server at all: tallyd starts, grid is correct, a jump
     creates the server
 ```
 
-The last six are the ones that will actually fail.
+**Press `►` before testing a pad.** While an art is playing every pad press
+is swallowed, and a swallowed press looks exactly like a broken jump — two
+sessions have already lost time to it ([24](24-the-tally-server.md)).
 
 ## What a green suite does not prove
 
 Borrowed wholesale from anchor's `docs/08-testing.md`, because it applies
-here harder:
+here harder. The [README](../README.md#status) keeps the running list of
+times it has been paid for; this is what the entries have in common:
 
 - **That the colours are legible.** Nothing automated will tell you that
   amber-flashing and yellow-static look the same at 3 metres under a desk
-  lamp. Only looking will.
+  lamp. Only looking will. Three greens were perfectly legible and nobody
+  could remember which was which; a white current page beside turquoise
+  occupied ones failed the same way.
 - **That the gestures are learnable.** A chord that tests fine and that you
   cannot perform without looking at the device is a failed design.
+- **That a correct surface is a *bearable* one.** This is the one looking
+  does not catch either, because it takes a **day**. The hard amber flash
+  read as urgent on hardware and as stressful by the afternoon; the green
+  working pulse was legible and tiring; a scrolling title was byte-perfect
+  and unreadable at eight pads wide. Each was built, confirmed on the
+  device, and then deleted by use.
 - **That the attention signal is *right*.** Precision and recall of
   `NeedsAnswer` against real sessions is the actual quality metric of this
   program, and it is measurable only by using it and counting the times it
@@ -123,17 +217,25 @@ here harder:
 
   Keep that count **in a file**, not in your head:
   [`attention.jsonl`](04-signals.md#measuring-whether-any-of-this-works) is
-  one line per transition, which turns [M1's exit
-  criterion](../ROADMAP.md#m1--the-grid-tells-the-truth) from a feeling into
-  a division. A week of remembering produces an opinion; a week of
-  transitions produces a number, and the number is the one deciding whether
-  the rest of the roadmap is worth building.
+  one line per transition, which turns
+  [M1's exit criterion](../ROADMAP.md#m1--the-grid-tells-the-truth) from a
+  feeling into a division.
+
+The list has a shape, and naming it is why it is kept: **a surface fact only
+shows up on the surface, and a surface you sit beside all day has a
+constraint a surface you glance at does not.** Everything in it was green,
+correct, and wrong.
 
 ## The honest gap today
 
-**Nothing in [02-surface.md](02-surface.md) has been executed against
-hardware.** The Launchpad was not connected to this machine when these
-documents were written (`system_profiler SPUSBDataType` found no Novation
-device). The first milestone is therefore not code — it is
-[M0](../ROADMAP.md#m0--prove-the-manual), plugging it in and making the
-manual's own examples light a pad.
+**A week of `attention.jsonl`, and a number out of it.** It is the criterion
+[M1](../ROADMAP.md#m1--the-grid-tells-the-truth) shipped with, the one
+[M6](../ROADMAP.md#m6--the-amber-exists) made possible by giving the signal
+a source that fires, and the only thing on the roadmap that no amount of
+building can close. The journal currently holds a little over a day.
+
+Everything else that was open here is not. The first draft of this file
+ended *"nothing in `02-surface.md` has been executed against hardware"* —
+that was true for about a day, and [M0](../ROADMAP.md#m0--prove-the-manual)
+closed it. `02-surface.md` now carries ✅ and ❌ against each claim, which
+is the form this section should take when the week finally runs.

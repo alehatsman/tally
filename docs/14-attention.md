@@ -75,13 +75,21 @@ the wrapper's bug to fix, not a colour to delete here.
 > agent starts waiting and gets no second callback when you answer.
 
 **It was never built.** `LABEL_ATTENTION` appears in the codebase three
-times: the constant (`src/anchor.rs:36`), a reader
-(`src/anchor.rs:155`), and a test. Nothing removes it, anywhere.
+times: the constant (`src/anchor.rs`), a reader
+(`Session::declared_attention`), and a test. Nothing removes it, anywhere.
 
 So the declared path is half-built — it can be switched on and never off.
 A `Notification` hook installed against today's binary sticks a pad amber
 permanently. This has to be closed before any hook ships, which makes it a
 prerequisite rather than a follow-up.
+
+> ✅ **Closed, in the same milestone.** The three paragraphs above are the
+> state of the tree *before* M6 and are kept because the gap is the reason
+> the decision below came out the way it did. The falling edge shipped
+> with the rising one: `tally attention off` removes the label
+> (`src/bin/tally.rs`), on `UserPromptSubmit` and `PreToolUse`. Nothing is
+> blocked on this, and a document that says otherwise is reading a
+> measurement as a status.
 
 ## The decision
 
@@ -237,7 +245,7 @@ stdout belongs to the agent's own transcript.
 as either oscillation with a lost falling edge or a rise written when
 nothing changed. It is **neither**.
 
-`Journal::asking` is an in-memory `BTreeMap` (`src/journal.rs:28`) rebuilt
+`Journal::asking` is an in-memory `BTreeMap` (`src/journal.rs`) rebuilt
 empty on every start. A slot that is still asking when tallyd restarts has
 no record of having asked, so the next tick writes a fresh rising edge. The
 evidence is in the file:

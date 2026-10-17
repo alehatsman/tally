@@ -234,8 +234,8 @@ pub enum Effect {
 
 /// What acting on a pad does to it.
 ///
-/// Two, and they can never apply to the same pad: [`Pad::alive`] is
-/// working, quiet or asking, and [`Pad::purgeable`] is exited or lost.
+/// Two, and they can never apply to the same pad: `Pad::alive` is
+/// working, quiet or asking, and `Pad::purgeable` is exited or lost.
 /// That disjointness is what lets one button carry both — every pad
 /// under the hold has exactly one outcome and exactly one colour
 /// (`docs/22-the-mode-button.md#stop-does-kill-and-purge`).

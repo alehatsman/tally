@@ -1,9 +1,9 @@
 # 21 — The arts
 
 Settled elsewhere and not reopened here: the grid is an 8×8 window onto a
-64-row space ([16](16-the-queue.md)), the top row is `▲▼◄►⌂` with three
-buttons carrying nothing, and the colour language is one sentence —
-*green is alive, amber wants you* ([05](05-interaction.md)).
+64-row space ([16](16-the-queue.md)), the top row is `▲▼◄►` plus `Session`
+holding the map ([20](20-the-overview.md)), and the colour language is one
+sentence — *green is alive, amber wants you* ([05](05-interaction.md)).
 
 This document is about the `Drums` button, and about the sixty-four pads
 doing something that is not work.
@@ -334,10 +334,17 @@ holds send nothing at all.
 
 ## What this does not do
 
-- **There is no way out but through.** Eight pieces is eight presses back
-  to the grid. That is the cost of one button, and it is paid by every other
-  button also being an exit — you are never more than one press from the
-  thing you actually wanted.
+- **It does not give you a second way out.** `►` is the exit and the only
+  one; every other press is swallowed. That is deliberate and it is the
+  cheapest rule here — one button in, one button out, and no sequence of
+  presses that leaves you somewhere you did not ask to be.
+
+  ⚠️ **This bullet used to say the opposite.** *"There is no way out but
+  through — eight pieces is eight presses back to the grid"* described the
+  first cut, where `Drums` walked a reel and you fell out of the end of it.
+  The reel is still the order the pieces are listed in, but the launchers
+  became a menu and the exit became one button, so there is nothing to
+  walk through any more.
 - **It does not run by itself.** No screensaver, no idle timeout, no
   art after N quiet minutes. A grid that starts animating on its own is a
   grid you have to check before you trust, and the whole product is the

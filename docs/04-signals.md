@@ -325,17 +325,29 @@ match arm.
 ## The state a pad renders
 
 ```rust
-enum Slot {
+enum SlotState {
     Empty,                       // nothing here, or nothing left to do
     Working,                     // alive, producing output
     Quiet,                       // alive, idle
-    NeedsAnswer { since: i64, source: Source },
+    NeedsAnswer { source: Source },
     Failed { code: i32 },        // exited non-zero
-    Lost,
+    Lost { reclaimable: bool },
 }
 
 enum Source { Derived, Declared }
 ```
+
+Two fields are not here and the reasons differ. **`NeedsAnswer` carries no
+`since`**: how long a slot has been asking is `Journal::asking`'s, because
+it has to survive a `tallyd` restart and a variant in memory cannot
+([#7](https://github.com/alehatsman/tally/issues/7)) — and that map turned
+out to be [the queue](16-the-queue.md) and [the tempo](17-the-tempo.md).
+**`Lost` carries `reclaimable`**: true only for
+`lost_reason=daemon_restart`, where anchord owning the PTYs means it took
+them with it and there is no orphan to collide with. It does not change the
+colour — the pad is still dark red, because the daemon still cannot account
+for what that session did — only whether the pad can be claimed again
+([#9](https://github.com/alehatsman/tally/issues/9)).
 
 Six variants, because **the grid shows what is alive or what is wrong**
 ([05](05-interaction.md#the-colour-language)). A session that exited cleanly
@@ -383,16 +395,16 @@ same either way ([05](05-interaction.md#why-it-is-one-sentence)); the spec
 matters when you press, not when you look.
 
 `closing` is deliberately **not** on that list: it falls through to the live
-states at 7 and 8. A session anchor is terminating is still alive, and it
+states at 6 and 7. A session anchor is terminating is still alive, and it
 has **no exit code yet** — `exit_code` is `None` until the child is reaped —
-so rendering it as `Exited { code }` would mean inventing a number. An
+so rendering it as `Failed { code }` would mean inventing a number. An
 earlier draft of this table grouped it with `exited`; writing the code is
 what surfaced that the variant could not be constructed honestly.
 
 Three of those placements are decisions, not orderings:
 
 - **Terminal states outrank attention.** An agent that rang the bell and
-  then died is `Exited`, not amber. There is nothing to answer.
+  then died is `Failed`, not amber. There is nothing to answer.
 - **There is no `Starting`.** A freshly created session with no watcher yet
   falls to `Quiet` — alive and idle, which is true. The state existed to
   render "hold on" in yellow for about a second, and off-to-green already

@@ -133,25 +133,24 @@ and stops thinking about it — no timer, no repaint loop, no drift. This is
 the single biggest reason to prefer the palette channels over RGB for
 anything that moves. See [05-interaction.md](05-interaction.md).
 
-Palette entries this design actually uses:
-
-| entry | colour | used for |
-|---:|---|---|
-✅ **All ten verified on hardware.** The manual's palette is accurate.
+✅ **All eleven verified on hardware.** The manual's palette is accurate.
+What each one *means* has moved since, so this column is the colour
+language as it stands and [`src/surface/palette.rs`](../src/surface/palette.rs)
+is its one definition:
 
 | entry | colour | used for | on the device |
 |---:|---|---|---|
-| 0 | off | unbound slot | unlit — see the note below |
-| 1 | dark grey | bound, not running | a dim glow, cooler than "grey" suggests |
-| 3 | white | the page you are on; an action button while held | white |
-| 5 | red | exited non-zero; the kill button, resting | red |
-| 7 | dark red | anchord unreachable (logo) | a deeper red, clearly distinct from 5 |
-| 9 | **amber** | **needs an answer** | orange |
-| 13 | yellow | starting | yellow with a green cast |
-| 21 | **green** | **running** | green |
-| 23 | dark green | exited clean | green — close to 21, but distinguishable |
-| 37 | turquoise | *was* the page button holding sessions — unused since [16](16-the-queue.md) | cyan |
-| 45 | blue | *was* action buttons, resting — unused since the kill button went red | blue |
+| 0 | off | nothing here, and nothing this gesture would touch | unlit — see the note below |
+| 1 | dark grey | **available, not urgent** — a live arrow, a `>` that would launch, `Session`, `Drums`, a pad a held modifier will skip, the overview's window marker | a dim glow, cooler than "grey" suggests |
+| 3 | white | **what your hand is doing** — a held modifier, `◄` with an origin, `Session` while the map is up | white |
+| 5 | red | exited non-zero; the corner resting in Stop; a pad that hold would terminate | red |
+| 7 | dark red | *the daemon had a problem* — a `lost` session, an unreachable anchord on the logo; and a pad whose ended rows a held Stop would forget | a deeper red, clearly distinct from 5 |
+| 9 | **amber** | **needs an answer** — and the only thing on the surface that moves | orange |
+| 13 | yellow | nothing in the colour language. The Uprising's smile, which is why ([21](21-the-arts.md)) | yellow with a green cast |
+| 21 | **green** | **alive**, static, working and quiet alike | green |
+| 23 | dark green | unused. It *was* "exited clean", and three greens proved legible yet unmemorable | green — close to 21, but distinguishable |
+| 37 | turquoise | Move at rest, and a pad you could pick up ([22](22-the-mode-button.md)) | cyan |
+| 45 | blue | unused. It *was* the action buttons at rest, until kill took the colour of its own consequence | blue |
 
 Three of these took a judgment a photograph could not make, and all three
 were checked by looking, which is the only way they *can* be checked
@@ -173,9 +172,13 @@ were checked by looking, which is the only way they *can* be checked
   unlit pad does not. That the dark state is white, not black, is worth
   knowing before designing anything around "dark means nothing there".
 
-Every one of these is used by [05-interaction.md](05-interaction.md); there
-are no reserved-but-unused entries, because an entry nothing renders is an
-entry nobody will notice is wrong.
+**Two entries render nothing, and they are kept rather than deleted**: what
+the device does with 23 and 45 is a fact that cost a device and an
+afternoon, and the sentence beside each is why it stopped being spent. The
+rule the first draft stated — *an entry nothing renders is an entry nobody
+will notice is wrong* — is why they carry that sentence instead of just a
+number. 13 and 37 are the proof it was worth keeping them: both were
+retired, and both came back.
 
 ### The whole surface in one message
 

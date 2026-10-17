@@ -88,7 +88,7 @@ the same reason it is stated there: *it is written once and needs nothing
 kept in step.*
 
 One consequence to be clear-eyed about. anchor's `list` filter is **exact
-match on a value**, AND across keys (anchor `src/store.rs:96-105`) — there
+match on a value**, AND across keys (anchor `src/store.rs`) — there
 is no "has this key" filter, and `tl.slot`'s value is different for every
 slot. So the reconcile tick lists **everything** and keeps the rows carrying
 a `tl.slot` key. That is a client-side filter over a few dozen sessions,
@@ -286,7 +286,7 @@ slot that goes dark stays dark until a human presses it.
 
 A clean exit leaves its anchor row in place, still carrying `tl.slot`. The
 pad goes dark anyway — `resolve` drops a clean exit before it can shadow
-the pad (`src/model.rs:76`) — so pressing it spawns a *second* session
+the pad (`model::resolve`) — so pressing it spawns a *second* session
 claiming the same address, and newest-wins renders the new one.
 
 Over a week of pressing one pad that is a pile of exited rows on one slot.
