@@ -1,4 +1,4 @@
-# 27 — The amber is an edge; the status is a level
+# 28 — The amber is an edge; the status is a level
 
 **Status: spec, not built.** It adds a reader to [14](14-attention.md) and
 no writer, and it is deliberately held until `14`'s own open prerequisite

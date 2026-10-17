@@ -141,7 +141,7 @@ Not design, and nothing below is built:
 | [13-layout-review.md](docs/13-layout-review.md) | **review** of `12`, and a narrower counter-proposal |
 | [23-gesture-brainstorm.md](docs/23-gesture-brainstorm.md) | **brainstorm** — every gesture the surface has, the two free buttons, and three asks |
 | [25-the-squad.md](docs/25-the-squad.md) | **spec** — `User` + `>` puts four agents in a row; the leftmost is the master and you talk only to it |
-| [27-the-level-and-the-edge.md](docs/27-the-level-and-the-edge.md) | **spec** — a hook is an edge, `claude agents --json` is a level, and the level may only veto |
+| [28-the-level-and-the-edge.md](docs/28-the-level-and-the-edge.md) | **spec** — a hook is an edge, `claude agents --json` is a level, and the level may only veto |
 
 ## License
 
