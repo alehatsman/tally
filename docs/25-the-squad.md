@@ -164,34 +164,56 @@ day `Escape` stops dismissing the menu, nothing errors — a member receives
 a command nobody wrote, and the first symptom is a wrong result some hours
 later.
 
-So the rule gets two cheap checks, and neither is about making the
-keystrokes more robust.
+### The receipt is a status change, not a screenshot
 
-**Read back before submitting.** Between the `Escape` and the `Enter`,
-`capture-pane -p` and assert the composer holds the payload and nothing
-else. The gap already exists because submit is already a separate step;
-this puts an assertion in it. A mismatch aborts instead of sending.
+The obvious check is to read the composer back with `capture-pane` before
+submitting. That is screen-scraping, which is the same fragility as
+`Escape` wearing a different hat — it breaks on the same version bump, for
+the same reason.
 
-**Probe once per version.** At squad spawn, paste a known three-character
-prefix — `/sta` — and assert the composer still reads `/sta` rather than
-`/status`. Cache the verdict against `claude --version`. The rule does not
-need to be *stable*; it needs to be *validated*, and an unvalidated
-version refuses to be driven rather than being driven wrong.
+**There is a supported channel, and the spike found it.** `/status` reports
+`Peer address: uds:/tmp/cc-socks/<pid>.sock`; the sockets are real, one per
+live session, owned by `claude` itself. The documented surface in front of
+them needs no TTY:
 
-⚠️ **There may be no need for any of this.** `/status` reports
-`Peer address: uds:/tmp/cc-socks/4002.sock` — every session already has a
-unix socket. If that is a usable control channel the whole typing problem
-evaporates. It is undocumented and internal, which is the same fragility
-with a worse failure mode: a keystroke rule breaks visibly, a wire
-protocol drifts silently. **Worth a spike, not worth a design.**
+```sh
+claude agents --json
+```
+
+```json
+{ "pid": 37659, "cwd": "…/futurumlab/tally", "kind": "interactive",
+  "sessionId": "095a8f7b-…", "name": "tally-fd", "status": "busy" }
+```
+
+So the check becomes a **post-condition from an API rather than a
+pre-condition parsed off a screen**: paste, `Escape`, `Enter`, then poll —
+**if the member does not go `idle` → `busy`, the submit did not happen.**
+`Escape` is then allowed to break, because the receipt does not depend on
+`Escape` being right.
+
+⚠️ **Two measurements before trusting it**: the poll latency, and whether a
+fast reply returns to `idle` before the first poll sees `busy`. And
+`status` is a field name, not a contract.
+
+**Probe once per version anyway.** At squad spawn, paste `/sta` and assert
+the composer reads `/sta` rather than `/status`, cached against
+`claude --version`. It costs one paste and it converts *driven wrong* into
+*refuses to drive*. The rule does not need to be stable; it needs to be
+validated.
+
+### What the spike did not find
+
+**No supported way to write into a running interactive session.**
+`claude agents` lists and `--bg` dispatches new ones; nothing sends a
+message into a session that already exists. Reading a squad is solved and
+official. Driving one is still typing at a TUI, which is why the injection
+rule above is still the rule.
 
 **The payload never ends in a newline.** Not because a newline submits —
 it does not — but because the submit must be the step that is visibly
-separate, so that a brief which goes wrong goes wrong *in the composer*,
-where `capture-pane` can still see it.
-
-Reading back is `capture-pane -p -t "$pane"`, which is what
-[04](04-signals.md) already does for the title.
+separate, so that a brief which goes wrong stalls *in the composer*, where
+`capture-pane -p` can still show a human what happened. That is a
+debugging affordance, not the check.
 
 ## The spec
 
@@ -212,6 +234,26 @@ second one.
 else in that table already exists. It is a file for the same reason
 [08](08-lifecycle.md) made every other shared fact a file: so that nothing
 has to be running for it to be true.
+
+**It holds only what nothing else knows**, which is less than the first
+draft assumed — `pid`, `cwd`, `status` and `sessionId` are all readable
+live from `claude agents --json`, so none of them are stored:
+
+| in the ledger | because |
+|---|---|
+| which slots are in this squad | nothing else groups them |
+| brief path, per member | the ask |
+| result path, per member | the deliverable |
+| the completion condition | what *done* means for this squad |
+
+That is doc 08's rule applied to the new file: **a derivable fact is not
+written down.**
+
+**One writer per field.** A master that writes member status becomes a
+bottleneck while it lives and a liar when it dies, so it does not: **the
+member writes its own result path, the master writes only assignments.**
+No locking, no reconciliation, and a ledger that stays true through a dead
+master — which is the property the whole design rests on.
 
 **The master is the most replaceable part of a squad.** That inverts the
 intuition this started from — a master that hands out identities and holds
@@ -260,10 +302,13 @@ So the number is not defended here. It is a default with a citation,
 recorded as such, and the week of data that
 [`README`](../README.md) already refuses to hurry is what replaces it.
 
-⚠️ **If the limit is master throughput, it has nothing to do with eight.**
-A squad could legitimately span rows, and `squad = row` would then be
-furniture constraining design. That is the assumption in this document
-most likely to break first.
+**And the row is a default, not a constraint.** Once the squad is the
+ledger, the row is display — and the ledger names slots, which already
+carry absolute rows. **A squad spanning rows is already representable and
+nothing forbids it.** `tally squad` puts members on one row because a row
+is legible, not because anything requires it. If master throughput turns
+out to be the real limit, the eight-wide furniture has no claim on the
+number and the design does not have to change to admit it.
 
 The unused columns stay dark, which is the grid doing what it does:
 **dark means nothing is there**, the same rule as everywhere else.
@@ -348,6 +393,14 @@ runs in, and the default is the narrow one.
 should be the second choice. It is lossy and you cannot see what it
 dropped.
 
+**Respawn restores the agent; `>` makes a new one.** The distinction
+[18](18-the-launch-column.md) half-drew is now sharp, because
+`claude agents --json` hands out `sessionId` and `--resume` takes it. `>`
+drops `args` on purpose so a scene-launch cannot clone a conversation —
+that is *another agent like this one*. Respawn-in-place is the opposite
+case: the **same** member, same slot, same brief, and resuming its
+`sessionId` restores what it had rather than replaying what it was told.
+
 **Purge and respawn from the written brief is deterministic.**
 [18](18-the-launch-column.md#what-they-were-and-what-that-was-worth)
 found respawn unreachable only because there was no spec to resolve;
@@ -390,11 +443,41 @@ you hesitate over has already failed — that is the whole argument of
 [05](05-interaction.md) applied to a new destructive gesture.
 
 The deeper answer is that **a squad with a ledger already knows when it is
-finished**: every brief has a status. The gesture is garbage collection,
-not a verdict. It is tempting to light the row differently once the ledger
-completes, and that should be resisted — [16](16-the-queue.md) spent real
-effort keeping grid colour meaning one thing, and this would be a second
-meaning for the sake of a fact a file already states.
+finished**: every brief has a result path or it does not. The gesture is
+garbage collection, not a verdict.
+
+### The stalled squad, and why it is not a colour
+
+A row of four live agents that nobody is coordinating looks exactly like a
+working squad. With the ledger it stops being ambiguous:
+
+> **unfinished briefs + every member `idle` = stalled**
+
+Both halves are readable without a master running — the ledger from disk,
+`idle` from `claude agents --json`. So *is anyone actually working* is a
+question with an answer, and the answer survives the master that was
+supposed to know it.
+
+**It surfaces in the CLI, not on the grid.** `tally squad status <row>`.
+[16](16-the-queue.md) spent real effort keeping pad colour meaning exactly
+one thing, and *your squad is stuck* would be a second meaning for a fact a
+file already states. **The grid keeps telling you where to look; the file
+tells you whether anyone is working.**
+
+### A third source of truth, named out loud
+
+`claude agents --json` is a reader that is not `anchor ls`, and
+[08](08-lifecycle.md) is explicit that the thing which already has a socket
+gets to keep being the only one. So this is a rule under pressure, and the
+line it holds is:
+
+**anchor stays the roster; `claude agents` is member enrichment that only
+the squad reads, and `tallyd` never touches it.**
+
+The two sets are not the same. anchor sees `isayes`, `codex` and bare
+shells, and the grid is about all of them; `status: idle | busy` exists only
+for Claude members and only a squad asks. The day `tallyd` reads it, the
+rule has broken and that belongs on a page, not in a commit.
 
 ## What this costs
 
@@ -427,27 +510,31 @@ than feel.
 - `@tally_session` as the identity, `@tally_slot` as the address
 - the kill chord's grammar, the launch column, purge, mute — the row-end
   chord adds a target to kill, not a new kind of gesture
-- `anchor ls` as the only roster, and the reconcile tick as the only clock
+- `anchor ls` as the only roster **`tallyd` reads**, and the reconcile tick
+  as the only clock
 - **no IPC between our own binaries** — the MCP server, if it is ever
   built, is a translator and not a participant
 
 ## Open questions
 
-1. **The session's unix socket.** `uds:/tmp/cc-socks/<n>.sock` exists on
-   every session. If it is a usable control channel, the injection rule and
-   both of its checks are dead weight. One spike answers it, and the answer
-   changes more of this document than anything else here.
-2. **What the ledger actually contains.** It is named in the spec table and
-   nowhere defined — status values, who writes them, what happens when a
-   member dies mid-brief. It is the only new artefact in the design and the
-   least specified thing in this document.
-3. **Does a dead master leave the grid lying?** A member is lit because its
-   session is alive, which is true whether or not anything is still reading
-   the ledger. A row of four live agents nobody is coordinating looks
-   exactly like a working squad.
-4. **Whether `squad = row` survives contact.** The row is a good address.
-   It may be a bad boundary — see the warning in
-   [§ Four](#four-and-four-is-a-guess-with-a-citation). If master throughput
-   is the real limit, the eight-wide furniture has no claim on the design.
+1. **Does `idle → busy` arrive in time to be a receipt?** Poll latency is
+   unmeasured, and a reply short enough to finish before the first poll
+   would read as a failed submit. Two numbers settle it, and they are the
+   next thing to measure.
+2. **What is `status`, exactly?** A field name in a JSON array, not a
+   documented contract. `busy` plainly means generating; whether anything
+   distinguishes *waiting on a permission prompt* from *thinking* is
+   unknown — and that distinction is the amber this whole product is a bet
+   on ([14](14-attention.md)).
+3. **Does the member write its own result path, and with what?** One
+   writer per field is the rule; the mechanism is not designed. A hook is
+   the obvious candidate, which is how the amber already works
+   ([04](04-signals.md#4-a-hook--it-told-us)).
+4. **What does a squad do when a member's worktree conflicts?** Isolation
+   stops them corrupting each other's edits; it does nothing about two
+   members producing changes that cannot both land. The ledger has no
+   notion of a merge and probably should not grow one.
 5. **Does `Escape` keep dismissing the menu?** Unanswerable in advance,
-   which is why the rule carries a probe instead of a promise.
+   which is why the rule carries a probe and a receipt instead of a
+   promise. Lower stakes now: the receipt catches the break even when the
+   probe is stale.
