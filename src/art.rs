@@ -20,6 +20,9 @@ use crate::surface::{Button, Cell, Frame};
 /// Which art is playing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Piece {
+    /// Claude's own mark, blooming open and turning. The first press,
+    /// because the first press should say who made it.
+    Claude,
     /// Four summed sines across the grid. Stateless, and therefore the one
     /// piece that cannot drift, stall or need reseeding.
     Plasma,
@@ -44,7 +47,8 @@ impl Piece {
     ///
     /// Three that are only pretty, two that are classics, and the joke
     /// last — a reel ends on the thing worth filming.
-    pub const REEL: [Self; 8] = [
+    pub const REEL: [Self; 9] = [
+        Self::Claude,
         Self::Plasma,
         Self::Life,
         Self::Rain,
@@ -76,6 +80,7 @@ impl Piece {
     /// What to print when it starts.
     pub fn name(self) -> &'static str {
         match self {
+            Self::Claude => "claude",
             Self::Plasma => "plasma",
             Self::Life => "life",
             Self::Rain => "rain",
@@ -120,7 +125,9 @@ impl Reel {
     /// Start `piece` from its first frame.
     pub fn new(piece: Piece) -> Self {
         let sim = match piece {
-            Piece::Plasma | Piece::Pacman | Piece::Bestiary | Piece::Uprising => Sim::Stateless,
+            Piece::Claude | Piece::Plasma | Piece::Pacman | Piece::Bestiary | Piece::Uprising => {
+                Sim::Stateless
+            }
             Piece::Life => Sim::Life(Life::seeded(SEED)),
             Piece::Rain => Sim::Rain(Rain::seeded(SEED)),
             Piece::Fire => Sim::Fire(Fire::seeded(SEED)),
@@ -182,6 +189,7 @@ impl Reel {
 /// piece and forgetting to draw it is a compile error and not a dark grid.
 fn stateless(piece: Piece, n: u32, frame: &mut Frame) {
     match piece {
+        Piece::Claude => claude(n, frame),
         Piece::Plasma => plasma(n, frame),
         Piece::Pacman => pacman(n, frame),
         Piece::Bestiary => bestiary(n, frame),
@@ -1038,6 +1046,105 @@ fn well_cost(well: u64) -> i32 {
     cost
 }
 
+// ── claude ───────────────────────────────────────────────────────────────
+
+/// Frames per spoke position. Four positions make a turn, so the mark
+/// rotates about once and a quarter a second.
+const SPARK_FRAME: u32 = 6;
+/// Frames per bloom step. Faster than the turn, because the bloom is an
+/// arrival and an arrival should not be gradual.
+const BLOOM_FRAME: u32 = 5;
+/// How long before it blooms again.
+const CLAUDE_LOOP: u32 = 240;
+
+/// The mark arriving: a single lit centre, then a core, then open.
+const BLOOM: [Sprite; 2] = [
+    [0, 0, 0, 0b0001_1000, 0b0001_1000, 0, 0, 0],
+    [
+        0,
+        0,
+        0b0011_1100,
+        0b0011_1100,
+        0b0011_1100,
+        0b0011_1100,
+        0,
+        0,
+    ],
+];
+
+/// The turn, as four spoke positions.
+///
+/// Orthogonal, then all eight, then diagonal, then all eight again —
+/// which reads as rotation and is not, because nothing on an 8×8 grid can
+/// rotate by less than 45° and a mark that jumped would read as a glitch.
+/// The full asterisk between them is the frame that sells it.
+const SPARK: [Sprite; 4] = [
+    // the arms
+    [
+        0b0001_1000,
+        0b0001_1000,
+        0b0001_1000,
+        0b1111_1111,
+        0b1111_1111,
+        0b0001_1000,
+        0b0001_1000,
+        0b0001_1000,
+    ],
+    // all eight spokes: the mark itself
+    [
+        0b0001_1000,
+        0b1001_1001,
+        0b0101_1010,
+        0b1111_1111,
+        0b1111_1111,
+        0b0101_1010,
+        0b1001_1001,
+        0b0001_1000,
+    ],
+    // turned 45°
+    [
+        0b1000_0001,
+        0b0100_0010,
+        0b0010_0100,
+        0b0001_1000,
+        0b0001_1000,
+        0b0010_0100,
+        0b0100_0010,
+        0b1000_0001,
+    ],
+    [
+        0b0001_1000,
+        0b1001_1001,
+        0b0101_1010,
+        0b1111_1111,
+        0b1111_1111,
+        0b0101_1010,
+        0b1001_1001,
+        0b0001_1000,
+    ],
+];
+
+/// Claude's mark, in Claude's colour.
+///
+/// Amber, which is the surface's reserved *answer me*. Borrowing it is
+/// safe for the reason every piece here borrows something: while an art
+/// is playing the grid means nothing at all, and the logo carries the
+/// attention instead (`docs/21-the-arts.md`). Fire and the ember trail
+/// spend the same amber, and the Uprising spends it telling a joke about
+/// what it normally means.
+fn claude(n: u32, frame: &mut Frame) {
+    let t = n % CLAUDE_LOOP;
+    let opening = BLOOM_FRAME * 2;
+    let sprite = if t < opening {
+        let step = usize::try_from(t / BLOOM_FRAME).unwrap_or(0);
+        BLOOM.get(step).copied().unwrap_or(BLOOM[1])
+    } else {
+        let step = usize::try_from((t - opening) / SPARK_FRAME % 4).unwrap_or(0);
+        SPARK.get(step).copied().unwrap_or(SPARK[1])
+    };
+    draw(frame, sprite, AMBER);
+}
+
 // ── sprites ──────────────────────────────────────────────────────────────
 
 /// An 8×8 picture, one byte per row, row 0 at the top.
@@ -1825,5 +1932,78 @@ mod tests {
         bestiary(0, &mut first);
         bestiary(BESTIARY_LOOP, &mut round);
         assert_eq!(grid(&first), grid(&round), "the bestiary has a seam");
+    }
+
+    /// The mark arrives small and opens, then turns. Both halves are
+    /// asserted because a bloom that skipped to the full asterisk would
+    /// still look fine in a single screenshot and wrong in motion.
+    #[test]
+    fn the_claude_mark_blooms_then_turns() {
+        let lit = |n: u32| {
+            let mut f = Frame::dark();
+            claude(n, &mut f);
+            Button::all().filter(|&b| f.get(b) != Cell::Off).count()
+        };
+        let shape = |n: u32| {
+            let mut f = Frame::dark();
+            claude(n, &mut f);
+            grid(&f)
+        };
+        assert_eq!(lit(0), 4, "the mark should arrive as a single core");
+        assert!(lit(BLOOM_FRAME) > lit(0), "it did not open");
+        let open = BLOOM_FRAME * 2;
+        assert!(
+            lit(open + SPARK_FRAME) > lit(BLOOM_FRAME),
+            "it did not reach"
+        );
+        // Orthogonal, all eight, diagonal: three distinct spoke positions
+        // is what reads as a turn.
+        let (a, b, c) = (
+            shape(open),
+            shape(open + SPARK_FRAME),
+            shape(open + SPARK_FRAME * 2),
+        );
+        assert_ne!(a, b);
+        assert_ne!(b, c);
+        assert_ne!(a, c, "the turn only has two positions");
+        assert_eq!(
+            shape(open),
+            shape(open + SPARK_FRAME * 4),
+            "it does not come round"
+        );
+    }
+
+    /// It is Claude's mark, so it is Claude's colour, and it fills the
+    /// grid rather than sitting in a corner.
+    #[test]
+    fn the_mark_is_amber_and_uses_the_whole_grid() {
+        let mut f = Frame::dark();
+        claude(BLOOM_FRAME * 2 + SPARK_FRAME, &mut f);
+        let lit: Vec<Cell> = Button::all()
+            .map(|b| f.get(b))
+            .filter(|&c| c != Cell::Off)
+            .collect();
+        assert!(lit.iter().all(|&c| c == Cell::Static(AMBER)), "not amber");
+        // The asterisk's arms reach both edges; its corners are lit only
+        // in the diagonal frame, which is the point of there being two.
+        assert_eq!(f.get(Button::Grid { row: 4, col: 1 }), Cell::Static(AMBER));
+        assert_eq!(f.get(Button::Grid { row: 4, col: 8 }), Cell::Static(AMBER));
+        let mut turned = Frame::dark();
+        claude(BLOOM_FRAME * 2 + SPARK_FRAME * 2, &mut turned);
+        assert_eq!(
+            turned.get(Button::Grid { row: 1, col: 1 }),
+            Cell::Static(AMBER)
+        );
+        assert_eq!(
+            turned.get(Button::Grid { row: 8, col: 8 }),
+            Cell::Static(AMBER)
+        );
+    }
+
+    /// Claude goes first. The first press should say who made it.
+    #[test]
+    fn the_reel_opens_on_claude() {
+        assert_eq!(Piece::after(None), Some(Piece::Claude));
+        assert_eq!(Piece::REEL.first(), Some(&Piece::Claude));
     }
 }

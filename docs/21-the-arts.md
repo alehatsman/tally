@@ -34,15 +34,16 @@ made the row a queue. The rule the top row runs on is *dark does nothing,
 lit does exactly one thing*, and this keeps it: dark while no art is
 playing, white while one is.
 
-One button, eight pieces, and a press moves to the next:
+One button, nine pieces, and a press moves to the next:
 
 ```text
-dark → Plasma → Life → Rain → Fire → Tetris → Pacman → Bestiary
-     → Uprising → dark → …
+dark → Claude → Plasma → Life → Rain → Fire → Tetris → Pacman
+     → Bestiary → Uprising → dark → …
 ```
 
-Three that are only pretty, four that are somebody else's icons, and the
-joke last, because a reel ends on the thing worth filming.
+The mark first, because the first press should say who made it. Three
+that are only pretty, four that are somebody else's icons, and the joke
+last, because a reel ends on the thing worth filming.
 
 No menu, no mode indicator beyond the button itself, and no way to get
 lost: keep pressing and you arrive back where you started.
@@ -88,7 +89,21 @@ So while art is playing:
 Everything else on the surface goes dark. The art owns the 64 pads; it
 does not own the three lights that report.
 
-## The eight pieces
+## The nine pieces
+
+### Claude
+
+The mark, blooming open from a single lit core and then turning —
+orthogonal, all eight spokes, diagonal, all eight again. Nothing on an
+8×8 grid can rotate by less than 45°, so it does not try: the full
+asterisk between the two positions is the frame that sells the turn, and
+without it the mark would read as jumping rather than spinning.
+
+Amber, which is the surface's reserved *answer me*. Borrowing it is safe
+for the reason every piece here borrows something — while an art is
+playing the grid means nothing at all and the logo carries the attention
+instead — and Fire, the ember trail and the Uprising all spend the same
+amber already.
 
 ### Plasma
 
