@@ -263,10 +263,12 @@ the same time. So, plainly, what is not known:
 - **`idle` is overloaded.** A fresh session and a finished turn are both
   `idle` — *done and waiting for you* is not distinguishable from *never
   started*, which is the distinction [16](16-the-queue.md) built a queue on.
-- **the join key is wrong for tally.** `pane_pid` was the claude pid in a
-  bare pane, but tally's panes run `anchor attach`, so the pane pid is the
-  client. Matching needs `cwd` + `sessionId`, or anchor recording the
-  child pid.
+- ~~the join key is wrong for tally~~ — **it is not, and this was checked
+  rather than assumed.** `anchor get` already records `pid`, and it is the
+  `claude` process itself: four running sessions matched
+  `claude agents --json` pid-for-pid, `login_shell: true` and all, because
+  the shell `exec`s. `pane_pid` *is* `anchor attach` in a tally pane, but
+  the join never needed it. **The join is free.**
 - **550 ms per poll is heavy for a 2 s tick.** A hook pushes; this polls.
 
 **And it breaks a line written earlier in this document.** The section
@@ -629,11 +631,7 @@ than feel.
    candidate, which is how the amber already works
    ([04](04-signals.md#4-a-hook--it-told-us)) — and that is a second reason
    the hooks question comes first.
-4. **What joins a tally pane to a `claude agents` row?** `pane_pid` is
-   `anchor attach`, not `claude`. Either match on `cwd` + `sessionId`, or
-   anchor learns to report the child pid — which is a change to anchor and
-   therefore an issue, not a decision taken here.
-5. **What does a squad do when two members' worktrees conflict?** Isolation
+4. **What does a squad do when two members' worktrees conflict?** Isolation
    stops them corrupting each other's edits; it does nothing about changes
    that cannot both land. The ledger has no notion of a merge and probably
    should not grow one.
