@@ -9,7 +9,7 @@
 
 use std::fmt;
 
-use crate::slot::{Pages, Slot, PAGES};
+use crate::slot::{self, Pages, Slot, PAGES};
 
 /// What a bare `tally spawn` runs. The thing this grid is for.
 pub const DEFAULT_COMMAND: &str = "claude";
@@ -411,10 +411,21 @@ fn addresses(sourced: bool) -> &'static str {
 /// typing its name every time is the friction this command exists to
 /// remove.
 ///
+/// **The three-part form is [`crate::slot::parse`]'s grammar and is
+/// answered by it**, so what this command accepts and what a `tl.slot`
+/// label means cannot drift apart. The walk below runs only for an
+/// address that grammar rejected, and only to say *which part* of it was
+/// wrong — a human typing into a shell gets a sentence, where a label
+/// read off a session gets `None` and is left off the grid
+/// (`docs/29-what-the-loop-holds.md`).
+///
 /// # Errors
 /// [`Error::Address`] for the wrong number of parts, a coordinate outside
 /// `1..=8`, or a page no `slots.toml` declares. Never clamped.
 pub fn address(text: &str, pages: &Pages) -> Result<Slot, Error> {
+    if let Some(at) = slot::parse(text, pages) {
+        return Ok(at);
+    }
     let parts: Vec<&str> = text.split(':').collect();
     let (name, row, col) = match parts.as_slice() {
         [row, col] => (None, *row, *col),
@@ -743,7 +754,7 @@ mod tests {
         let claim = spawn(&["spawn", "infra:8:8"], &pages).expect("valid");
         let label = claim.at.label(&pages).expect("page is declared");
         assert_eq!(label, "infra:8:8");
-        assert_eq!(crate::slot::parse(&label, &pages), Some(claim.at));
+        assert_eq!(slot::parse(&label, &pages), Some(claim.at));
     }
 
     /// With no `slots.toml` the pages are named "1" to "8", so a numeric
@@ -844,5 +855,31 @@ mod tests {
             spawn(&["spawn", "1:1"], &none),
             Err(Error::Address(_))
         ));
+    }
+
+    /// What a human may type and what a `tl.slot` label may carry are one
+    /// grammar for the three-part form, because this function asks
+    /// `slot::parse` first (`docs/29-what-the-loop-holds.md`). The
+    /// two-part form is this command's own convenience and deliberately
+    /// never becomes a label.
+    #[test]
+    fn a_typed_address_and_a_label_are_the_same_grammar() {
+        let pages = named();
+        for text in ["work:3:5", "work:1:1", "work:8:8"] {
+            assert_eq!(
+                address(text, &pages).ok(),
+                slot::parse(text, &pages),
+                "{text}"
+            );
+        }
+        // And every rejection is a rejection in both, with a sentence
+        // here and a `None` there.
+        for bad in ["work:9:1", "work:0:1", "nope:1:1", "work:1:2:3"] {
+            assert!(address(bad, &pages).is_err(), "{bad}");
+            assert!(slot::parse(bad, &pages).is_none(), "{bad}");
+        }
+        // The two-part form is ours alone.
+        address("3:5", &pages).expect("two parts is this command's own form");
+        assert!(slot::parse("3:5", &pages).is_none());
     }
 }

@@ -109,10 +109,19 @@ foreground terminal here for `^C` to mean anything else.
 
 Four MIDI writes and a port close are nowhere near async-signal-safe, and a
 handler that allocates is a handler that can deadlock on the allocator it
-interrupted. So the signal does one thing: **it wakes the main loop.** A
-`tokio::signal` stream raced against the reconcile tick, the shutdown
-sequence running on the normal path with the port it already owns, and the
-re-raise — `SIG_DFL` then `raise()` — as the last statement.
+interrupted. So the signal does one thing: **it wakes the main loop.** The
+handler is a relaxed atomic store and nothing else; the loop reads that
+store at the top of every 16 ms tick and breaks out of it, the shutdown
+sequence runs on the normal path with the port it already owns, and the
+re-raise — `SIG_DFL` then `raise()` — is the last statement.
+
+> ⚠️ **This paragraph described a `tokio::signal` stream raced against the
+> reconcile tick until 2026-10-17.** There is no async runtime here and
+> there never was: the dependency budget never bought one, and a 16 ms
+> polling loop that already exists for the device does not need a second
+> way to be woken. The design was sound and the sentence described a
+> different program — which is the ordinary way a document goes wrong,
+> by being written next to the code instead of from it.
 
 The same reasoning puts a **panic hook** on the list, and the docs should
 not have called a panic unrecoverable without trying. A panic unwinds, so
