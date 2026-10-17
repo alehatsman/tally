@@ -252,7 +252,15 @@ impl Chords {
                     self.held.push(action);
                 }
             } else {
-                self.held.retain(|&a| a != action);
+                // **Every verb that lives on this button**, not just the
+                // one the mode names right now. The mode can change
+                // between the press and the release — a double-tap
+                // toggles it on the release itself — and a release that
+                // removed only the current verb stranded the old one in
+                // `held` forever. That left [`Self::modifier`] answering
+                // `Some` with nothing down, so the grid froze in a
+                // preview with no way out (`docs/22-the-mode-button.md`).
+                self.held.retain(|a| a.button() != button);
             }
             return None;
         }
@@ -692,6 +700,43 @@ mod tests {
         c.clear();
         assert!(!c.is_held(Action::Move), "the hold is gone");
         assert_eq!(c.mode(), Action::Move, "the mode is not");
+    }
+
+    /// The bug that froze the grid, and the reason releases are matched
+    /// by **button** rather than by verb.
+    ///
+    /// The double-tap toggles on the release, so the press went down
+    /// under one verb and came up under another. Removing only the
+    /// current verb left the old one held with nothing under the thumb:
+    /// [`Chords::modifier`] kept answering `Some`, the whole grid stayed
+    /// in a preview, and the corner stayed white. There was no sequence
+    /// of presses that recovered it.
+    #[test]
+    fn toggling_the_mode_on_a_release_strands_nothing() {
+        let mut c = Chords::default();
+        assert_eq!(c.feed(Button::Action(8), true), None);
+        // This is what `tallyd` does when the second tap completes: the
+        // mode flips while the button is still physically down.
+        c.toggle_mode();
+        assert_eq!(c.feed(Button::Action(8), false), None);
+        for a in Action::all() {
+            assert!(!c.is_held(a), "{a:?} survived the release");
+        }
+        assert_eq!(c.modifier(), None, "nothing is held, so nothing previews");
+    }
+
+    /// And it recovers from either direction, repeatedly — the state
+    /// that froze the surface was cumulative.
+    #[test]
+    fn the_corner_survives_a_hundred_toggles() {
+        let mut c = Chords::default();
+        for _ in 0..100 {
+            let _down = c.feed(Button::Action(8), true);
+            c.toggle_mode();
+            let _up = c.feed(Button::Action(8), false);
+            assert_eq!(c.modifier(), None);
+        }
+        assert!(c.held.is_empty(), "nothing accumulated");
     }
 
     /// This module has no clock, and that is what lets the four chord

@@ -247,6 +247,7 @@ you to remember the order, and the next idea after that is a menu.
 | Move, pick up, and the session exits before the drop | the drop fails, is reported, and the pad redraws dead |
 | Move onto the pad it came from | nothing; same address, no write |
 | double-tap while a chord is mid-hold | ignored; a tap requires no chord to have fired |
+| the mode flips while the button is still down | it always does — the second tap completes on the **release**, so the press went down under one verb and comes up under another. The release is matched by **button**, not by verb, or the old one is stranded in `held` and the grid freezes in a preview with no way out |
 | mode toggled while anchord is unreachable | allowed — the mode is a surface state, not a session state |
 | two modifiers down | nothing fires, unchanged (`chord.rs:modifier`) |
 
