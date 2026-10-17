@@ -974,6 +974,7 @@ fn main() -> ExitCode {
             overview: chords.overview(),
             art: reel.is_some(),
             pressed: &pressed,
+            mode: chords.mode(),
         };
         let frame = model::frame_from(&pads, &view);
         advance_art(reel.as_mut(), &mut art_wake);

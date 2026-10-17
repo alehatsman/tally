@@ -413,6 +413,7 @@ spec = "claude"
                 overview: false,
                 pressed: &pressed,
                 art: false,
+                mode: Action::Stop,
             },
         );
         assert_eq!(
@@ -481,6 +482,7 @@ spec = "claude"
                 overview: false,
                 pressed: &pressed,
                 art: false,
+                mode: Action::Stop,
             },
         );
 
