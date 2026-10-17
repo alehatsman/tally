@@ -172,9 +172,25 @@ meant. So `spawn` creates the session, places the view on tally's server
 at the pad's address, and leaves your shell exactly where it was standing.
 
 That inverts the default settled in
-[15](15-views.md#adoption-tally-spawn-from-a-pane), and the `--detach`
-flag it introduced becomes the only behaviour — so the flag goes. The
-section in `15` is amended by this one, not quietly contradicted.
+[15](15-views.md#adoption-tally-spawn-from-a-pane). The section in `15`
+is amended by this one, not quietly contradicted.
+
+**`--detach` survives, and this document said it would not.** The
+original claim here was that the flag becomes the only behaviour and so
+retires. That is wrong, and it is worth saying why rather than quietly
+deleting it: *spawn and come back* was only ever half of what `--detach`
+meant. The other half — **do not put anything on the surface** — is
+still a choice once a view is a pane in a row session rather than the
+shell you are standing in. So the flag keeps its name and changes its
+meaning:
+
+| | before | now |
+|---|---|---|
+| default | the pane you ran in becomes the view | the view opens in the row session; your shell is untouched |
+| `--detach` | do not hand this pane over | **open no view at all** — the session runs, the pad lights, the press is what opens it |
+
+`--count N` above 1 implies it, because N sessions cannot be shown in
+one place and the pads are where they are read.
 
 What adoption bought was *the folder is where you are standing*, and that
 is not lost: `spawn` still takes the cwd from the shell it ran in. What
