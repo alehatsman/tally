@@ -72,8 +72,8 @@ ever been and the fast end is barely faster, because the failure this
 design has already paid for once is a surface that is correct and
 **stressful**: the hard amber flash was confirmed on hardware as reading
 "urgent" and then confirmed in use as exhausting
-([05](05-interaction.md#nothing-blinks)). A tempo that sprints is that
-mistake with a different knob.
+([05](05-interaction.md#nothing-blinks-and-only-attention-moves)). A
+tempo that sprints is that mistake with a different knob.
 
 ### It is global, and that is the right scope
 

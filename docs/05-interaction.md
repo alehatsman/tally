@@ -392,7 +392,8 @@ anything."*
 
 This is the same class of finding as the
 [three greens](#why-it-is-one-sentence) and the
-[hard amber flash](#nothing-blinks), and it is the third time the project
+[hard amber flash](#nothing-blinks-and-only-attention-moves), and it is
+the third time the project
 has learned it: **a surface fact only shows up on the surface.** The byte
 budget was fine, the sanitiser was correct, the tests were green, and the
 feature was worthless. Nothing short of holding it down would have said

@@ -1,7 +1,10 @@
 # 25 — The squad is a file, the row is its face
 
+**Status: spec, not built.** Nothing in `01`–`24` changes if this is never
+implemented.
+
 [24](24-the-tally-server.md) gave tally its own tmux server and settled the
-layout: **a row is a session, a column is a pane.** This document spends
+layout: **a row is a session, a column is a window.** This document spends
 that, and the thing it spends it on is not a feature — it is a unit of
 work.
 
@@ -272,7 +275,7 @@ the same time. So, plainly, what is not known:
 - **550 ms per poll is heavy for a 2 s tick.** A hook pushes; this polls.
 
 **It was measured here and it is decided elsewhere.**
-[26](26-the-level-and-the-edge.md) is that page: a hook is an edge and
+[27](27-the-level-and-the-edge.md) is that page: a hook is an edge and
 `status` is a level, they fail in opposite directions, and the level gets
 one job — vetoing an amber that the hook raised and never lowered. The
 squad reads the same field for its own reasons; neither use makes
@@ -572,7 +575,7 @@ shells, and the grid is about all of them; `status` exists only for Claude
 members, and a squad is the only thing that needs it.
 
 ⚠️ **That line did not survive the day.**
-[26](26-the-level-and-the-edge.md) spends it: `waitingFor` is the amber,
+[27](27-the-level-and-the-edge.md) spends it: `waitingFor` is the amber,
 the amber is `tallyd`'s business, and `tallyd` is given one read of
 `claude agents` — to **clear** a stale `tl.attention`, never to raise one.
 The roster is still `anchor ls` alone. The rule bent in exactly one
@@ -618,7 +621,7 @@ than feel.
 ## Open questions
 
 1. ~~**Does `waitingFor` replace the hook, corroborate it, or neither?**~~
-   **Answered, and it moved out** — [26](26-the-level-and-the-edge.md).
+   **Answered, and it moved out** — [27](27-the-level-and-the-edge.md).
    Neither: it corroborates, and it is allowed to *clear* a stale amber and
    nothing else. It cannot replace the hooks, because a finished turn —
    the moment [14](14-attention.md) says the grid exists to report — reads

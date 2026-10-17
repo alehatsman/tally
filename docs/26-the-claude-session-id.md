@@ -1,6 +1,6 @@
 # 26 — The dead pane says which *conversation* it was
 
-**Status: spec.** It amends [19](19-the-dead-pane.md), which put anchor's
+**Status: shipped.** It amends [19](19-the-dead-pane.md), which put anchor's
 session id on the dead line, and [14](14-attention.md), which is where a
 hook learned to find the session it is running inside.
 

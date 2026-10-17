@@ -13,7 +13,7 @@ things that proved wrong were both ours.
 |---:|---|---|
 | 1 | CoreMIDI port name on macOS | ✅ exactly as the manual names them. `LPMiniMK3 MIDI` matches under both `kMIDIPropertyName` and `kMIDIPropertyDisplayName` |
 | 2 | which palette entry is which | ✅ all ten confirmed, manual accurate. 21 vs 23 and 1 vs 0 checked by eye and legible |
-| 3 | does flashing-against-0 read as "blink" | ✅ yes — and then replaced by a pulse anyway, because sustained flashing is tiring in a way a one-off check cannot reveal ([05](05-interaction.md#nothing-blinks)) |
+| 3 | does flashing-against-0 read as "blink" | ✅ yes — and then replaced by a pulse anyway, because sustained flashing is tiring in a way a one-off check cannot reveal ([05](05-interaction.md#nothing-blinks-and-only-attention-moves)) |
 | 4 | SysEx throughput | ✅ a full-surface frame arrives and renders in one message; no chunking, no desync after 100 worst-case frames |
 | 5 | latency of a press | ✅ ~1.9 ms round trip — 5× margin on the 10 ms the chording needs |
 | 6 | note-off on release, incl. under chord | ⬜ **still open** — needs fingers on the device |

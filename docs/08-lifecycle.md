@@ -186,7 +186,7 @@ failed and had to be retried — after which every running session came back
 pads would have read as three failures and sent someone to debug agents
 that never failed. anchord knows it lost them; it does not know they
 failed; the pad says only what anchord can support
-([05](05-interaction.md#nothing-blinks)).
+([05](05-interaction.md#nothing-blinks-and-only-attention-moves)).
 
 ✅ **The frozen grid, confirmed separately.** The restart above only ever
 showed its *end state* to a human — nobody watched the device across the

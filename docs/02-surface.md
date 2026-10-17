@@ -162,7 +162,7 @@ were checked by looking, which is the only way they *can* be checked
   which worked; then changed to a pulse, because the flash turned out to be
   *stressful* over hours — a measurement a glance cannot take. Re-checked
   after the change: still catches the eye
-  ([05](05-interaction.md#nothing-blinks)).
+  ([05](05-interaction.md#nothing-blinks-and-only-attention-moves)).
 - **21 and 23 are tellable apart at a glance.** They photograph almost
   identically, and they carry the two most common meanings on the grid —
   *it is alive* versus *it is done*. Confirmed legible in place; worth
@@ -274,7 +274,8 @@ left-to-right). `<colourspec>` here is `00 <palette>` or `01 <r> <g> <b>`.
 `<ascii...>` is **ASCII, and that is a hard constraint, not a preference**:
 any byte ≥ `0x80` inside a SysEx is read as a status byte and ends the
 message early. Titles are UTF-8, so they are sanitised before they get here
-— the rule is in [05-interaction.md](05-interaction.md#the-title-scroll),
+— the rule is in
+[05-interaction.md](05-interaction.md#the-title-scroll--tried-and-abandoned),
 and it belongs to this layer to enforce.
 
 Two properties make this usable rather than a gimmick: the scroll **overlays

@@ -9,11 +9,18 @@ same sentence being wrong.
 
 This document fixes the sentence.
 
-> ⚠️ **Adoption was removed by [24](24-the-tally-server.md).** Views live
-> on tally's own tmux server now, and a pane on your personal server
-> cannot be one. Everything else in this document — a view is a pane,
-> `remain-on-exit`, respawn in place, origin as a pane id — is unchanged
-> and is what `24` builds on.
+> ⚠️ **Amended twice by [24](24-the-tally-server.md).** *Adoption is
+> gone* — views live on tally's own tmux server now, and a pane on your
+> personal server cannot be one. And *the container changed*: `24` was
+> itself amended from pane-per-column to **window-per-column**, so a view
+> is created with `new-window`, not `split-window`. What this document
+> settled survives that and is the reason it works — the **identity** is
+> a pane option (`-p`), never a window or session one, so the unit a view
+> is addressed by is still a pane. `remain-on-exit`, respawn in place and
+> origin-as-a-pane-id are unchanged.
+>
+> Read the headline below as *a view is addressed as a pane*, which is
+> what the rest of the document argues and what shipped.
 
 ## The claim
 

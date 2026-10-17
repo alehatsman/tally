@@ -429,7 +429,7 @@ The entire rows-as-projects payoff rests on that being possible, it is a
 perceptual claim, and three perceptual claims in this project have already
 gone the other way after being obvious on paper
 ([05](05-interaction.md#why-it-is-one-sentence),
-[05](05-interaction.md#nothing-blinks),
+[05](05-interaction.md#nothing-blinks-and-only-attention-moves),
 [05](05-interaction.md#the-title-scroll--tried-and-abandoned)). If it fails,
 [§4.3](#43-a-full-row-is-reachable-so--has-to-say-so)'s `>` column is doing
 all the work and the grid is only grouping, not signalling.

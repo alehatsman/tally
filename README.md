@@ -4,10 +4,10 @@ A Novation Launchpad Mini [MK3] as the front panel for agent sessions.
 
 ```text
   ┌───────────────────────────────┐
-  │ ● ● ● ● ● ● ● ●   pages       │        press an empty pad  → spawn an agent
-  │ ┌───────────────┐ ┌─┐         │        press a live pad    → jump to it
-  │ │               │ │●│         │        a pad that needs you flashes amber
-  │ │   8 x 8       │ │●│ actions │
+  │ ● ● ● ● ● ● ● ●   pages       │        press a live pad    → jump to it
+  │ ┌───────────────┐ ┌─┐         │        press > beside it   → new agent, same folder
+  │ │               │ │●│         │        hold the corner     → kill, with a preview
+  │ │   8 x 8       │ │●│ actions │        a pad that needs you flashes amber
   │ │   64 slots    │ │●│         │   ┌──────────┐      ┌──────────────────┐
   │ │               │ │●│         │──▶│  tallyd  │─────▶│ anchord          │
   │ └───────────────┘ └─┘         │   │ (this)   │      │ PTY: claude      │
@@ -27,13 +27,15 @@ in.
 
 ## Status
 
-**Shipped and driving a real desk.** Six milestones, 213 tests, and a
-Launchpad Mini MK3 on the desk reporting five agent sessions as you read
-this. The hardware protocol in [docs/02-surface.md](docs/02-surface.md) was
-read out of Novation's manual and verified against the device
-([M0](ROADMAP.md#m0--prove-the-manual)); the grid, the jump, the chords,
-the pages and `tally spawn` followed
-([M1](ROADMAP.md#m1--the-grid-tells-the-truth)–[M5](ROADMAP.md#m5--tally-spawn)).
+**Shipped and driving a real desk.** Twelve milestones, 352 tests, and a
+Launchpad Mini MK3 on the desk. The hardware protocol in
+[docs/02-surface.md](docs/02-surface.md) was read out of Novation's manual
+and verified against the device ([M0](ROADMAP.md#m0--prove-the-manual));
+the grid, the jump, the chords, the pages, `tally spawn`, the queue, the
+tempo, the launch column and the overview followed
+([M1](ROADMAP.md#m1--the-grid-tells-the-truth)–[M11](ROADMAP.md#m11--the-overview)).
+Every build item in [the roadmap](ROADMAP.md) is done; what is still open
+there is the half only a week of use can close.
 
 **The thing worth reading is what a day of use found.** The amber — the
 signal this whole product is a bet on — never fired once against the agent
@@ -43,9 +45,14 @@ there was nothing to detect. The attention half now comes from hooks the
 agent calls ([M6](ROADMAP.md#m6--the-amber-exists),
 [docs/14](docs/14-attention.md)).
 
-That is the fifth time here that a surface fact only showed up on the
+That is one of six times here that a surface fact only showed up on the
 surface, and the list is kept on purpose: the three greens, the hard amber
-flash, the title scroll, the top row, and now the bell that was never rung.
+flash, the title scroll, the top row, the bell that was never rung, and —
+most recently — a row of eight panes that was correct, addressable, tested,
+and on a real screen was eight 23-column slivers nobody could read
+([docs/24](docs/24-the-tally-server.md)). Each of those cost a build to
+find and none of them could have been argued out in advance.
+
 What remains is the only exit criterion that cannot be hurried — **a week
 of `attention.jsonl`, and a number out of it.**
 
@@ -66,9 +73,11 @@ about what they mean.
 
 - **slots** — 64 pads, each a durable binding to *a thing you run*, not to a
   session id
-- **signals** — working / idle / needs-you / exited, derived from the
-  session's own output
-- **gestures** — spawn, jump, kill, resume, read-the-title
+- **signals** — working / idle / needs-you / exited. Liveness comes from
+  anchor; *needs-you* comes from hooks the agent calls, because it never
+  rang the bell ([docs/14](docs/14-attention.md))
+- **gestures** — jump, launch into a row, kill, purge, and one held
+  button that turns the grid into a map of itself
 - **jump** — the press that puts the real terminal in front of you
 
 ## What it is not
@@ -76,7 +85,7 @@ about what they mean.
 **Not a terminal multiplexer.** tmux does that, you already use it, and
 the jump target is a tmux pane. tally does make panes — one per live
 slot, on [its own tmux server](docs/24-the-tally-server.md), where a row
-is a session and a column is a pane — but it makes exactly the ones the
+is a session and a column is a window — but it makes exactly the ones the
 grid implies and gives you no way to arrange them. The layout is not a
 feature; it is the grid, reflected. Your own tmux is never touched.
 
@@ -93,28 +102,46 @@ is a product.
 
 ## Design
 
+Every document below is settled design that is **shipped and running**,
+except the five listed separately at the end. Where two of them disagree,
+the later one wins and says so in its own first paragraph — the reversals
+are kept rather than edited away, because the record of what the hardware
+changed our minds about is the most useful thing here.
+
 | doc | what |
 |---|---|
-| [docs/01-scope.md](docs/01-scope.md) | the closed list, and how to reject a feature |
-| [docs/02-surface.md](docs/02-surface.md) | the hardware: MIDI, programmer mode, palette, what it costs |
-| [docs/03-model.md](docs/03-model.md) | slots, pages, and where the binding actually lives |
-| [docs/04-signals.md](docs/04-signals.md) | how a pad knows the agent needs an answer |
-| [docs/05-interaction.md](docs/05-interaction.md) | gestures and the colour language |
-| [docs/06-jump.md](docs/06-jump.md) | the press that moves your eyes to the right window |
-| [docs/07-seams.md](docs/07-seams.md) | what we ask anchor for, and where teleport fits |
-| [docs/08-lifecycle.md](docs/08-lifecycle.md) | who starts tallyd, and why Live mode must be restored |
-| [docs/09-testing.md](docs/09-testing.md) | testing a thing whose output is light |
-| [docs/10-open-questions.md](docs/10-open-questions.md) | what is asserted here but not proven |
-| [docs/11-cli.md](docs/11-cli.md) | `tally spawn` and `tally fork`, for when the folder comes from you |
-| [docs/12-layout-proposal.md](docs/12-layout-proposal.md) | a proposal: rows are projects — **not design**, tracked as [#8](https://github.com/alehatsman/tally/issues/8) |
-| [docs/13-layout-review.md](docs/13-layout-review.md) | the review of it, and a narrower counter-proposal |
-| [docs/14-attention.md](docs/14-attention.md) | the bell that is never rung, and the hooks that replace it |
-| [docs/15-views.md](docs/15-views.md) | a view is a pane, not a window |
-| [docs/16-the-queue.md](docs/16-the-queue.md) | the top row is a queue, not a map — and why rows are not projects |
-| [docs/17-the-tempo.md](docs/17-the-tempo.md) | the breathing rate says how long the oldest thing has waited |
-| [docs/18-the-launch-column.md](docs/18-the-launch-column.md) | `>` spawns into its row, and the row already knows the folder |
-| [docs/23-gesture-brainstorm.md](docs/23-gesture-brainstorm.md) | every gesture the surface has, the two free buttons, and three asks — **brainstorm, not design** |
-| [docs/24-the-tally-server.md](docs/24-the-tally-server.md) | tally's own tmux server: a row is a session, a column is a pane |
+| [01-scope.md](docs/01-scope.md) | the closed list, and how to reject a feature |
+| [02-surface.md](docs/02-surface.md) | the hardware: MIDI, programmer mode, palette, what it costs |
+| [03-model.md](docs/03-model.md) | slots, pages, and where the binding actually lives |
+| [04-signals.md](docs/04-signals.md) | how a pad knows the agent needs an answer |
+| [05-interaction.md](docs/05-interaction.md) | gestures and the colour language |
+| [06-jump.md](docs/06-jump.md) | the press that moves your eyes to the right window |
+| [07-seams.md](docs/07-seams.md) | what we ask anchor for, and where teleport fits |
+| [08-lifecycle.md](docs/08-lifecycle.md) | who starts tallyd, and why Live mode must be restored |
+| [09-testing.md](docs/09-testing.md) | testing a thing whose output is light |
+| [10-open-questions.md](docs/10-open-questions.md) | what is asserted here but not proven |
+| [11-cli.md](docs/11-cli.md) | `tally spawn` and `tally fork`, for when the folder comes from you |
+| [14-attention.md](docs/14-attention.md) | the bell that is never rung, and the hooks that replace it |
+| [15-views.md](docs/15-views.md) | a view is addressed as a pane — amended twice by `24` |
+| [16-the-queue.md](docs/16-the-queue.md) | the top row is a queue, not a map — and why rows are not projects |
+| [17-the-tempo.md](docs/17-the-tempo.md) | the breathing rate says how long the oldest thing has waited |
+| [18-the-launch-column.md](docs/18-the-launch-column.md) | `>` spawns into its row, and the row already knows the folder |
+| [19-the-dead-pane.md](docs/19-the-dead-pane.md) | a view whose agent exited says so in place, and stays jumpable |
+| [20-the-overview.md](docs/20-the-overview.md) | `Session` held shows which of the sixty-four rows exist |
+| [21-the-arts.md](docs/21-the-arts.md) | the grid as a thing to look at, and the menu that picks one |
+| [22-the-mode-button.md](docs/22-the-mode-button.md) | what the one remaining hold modifier carries |
+| [24-the-tally-server.md](docs/24-the-tally-server.md) | tally's own tmux server: a row is a session, a column is a window |
+| [26-the-claude-session-id.md](docs/26-the-claude-session-id.md) | the dead pane names the *conversation*, not the PTY |
+
+Not design, and nothing below is built:
+
+| doc | what |
+|---|---|
+| [12-layout-proposal.md](docs/12-layout-proposal.md) | **proposal** — rows are projects. Reviewed in `13`, answered by `16`, tracked as [#8](https://github.com/alehatsman/tally/issues/8) |
+| [13-layout-review.md](docs/13-layout-review.md) | **review** of `12`, and a narrower counter-proposal |
+| [23-gesture-brainstorm.md](docs/23-gesture-brainstorm.md) | **brainstorm** — every gesture the surface has, the two free buttons, and three asks |
+| [25-the-squad.md](docs/25-the-squad.md) | **spec** — a squad is a ledger file; one master drives a row of agents through tmux |
+| [27-the-level-and-the-edge.md](docs/27-the-level-and-the-edge.md) | **spec** — a hook is an edge, `claude agents --json` is a level, and the level may only veto |
 
 ## License
 

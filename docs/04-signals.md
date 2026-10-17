@@ -223,7 +223,8 @@ Agents set the terminal title (OSC 0/2). teleport's
 chunk-boundary-safe, with OSC 8 hyperlink extraction for Claude Code's
 resume id riding along. Port it.
 
-The title is what the [title scroll](05-interaction.md#the-title-scroll)
+The title is what the
+[title scroll](05-interaction.md#the-title-scroll--tried-and-abandoned)
 displays, and it is the one place a pad can say something in words.
 
 Its own doc comment is the honest caveat, and it should be repeated here:
