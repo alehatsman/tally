@@ -64,19 +64,19 @@ session is dying.
 
 ### Where it goes
 
-`Tmux::tag` (`src/jump.rs:441`) — the single choke point. It already sets
+`Tmux::tag` (`src/jump.rs`) — the single choke point. It already sets
 `@tally_session` and `remain-on-exit`, and it is idempotent, so:
 
 | path | covered because |
 |---|---|
-| a view tally creates | `view_pane` tags it (`src/jump.rs:479`) |
-| a view tally revives | `view_pane` tags it after respawn (`src/jump.rs:459`) |
-| a pane `tally spawn` adopts | `adopt` is `Tmux::tag` (`src/jump.rs:515`) |
+| a view tally creates | `view_pane` tags it (`src/jump.rs`) |
+| a view tally revives | `view_pane` tags it after respawn (`src/jump.rs`) |
+| a view `tally spawn` places | `place` tags it the same way |
 | a view created before this existed | re-tagged on the next **jump** to it |
 
 **"Every resolve" means every jump, not every tick.** `tag` is reached
-only through `view_pane` and `adopt`, and the reconcile loop calls neither
-— its one tmux call is `viewing()` (`src/bin/tallyd.rs:553`), which reads.
+only through `view_pane` and `place`, and the reconcile loop calls neither
+— its one tmux call is `viewing()`, which reads.
 So a view that existed before this shipped keeps the old line until you
 jump to its pad once. Measured after a `tallyd` restart: seven live view
 panes, all still on tmux's default format.
@@ -87,7 +87,7 @@ fix something one press fixes — and you press that pad before you kill it
 anyway.
 
 Pane-scoped (`-p`), for the reason `remain_on_exit_args` already documents
-(`src/jump.rs:189-199`): an adopted view sits among panes that are yours,
+(`src/jump.rs`): an adopted view sits among panes that are yours,
 and tally does not get to change how those behave.
 
 ### The line

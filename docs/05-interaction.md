@@ -129,17 +129,18 @@ colours so the grid never has to be read for them:
 | button | resting | held / active |
 |---|---|---|
 | `▲` `▼` scroll, nothing that way | off | — |
-| `▲` `▼` scroll, somewhere to go | 1 dark grey, static | — |
+| `▲` `▼` scroll, somewhere to go | 1 dark grey, static | `▲` held past 500 ms is `⌂` |
 | `◄` back, no origin | off | — |
 | `◄` back, origin recorded | 3 white, static | — |
 | `►` next, queue empty | off | — |
 | `►` next, something waiting | 9 amber, **pulsing** | — |
-| `⌂` home, already at row 1 | off | — |
-| `⌂` home, scrolled down | 1 dark grey, static | — |
-| the other three top-row buttons | off | — |
+| `Session` map | 1 dark grey, static — always | 3 white while held ([20](20-the-overview.md)) |
+| `Drums` arts | 1 dark grey, static — always | 3 white while a piece plays ([21](21-the-arts.md)) |
+| `Keys`, `User` | off | — |
 | `>` launcher, row has nothing to inherit or nowhere to put it | off | — |
 | `>` launcher, ready | 1 dark grey, static | — |
-| `CC19` kill | 5 red, static | 3 white while held |
+| `CC19` corner, **Stop** | 5 red, static | 3 white while held |
+| `CC19` corner, **Move** | 37 turquoise, static | 3 white while held |
 
 ⚠️ **This table was rewritten by [16](16-the-queue.md).** The top row used
 to be eight page buttons, and the rule below — *exactly one page button is
@@ -230,15 +231,32 @@ kills a running agent, that matters more than the keystroke saving.
 | tap `▲` `▼` (top row) | scroll the grid one row |
 | tap `◄` (top row) | **back** — return to where you were standing |
 | tap `►` (top row) | **next** — jump to the longest-waiting amber |
-| tap `⌂` (top row) | **home** — scroll back to row 1 |
+| hold `▲` past 500 ms | **home** — scroll all the way back to row 1 ([20](20-the-overview.md)) |
+| hold `Session` | the grid becomes a **map** of all 64 rows; tap a pad to go there ([20](20-the-overview.md)) |
+| tap `Drums` | the grid becomes an **art**; `►` is the only way back ([21](21-the-arts.md)) |
 | tap `>` (right column, rows 1-7) | **launch** into that row ([18](18-the-launch-column.md)) |
-| hold `CC19` + tap slot | **kill** — the only modifier left |
+| hold `CC19` + tap slot | **Stop** — terminate what is alive, forget what has ended |
+| double-tap `CC19` | swap the corner between **Stop** and **Move** ([22](22-the-mode-button.md)) |
+| hold `CC19` in Move + tap, tap | **move** a session from one pad to another |
 
-Mute toggles, and it is written to `tl.mute` on the session
-([03](03-model.md#where-the-binding-lives)) so it survives tallyd restarting
-and is visible to anything else reading anchor's labels. A mute dies with
-the session it was set on, which is right: it was that agent you stopped
-believing, not that pad.
+⚠️ **`CC19` used to be kill and only kill, and this table is the record of
+that changing.** The corner carries two verbs now because
+[18](18-the-launch-column.md) spent every other button on `>` and left
+nothing spare — so purge joined kill under one hold, and Move went behind a
+double-tap. Both arguments, and the cost of each, are in
+[22](22-the-mode-button.md). The grammar below is unchanged: it is still
+hold-then-tap, and letting go is still how you change your mind.
+
+**Mute is not on this list, and it is not gone.** It has no button —
+`tally mute <addr>` is the whole of it ([11](11-cli.md)) — because it
+scored zero presses in a day and the grid had no button to spare. It is
+still written to `tl.mute` on the session
+([03](03-model.md#where-the-binding-lives)), so it survives tallyd
+restarting and anything reading anchor's labels can see it, and it still
+dies with the session it was set on: it was that agent you stopped
+believing, not that pad. It stays because it is the starvation hatch for
+`►` and for the tempo — a prompt you will never answer otherwise sits at
+the head of the queue forever ([16](16-the-queue.md), [17](17-the-tempo.md)).
 
 While an action button is held, the grid **recolours to show what the
 gesture would do**. The surface answers "what happens if I press this"
@@ -256,58 +274,49 @@ Three levels, and the middle one is the one that earns its keep:
 | nothing there | off |
 
 Dim rather than off, because "that session exists and this gesture will not
-touch it" is the answer to the question you are actually asking. Hold purge
-and the running agents go dim while the dead ones light: you learn *why* a
+touch it" is the answer to the question you are actually asking. Hold Stop
+and the dead rows light while the running agents go dim: you learn *why* a
 pad is not a target, instead of watching two thirds of the grid vanish and
 guessing.
 
-| held | acts on | colour | does not touch |
+| held | pad | colour | what the tap does |
 |---|---|---|---|
-| `CC19` kill | alive — working, quiet, wants-you | 5 red | anything already ended |
+| `CC19` **Stop** | alive — working, quiet, wants-you | 5 red | terminate it |
+| `CC19` **Stop** | hiding ended rows | 7 dark red | forget **all** of them |
+| `CC19` **Move** | holds a live session | 37 turquoise | pick it up |
+| `CC19` **Move** | in hand | 3 white | — |
+| `CC19` **Move** | free, on the visible grid | 37 turquoise | put it down there |
+| either | a session this gesture will not touch | 1 dark grey | nothing |
+| either | nothing there | off | nothing |
 
-⚠️ **This table had four rows.** Respawn, purge and mute left when the
-right column became launchers ([18](18-the-launch-column.md)) — respawn
-because it was unreachable without a `slots.toml`, purge and mute because
-they moved to the shell, where `tally purge` and `tally mute` do the same
-work. The reasoning below is kept: it is about previews, not about those
-three gestures, and the one remaining modifier is the one it was written
-for.
+⚠️ **This table had four rows and four modifiers.** Respawn, purge and mute
+left when the right column became launchers
+([18](18-the-launch-column.md)); purge then came back *onto the same hold
+as kill*, and Move arrived behind a double-tap, because
+[22](22-the-mode-button.md) found the surface had no spare buttons left.
+Two things about that are worth stating here rather than there:
 
-Each colour is the colour of the **consequence**, not of the button: kill
-reds the pads that will be red, respawn greens the ones that will be green.
-Two deliberate choices in that table:
+- **Kill and purge can share a hold because their targets are disjoint.**
+  Alive and ended are different sets, so every pad under the thumb has
+  exactly one outcome and exactly one colour. The cost is real and named:
+  purge's targets include pads that draw dark, so the dark two-thirds of
+  the grid used to be a free miss and is not any more. What makes it
+  affordable is that **the hold is what reveals them** — they stop being
+  invisible at the moment they become targets.
+- **Each colour is the colour of the consequence, not of the button.** That
+  is why `preview` takes no `Action` at all: one button now carries two
+  verbs, so a colour derived from the button would have to be wrong about
+  one of them.
 
-- **Respawn does not touch a `lost` it cannot vouch for.** A lost session
-  may still be running and orphaned ([03](03-model.md#lifecycle-of-a-slot))
-  — spawning a second agent on the same address would give you two
-  processes in one repo and one pad to look at them with. Purge first; the
-  purge is the act of deciding it is really gone.
+One rule survived every one of those changes and is the reason previews are
+trustworthy at all: **the preview and the press read the same function.**
+They did not always — a renamed spec once lit a pad green for a respawn
+that then did nothing, because the preview counted a label and the press
+resolved it. A preview that is wrong about one pad is a preview you stop
+believing about all of them, which costs more than the gesture it was wrong
+about.
 
-  **`lost_reason=daemon_restart` is the exception**, and the daemon is the
-  one making the claim: anchord owns the PTYs, so anchord going away took
-  them with it and there is no orphan to collide with. It is also the
-  common case — every anchord restart produces a grid full of them at once,
-  and making you purge a session's whole scrollback to reclaim its pad is
-  the wrong trade ([#9](https://github.com/alehatsman/tally/issues/9)).
-
-  **It does not change the colour.** The pad stays dark red, because the
-  daemon still cannot account for what that session did. Hold respawn and
-  the reclaimable ones light green — which is how you find out, without a
-  fifth colour on the grid.
-- **The spec has to still resolve**, not merely be named. A pad is
-  respawnable because `slots.toml` binds it, or because the dead session
-  carries a `tl.spec` whose `[[spec]]` is *still in the file* — rename that
-  spec and the label points at nothing. Both halves ask the same function
-  for the pad they are reasoning about (`src/model.rs`, `Pads`), because
-  they did not always: the preview counted the label and the press resolved
-  it, so a renamed spec lit the pad green and then did nothing. A preview
-  that is wrong about one pad is a preview you stop believing about all of
-  them, which costs more than the gesture it was wrong about.
-- **Mute is the only two-colour preview**, because it is the only toggle.
-  Blue and white are the control colours, not slot colours: you are about
-  to change how tally treats the pad, not what is running on it.
-
-The top row and the logo **do not** take part. Pages and health keep
+The top row and the logo **do not** take part. Navigation and health keep
 meaning what they always mean — a preview is a question about the grid, and
 the health light is not allowed to answer a different one.
 

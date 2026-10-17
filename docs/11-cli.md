@@ -99,7 +99,7 @@ call `anchor create` directly, which stays supported.
 
 The occupancy rule is not invented here. `tally spawn` **refuses an address
 the grid is drawing and allows one it is not**, which is the same predicate
-`model::resolve` already applies (`src/model.rs:70`), run with no watchers.
+`model::resolve` already applies (`src/model.rs`), run with no watchers.
 
 That gives the behaviour you would guess from looking at the device:
 
@@ -122,11 +122,11 @@ is *go and look*, and spawning over it would erase the only sign. Purge it
 from the grid, then spawn.
 
 **The check is advisory, and knowing why matters.** It is a list, a
-decision, then a create (`src/bin/tally.rs:80`), with nothing holding the
+decision, then a create (`src/bin/tally.rs`), with nothing holding the
 address in between, and anchor puts no uniqueness constraint on label
 values — so two spawns racing for the same pad both succeed, and both
 sessions carry the same `tl.slot`. The grid then draws the newest and only
-the newest (`src/model.rs:84`), which makes the loser a running `claude` in
+the newest (`model::resolve`), which makes the loser a running `claude` in
 a real repo that no pad shows, no chord reaches and no amber can report:
 you find out when the work never arrives. That is not fixable from this
 side. It is a property of the protocol, and the design already accepts
@@ -150,8 +150,8 @@ forked 01M53KS… from 1:1:1 onto 1:1:2
 
 It is `spawn` with one substitution: **the directory comes from the source
 pad instead of from `$PWD`**. Everything else — the occupancy check, the
-`tl.slot` label, adoption, the absence of `tl.spec` — is the same code and
-the same rules.
+`tl.slot` label, where the view opens, the absence of `tl.spec` — is the
+same code and the same rules.
 
 | | | |
 |---|---|---|
@@ -221,10 +221,10 @@ you then have to clean up by hand, which is worse than retyping.
 a wrap onto row 2. Same rule as every address here: refused, not clamped
 ([03](03-model.md#limits)).
 
-**`--count N` for `N > 1` does not adopt**, in tmux or out of it. There is
-one pane and N sessions, and picking one of them to show is a guess. It
-prints every id and returns. `--count 1` is exactly the command without
-the flag, adoption included.
+**`--count N` for `N > 1` opens no view**, in tmux or out of it. There are
+N sessions and one of them would have to be the one you are shown, which
+is a guess. It prints every id and returns; the pads are where they are
+read. `--count 1` is exactly the command without the flag.
 
 **A failure part-way through stops and reports.** The check is advisory
 for the same reason `spawn`'s is — list, decide, create, with nothing
@@ -239,7 +239,7 @@ agents.
   to **anchord**, writes a label, and tallyd notices within one reconcile
   (≤2 s). The grid is downstream of anchor's state, never of this process.
 - **No `tl.spec`.** A spec label is a *name looked up in `slots.toml`*
-  (`Config::by_spec_name`, `src/config.rs:131`). Writing one that no
+  (`Config::by_spec_name`, `src/config.rs`). Writing one that no
   `[[spec]]` declares would be a label that lies, and worse, a respawn that
   found a spec would spawn in the **spec's** cwd rather than the folder you
   spawned from — the exact bug this document exists to fix.

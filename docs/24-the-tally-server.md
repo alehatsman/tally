@@ -5,7 +5,7 @@ session called `tally`, as a window. That was cheap and it was wrong, and
 the cost is one line of shipped code:
 
 ```rust
-// src/jump.rs:597
+// src/jump.rs, Jump::jump
 for (client, _) in &clients {
     Tmux::run("switch-client", &switch_args(client, &pane))?;
 }

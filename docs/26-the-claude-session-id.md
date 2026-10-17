@@ -116,7 +116,7 @@ for the reasons `-p` is load-bearing there already ([15](15-views.md)).
 
 **Tagged on jump, not on every tick** — the same trade
 [19](19-the-dead-pane.md) made and for the same reason: `tag` is reached
-through `view_pane` and `adopt`, the reconcile loop calls neither, and the
+through `view_pane` and `place`, the reconcile loop calls neither, and the
 pad you kill is the pad you just jumped to.
 
 The gap this leaves is real and narrower than 19's: a view created by

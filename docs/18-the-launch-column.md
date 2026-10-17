@@ -1,7 +1,7 @@
 # 18 — The right column launches
 
 Settled elsewhere and not reopened here: the grid is an 8×8 window onto a
-64-row space ([16](16-the-queue.md)), the top row is `▲▼◄►⌂`, and a pad
+64-row space ([16](16-the-queue.md)), the top row is navigation, and a pad
 tap is a jump. This document is only about the eight buttons on the right
 edge.
 
@@ -110,10 +110,19 @@ scrolls — row 8 is one `▼` away from being row 7.
 
 ## Kill keeps its corner
 
-`CC19`, hold-then-tap, unchanged. Blue at rest, white while held, the grid
-recolouring to show what it would do. Nothing about
+`CC19`, hold-then-tap, unchanged. White while held, the grid recolouring
+to show what it would do. Nothing about
 [05](05-interaction.md#kill-is-the-one-that-needs-the-care) changes; it is
 now the only modifier, which makes it easier to find rather than harder.
+
+⚠️ **Two details here did not survive the week.** The resting colour was
+blue when this was written and went **red** the same evening — the colour
+of its own consequence, which retired blue from the palette. And *the only
+modifier* became *the only modifier button*: the corner carries two verbs
+now, Stop and Move, swapped by a double-tap, because this document's own
+closing rule — *the bar for the next idea is a button taken from something
+that works* — turned out to have one more answer in it
+([22](22-the-mode-button.md)).
 
 ## Purge and mute move to the shell
 
