@@ -41,6 +41,30 @@ pub struct Head {
     pub claude: Option<String>,
 }
 
+/// Every slot that is asking and not muted, oldest-first by nothing —
+/// the iterator the three questions below are all asked of.
+///
+/// **The predicate, written once.** It used to be written three times,
+/// character-identical in two of them, under a doc comment arguing that
+/// one predicate is the whole point (`docs/29-what-the-loop-holds.md`).
+/// Three copies agreed by coincidence of having been typed in one
+/// sitting.
+///
+/// Re-checked against the grid rather than trusted: the journal map is
+/// updated once per reconcile and a press can land between two of them.
+/// Muted is the half that matters — mute is how you get a prompt you
+/// will never answer out of the way, and a queue that ignored it would
+/// hand it back forever.
+fn answering<'a>(
+    waiting: &'a BTreeMap<Slot, (String, i64)>,
+    pads: &'a Pads<'_>,
+) -> impl Iterator<Item = (&'a Slot, &'a (String, i64))> {
+    waiting.iter().filter(|(at, _)| {
+        let pad = pads.at(**at);
+        matches!(pad.state, Some(SlotState::NeedsAnswer { .. })) && !pad.muted
+    })
+}
+
 /// The longest-waiting slot that is asking, is not muted, and is not
 /// already in front of somebody.
 ///
@@ -54,18 +78,8 @@ pub fn head(
     pads: &Pads<'_>,
     viewing: &BTreeSet<Slot>,
 ) -> Option<Head> {
-    waiting
-        .iter()
+    answering(waiting, pads)
         .filter(|(at, _)| !viewing.contains(*at))
-        .filter(|(at, _)| {
-            let pad = pads.at(**at);
-            // Re-checked against the grid rather than trusted: the journal
-            // map is updated once per reconcile and a press can land
-            // between two of them. Muted is the half that matters — mute
-            // is how you get a prompt you will never answer out of the
-            // way, and a queue that ignored it would hand it back forever.
-            matches!(pad.state, Some(SlotState::NeedsAnswer { .. })) && !pad.muted
-        })
         // Oldest first. `min_by_key` takes the first of equal keys and
         // `BTreeMap` iterates in slot order, so ties break by address and
         // the head does not flicker between two pads that rose in the
@@ -87,13 +101,8 @@ pub fn depth(
     pads: &Pads<'_>,
     viewing: &BTreeSet<Slot>,
 ) -> usize {
-    waiting
-        .iter()
+    answering(waiting, pads)
         .filter(|(at, _)| !viewing.contains(*at))
-        .filter(|(at, _)| {
-            let pad = pads.at(**at);
-            matches!(pad.state, Some(SlotState::NeedsAnswer { .. })) && !pad.muted
-        })
         .count()
 }
 
@@ -106,18 +115,16 @@ pub fn depth(
 /// read by the room rather than by your current focus
 /// (`docs/17-the-tempo.md`).
 ///
+/// That difference is this function's whole content — it is
+/// [`answering`] with the `viewing` filter the other two add left off,
+/// and now that is visible here rather than inferable from diffing three
+/// bodies.
+///
 /// Muted slots are excluded by both, for the same reason: mute means
 /// *stop raising this*, and the beat is raising it.
 #[must_use]
 pub fn oldest(waiting: &BTreeMap<Slot, (String, i64)>, pads: &Pads<'_>) -> Option<i64> {
-    waiting
-        .iter()
-        .filter(|(at, _)| {
-            let pad = pads.at(**at);
-            matches!(pad.state, Some(SlotState::NeedsAnswer { .. })) && !pad.muted
-        })
-        .map(|(_, (_, since))| *since)
-        .min()
+    answering(waiting, pads).map(|(_, (_, since))| *since).min()
 }
 
 #[cfg(test)]
@@ -326,5 +333,47 @@ mod tests {
             head(&w, &pads, &BTreeSet::new()).expect("a head").at,
             at(1, 2, 1)
         );
+    }
+
+    /// The three questions are one predicate plus one filter, and this is
+    /// the table that says so: every combination of muted / being-looked-at
+    /// / not-asking-at-all, checked against all three entry points at once
+    /// (`docs/29-what-the-loop-holds.md`).
+    ///
+    /// `oldest` deliberately counts the slot you are sitting in front of
+    /// and `head`/`depth` deliberately do not, so the row where `viewing`
+    /// holds the only asking slot is the one that would catch a filter
+    /// applied in the wrong place.
+    #[test]
+    fn one_predicate_and_one_deliberate_difference() {
+        let one = at(1, 1, 1);
+        let two = at(1, 2, 2);
+        let fx = Fixture::new(&[asking("a", "1:1:1", false), asking("b", "1:2:2", true)]);
+        let pads = fx.pads();
+        // `two` is muted, so it is not in the queue and not in the tempo.
+        let w = waiting(&[(one, "a", 100), (two, "b", 50)]);
+
+        let nobody = BTreeSet::new();
+        assert_eq!(head(&w, &pads, &nobody).map(|h| h.at), Some(one));
+        assert_eq!(depth(&w, &pads, &nobody), 1);
+        assert_eq!(oldest(&w, &pads), Some(100), "muted is never the oldest");
+
+        // Now look at the one slot that is asking. The queue has nothing
+        // left to offer; the beat still counts the wait.
+        let looking: BTreeSet<Slot> = [one].into_iter().collect();
+        assert_eq!(head(&w, &pads, &looking), None);
+        assert_eq!(depth(&w, &pads, &looking), 0);
+        assert_eq!(
+            oldest(&w, &pads),
+            Some(100),
+            "the tempo does not stop because you are sitting in front of it"
+        );
+
+        // A slot in the map that is not asking on the grid is in neither:
+        // the map is a reconcile old and the grid is now.
+        let stale = waiting(&[(at(1, 8, 8), "ghost", 1)]);
+        assert_eq!(head(&stale, &pads, &nobody), None);
+        assert_eq!(depth(&stale, &pads, &nobody), 0);
+        assert_eq!(oldest(&stale, &pads), None);
     }
 }

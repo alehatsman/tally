@@ -10,9 +10,6 @@ use std::process::ExitCode;
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::time::Duration;
 
-use std::fs::OpenOptions;
-use std::io::Write;
-
 use tally::act::{Context, Done};
 use tally::anchor::Client;
 use tally::art::{Piece, Reel};
@@ -25,7 +22,7 @@ use tally::lock::Lock;
 use tally::model::{self, View};
 use tally::queue;
 use tally::slot::{self, Pages, Slot};
-use tally::surface::Button;
+use tally::surface::{Button, Frame};
 use tally::tempo;
 use tally::watch::Watchers;
 
@@ -182,36 +179,79 @@ impl Corner {
     }
 }
 
-/// `CC19` went down or came up. Returns whether the surface changed.
+/// The gestures that need a clock, and the pad one of them is carrying.
 ///
-/// Extracted rather than inlined because `main` is already at the
-/// cognitive-complexity cap, and because the two things that happen on
-/// this one button — a double-tap toggling the verb, and a release
-/// emptying the hand — are unrelated to each other and to everything
-/// else in the press loop.
-fn corner_event(
-    corner: &mut Corner,
-    chords: &mut Chords,
-    hand: &mut Option<Slot>,
-    button: Button,
-    down: bool,
-    elapsed: Duration,
-) -> bool {
-    if button != Action::Stop.button() {
-        return false;
+/// These three were loose `let mut`s in `main` and were passed back to
+/// three helpers by `&mut`, one field at a time
+/// (`docs/29-what-the-loop-holds.md`). They belong together for the
+/// reason each of them is here at all: `chord.rs` is pure and has no
+/// `now`, so every gesture that is *timed* or spans more than one press
+/// is held by the loop instead (`docs/20-the-overview.md`).
+#[derive(Debug, Clone, Copy, Default)]
+struct Grip {
+    /// The `CC19` double-tap.
+    corner: Corner,
+    /// The pad a held `Move` is carrying.
+    hand: Option<Slot>,
+    /// Set while `▲` is down, taken when the hold fires.
+    home: Option<Duration>,
+}
+
+impl Grip {
+    /// `▲` went down or came up.
+    ///
+    /// **Before the art gets a say**, which is deliberate and is the one
+    /// ordering here that differs from the corner's: a held `▲` scrolls
+    /// the window, the window is not what an art is covering, and the
+    /// grid underneath is where you want to land when you leave it.
+    fn aim(&mut self, button: Button, down: bool, elapsed: Duration) {
+        if button == Button::Top(1) {
+            self.home = down.then_some(elapsed);
+        }
     }
-    let toggled = corner.feed(down, elapsed);
-    if toggled {
-        chords.toggle_mode();
-        eprintln!("tallyd: corner {:?}", chords.mode());
+
+    /// `CC19` went down or came up, after `chord.rs` has been given the
+    /// chance to swallow it.
+    ///
+    /// Matched on the **raw button** rather than on a gesture, and
+    /// deliberately: `feed` answers `None` for plenty of presses, and a
+    /// double-tap is completed by exactly such a release. Routing this on
+    /// the gesture instead is the bug that let `CC19` reach the clock
+    /// from behind a plasma field (`docs/21-the-arts.md`).
+    ///
+    /// Returns whether the surface changed.
+    fn feel(&mut self, chords: &mut Chords, button: Button, down: bool, elapsed: Duration) -> bool {
+        if button != Action::Stop.button() {
+            return false;
+        }
+        let toggled = self.corner.feed(down, elapsed);
+        if toggled {
+            chords.toggle_mode();
+            eprintln!("tallyd: corner {:?}", chords.mode());
+        }
+        // Letting go empties the hand. A pick-up you did not put down must
+        // leave the board exactly as it was, which is chord rule 4 doing the
+        // job it was put there for.
+        if !down {
+            self.hand = None;
+        }
+        toggled
     }
-    // Letting go empties the hand. A pick-up you did not put down must
-    // leave the board exactly as it was, which is chord rule 4 doing the
-    // job it was put there for.
-    if !down {
-        *hand = None;
+
+    /// Whether `▲` has been held long enough to mean *all the way up*.
+    ///
+    /// Taking the press out latches it: one `⌂` per press, no autorepeat,
+    /// and nothing more until the finger lifts and lands again.
+    fn home_due(&mut self, elapsed: Duration) -> bool {
+        if self
+            .home
+            .is_some_and(|since| elapsed.saturating_sub(since) >= HOME_HOLD)
+        {
+            self.home = None;
+            return true;
+        }
+        false
     }
-    toggled
 }
 
 /// What a press did to the hand under a held `Move`.
@@ -308,24 +348,6 @@ fn perform(ctx: &Context<'_>, gesture: Gesture, at: Slot, pages: &Pages, tmux: &
     Hand::Unchanged
 }
 
-/// Write one navigation line, dropping the sink if it fails.
-///
-/// Same rule as the state lines: a journal that cannot be written is
-/// reported once and then stops being tried, because the alternative is a
-/// line per press in the only file read after something broke.
-fn log_nav(
-    out: &mut Option<std::fs::File>,
-    write: impl FnOnce(&mut std::fs::File) -> std::io::Result<()>,
-) {
-    let Some(sink) = out.as_mut() else {
-        return;
-    };
-    if let Err(e) = write(sink).and_then(|()| sink.flush()) {
-        eprintln!("tallyd: attention journal: {e}");
-        *out = None;
-    }
-}
-
 /// The labels a `>` launch carries.
 ///
 /// `tl.slot` and nothing else. **No `tl.spec`**, for the same reason
@@ -409,7 +431,7 @@ fn advance_art(reel: Option<&mut Reel>, wake: &mut bool) {
 /// mode has to say it is on; and the logo, which carries **all** the
 /// attention now rather than only the scrolled-off kind — a grid showing
 /// a plasma field is showing none of it.
-fn art_surface(reel: &Reel, reachable: bool, queued: usize) -> tally::surface::Frame {
+fn art_surface(reel: &Reel, reachable: bool, queued: usize) -> Frame {
     let mut frame = reel.frame();
     // The menu: one button a piece, white on the one that is playing.
     for piece in Piece::REEL {
@@ -437,35 +459,220 @@ fn art_surface(reel: &Reel, reachable: bool, queued: usize) -> tally::surface::F
     frame
 }
 
-/// Send the beat the surface breathes to.
+/// The Launchpad, if there is one, and what it has told us lately.
 ///
-/// One byte, up to fifty-six times a second. Due pulses are sent and
-/// missed ones are **dropped, not caught up**: a burst after a stall would
-/// visibly sprint the breathing, and a skipped beat is the honest report
-/// of a loop that was busy (`docs/17-the-tempo.md`).
-fn beat(
-    device: Option<&mut Device>,
-    elapsed: Duration,
+/// **Absence is a normal state, not a failure** — `tallyd` is started by
+/// launchd and may well come up before the device is plugged in
+/// ([08](08-lifecycle.md#who-starts-it)). What makes this a type rather
+/// than four locals is that the rules for *leaving* are subtle and were
+/// spread across sixty lines of `main`: a failed write drops it, silence
+/// past [`DEVICE_SILENCE`] drops it, every arrival and departure forces a
+/// total repaint, and both departures must clear the chord state or the
+/// first tap after a replug is a kill (`docs/29-what-the-loop-holds.md`).
+#[derive(Debug)]
+struct Link {
+    device: Option<Device>,
+    /// When the port was last opened or pinged.
+    last_try: Duration,
+    /// When the device last answered anything.
+    last_reply: Duration,
+    /// The next frame must be total rather than a diff.
+    ///
+    /// Not a rendering preference: it is the answer to *has this device
+    /// seen a frame from this process*, which is why it lives with the
+    /// device and is set by whatever makes it untrue.
+    repaint: bool,
+    /// A device left during this tick. Drained once, by the loop.
+    departed: bool,
+}
+
+impl Link {
+    /// No device yet, and the first frame on any device is total.
+    fn new() -> Self {
+        Self {
+            device: None,
+            last_try: Duration::ZERO,
+            last_reply: Duration::ZERO,
+            repaint: true,
+            departed: false,
+        }
+    }
+
+    /// The device, for the things that still have to talk to it directly.
+    fn device(&mut self) -> Option<&mut Device> {
+        self.device.as_mut()
+    }
+
+    /// Look for a device, on the reconcile clock.
+    ///
+    /// `midir` enumerates ports; it does not tell you when one appears,
+    /// so this is the same reconcile shape as everything else here.
+    fn connect(&mut self, elapsed: Duration) {
+        if self.device.is_some() || elapsed.saturating_sub(self.last_try) < RECONCILE {
+            return;
+        }
+        self.last_try = elapsed;
+        match Device::open() {
+            Ok(d) => {
+                eprintln!("tallyd: Launchpad connected");
+                self.device = Some(d);
+                self.repaint = true;
+                self.last_reply = elapsed;
+            }
+            // Unplugged, or plugged in and still settling: a port can
+            // enumerate a moment before the device answers an inquiry.
+            // Both are ordinary and both resolve on the next try, so
+            // neither gets a line every two seconds.
+            Err(Error::NotFound | Error::NotALaunchpad) => {}
+            Err(e) => eprintln!("tallyd: {e}"),
+        }
+    }
+
+    /// It answered something.
+    fn heard(&mut self, elapsed: Duration) {
+        self.last_reply = elapsed;
+    }
+
+    /// Ping on the reconcile clock, and drop a device that has gone quiet.
+    ///
+    /// A failed write is not how you learn the device is gone — `CoreMIDI`
+    /// accepts sends to a removed endpoint without complaint — so absence
+    /// of a reply is the only signal there is.
+    fn probe(&mut self, elapsed: Duration) {
+        let Some(d) = self.device.as_mut() else {
+            return;
+        };
+        if elapsed.saturating_sub(self.last_try) >= RECONCILE {
+            self.last_try = elapsed;
+            if let Err(e) = d.ping() {
+                eprintln!("tallyd: {e}");
+            }
+        }
+        if elapsed.saturating_sub(self.last_reply) >= DEVICE_SILENCE {
+            eprintln!("tallyd: Launchpad stopped answering, dropping it");
+            // It is gone, so do not try to restore it on the way out
+            // and do not warn that the restore failed.
+            d.abandon();
+            self.lost();
+        }
+    }
+
+    /// Put a frame on it, and drop the device if the write fails.
+    ///
+    /// A full repaint on (re)connect: the device may have been unplugged,
+    /// power-cycled, or left in another process's idea of a frame, so the
+    /// first thing we put on it is total.
+    fn paint(&mut self, frame: &Frame) {
+        let Some(d) = self.device.as_mut() else {
+            return;
+        };
+        let wrote = if self.repaint {
+            d.repaint(frame)
+        } else {
+            d.render(frame)
+        };
+        match wrote {
+            Ok(()) => self.repaint = false,
+            Err(e) => {
+                // The write failed, which on this stack means the port
+                // went away. Drop it and go back to polling; the pads
+                // are dark anyway, because the device is gone.
+                eprintln!("tallyd: Launchpad disconnected ({e})");
+                self.lost();
+            }
+        }
+    }
+
+    /// The one departure path. Both callers above reach it, which is the
+    /// point of the type: a device that leaves always leaves the same way.
+    fn lost(&mut self) {
+        self.device = None;
+        self.repaint = true;
+        self.departed = true;
+    }
+
+    /// Did a device leave this tick? Answered once, because the thing the
+    /// loop does about it — clear the held chords, so the release that
+    /// went out with the cable does not strand a modifier — must happen
+    /// exactly once per departure.
+    fn take_departed(&mut self) -> bool {
+        std::mem::take(&mut self.departed)
+    }
+}
+
+/// The beat the surface breathes to.
+///
+/// `bpm` is recomputed each reconcile from the oldest thing waiting; the
+/// rest is when the next `0xF8` is due. Held together because a tempo
+/// without its schedule is a number nothing reads
+/// (`docs/29-what-the-loop-holds.md`).
+#[derive(Debug)]
+struct Beat {
     bpm: u64,
-    started: &mut bool,
-    next: &mut Duration,
-) {
-    let Some(d) = device else {
-        // Unplugged. Start again when it comes back.
-        *started = false;
-        return;
-    };
-    if !*started {
-        *started = d.clock_start().is_ok();
-        *next = elapsed;
+    /// When the next pulse is due.
+    next: Duration,
+    /// Whether `clock_start` has been accepted by the device in front of
+    /// us. Cleared when there is no device, so a replug starts over.
+    started: bool,
+}
+
+impl Beat {
+    /// Calm, and not yet running.
+    fn new() -> Self {
+        Self {
+            bpm: tempo::FLOOR_BPM,
+            next: Duration::ZERO,
+            started: false,
+        }
     }
-    if elapsed < *next {
-        return;
+
+    /// Set the tempo from the age of the oldest thing waiting, and say so
+    /// when it moves (`docs/17-the-tempo.md`).
+    fn retune(&mut self, oldest_wait_ms: Option<i64>) {
+        let was = self.bpm;
+        self.bpm = tempo::bpm(oldest_wait_ms);
+        if self.bpm != was {
+            eprintln!("tallyd: tempo {} bpm", self.bpm);
+        }
     }
-    if let Err(e) = d.clock() {
-        eprintln!("tallyd: clock: {e}");
+
+    /// Send the beat.
+    ///
+    /// One byte, up to fifty-six times a second. Due pulses are sent and
+    /// missed ones are **dropped, not caught up**: a burst after a stall
+    /// would visibly sprint the breathing, and a skipped beat is the
+    /// honest report of a loop that was busy (`docs/17-the-tempo.md`).
+    fn pulse(&mut self, device: Option<&mut Device>, elapsed: Duration) {
+        let Some(d) = device else {
+            // Unplugged. Start again when it comes back.
+            self.started = false;
+            return;
+        };
+        if !self.started {
+            self.started = d.clock_start().is_ok();
+            self.next = elapsed;
+        }
+        if elapsed < self.next {
+            return;
+        }
+        if let Err(e) = d.clock() {
+            eprintln!("tallyd: clock: {e}");
+        }
+        self.next = elapsed + tempo::gap(self.bpm);
     }
-    *next = elapsed + tempo::gap(bpm);
+}
+
+/// What the queue looked like at the last reconcile.
+///
+/// Deliberately **stale**: it is what the finger was looking at when it
+/// landed, and recomputing on the press would act on a grid the eye never
+/// saw. The two fields are one answer read two ways — `►` acts on the
+/// head, the top row lights from the depth — and they are never computed
+/// apart.
+#[derive(Debug, Default)]
+struct Waiting {
+    head: Option<queue::Head>,
+    queued: usize,
 }
 
 /// Spawn into a grid row from its `>` button. Reports whether the surface
@@ -517,7 +724,7 @@ fn goto(
     col: u8,
     offset: &mut u8,
     grid: &std::collections::BTreeMap<Slot, model::Resolved>,
-    journal_out: &mut Option<std::fs::File>,
+    journal: &mut Journal,
 ) {
     let to = View::overview_row(row, col);
     let from = *offset;
@@ -529,10 +736,7 @@ fn goto(
         .filter(|abs| model::row_summary(grid, *abs).is_some())
         .count();
     eprintln!("tallyd: goto row {to} ({lit} rows lit)");
-    let now = tally::now_ms();
-    log_nav(journal_out, |out| {
-        journal::nav_goto(out, now, to, from, lit)
-    });
+    journal.jumped_to(tally::now_ms(), to, from, lit);
 }
 
 /// The four top-row gestures: move the window, or move you.
@@ -548,7 +752,7 @@ fn navigate(
     queued: usize,
     pages: &Pages,
     tmux: &impl Jump,
-    journal_out: &mut Option<std::fs::File>,
+    journal: &mut Journal,
 ) {
     match gesture {
         // One row, not one page. A page boundary is not a thing you can
@@ -583,9 +787,7 @@ fn navigate(
             // shows where it landed.
             *offset = View::offset_showing(h.at, *offset);
             let now = tally::now_ms();
-            log_nav(journal_out, |out| {
-                journal::nav_next(out, now, &at, now.saturating_sub(h.since), queued)
-            });
+            journal.jumped_next(now, &at, now.saturating_sub(h.since), queued);
         }
         Gesture::Back => match tmux.back() {
             Ok(moved) => {
@@ -593,8 +795,7 @@ fn navigate(
                     "tallyd: back{}",
                     if moved { "" } else { " (nowhere to go)" }
                 );
-                let now = tally::now_ms();
-                log_nav(journal_out, |out| journal::nav_back(out, now, moved));
+                journal.jumped_back(tally::now_ms(), moved);
             }
             Err(e) => eprintln!("tallyd: {e}"),
         },
@@ -627,8 +828,7 @@ fn main() -> ExitCode {
     // No device is a normal state, not a failure. `tallyd` is started by
     // launchd and may well come up before the Launchpad is plugged in --
     // and the thing it is watching is anchord, which it can do blind.
-    let mut device: Option<Device> = None;
-    let mut last_device_try = Duration::ZERO;
+    let mut link = Link::new();
 
     // A broken config is reported and then ignored. Refusing to start
     // would take away the watching to punish a mistake in the spawning,
@@ -657,51 +857,21 @@ fn main() -> ExitCode {
     // asking, and times it from the restart rather than from the question
     // (`docs/14-attention.md`). The one number M1 exists to produce is a
     // count of these, so it has to count them once.
-    let mut journal = Journal::resumed(&journal_path, &pages);
-    let mut journal_out = journal_path
-        .parent()
-        .map_or(Ok(()), std::fs::create_dir_all)
-        .and_then(|()| {
-            OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&journal_path)
-        })
-        .map_err(|e| {
-            eprintln!(
-                "tallyd: no attention journal at {}: {e}",
-                journal_path.display()
-            );
-        })
-        .ok();
+    let mut journal = Journal::open(&journal_path, &pages);
     let mut sessions = Vec::new();
     let mut reachable = false;
     let mut offset = 0u8;
-    // Set while `▲` is down, taken when the hold fires.
-    let mut home_press: Option<Duration> = None;
-    // The `CC19` double-tap, and the pad a held `Move` is carrying. Both
-    // live here for the same reason `home_press` does: they are timed or
-    // multi-press gestures, and `chord.rs` is pure on purpose.
-    let mut corner = Corner::default();
-    let mut hand: Option<Slot> = None;
-    // The queue, as of the last tick: what the finger was looking at when
-    // it landed. Recomputing on the press would act on a grid the eye
-    // never saw.
-    let mut head: Option<queue::Head> = None;
-    let mut queued = 0usize;
-    // The beat. `bpm` is recomputed each reconcile from the oldest thing
-    // waiting; `next_clock` is when the next `0xF8` is due.
-    let mut bpm = tempo::FLOOR_BPM;
-    let mut next_clock = Duration::ZERO;
-    let mut clock_started = false;
+    // The timed gestures and the pad a held `Move` is carrying.
+    let mut grip = Grip::default();
+    // The queue, as of the last tick.
+    let mut waiting = Waiting::default();
+    let mut beat = Beat::new();
     let mut last_reconcile = Duration::ZERO;
     // The art, if one is playing (`docs/21-the-arts.md`). `None` is the
     // working grid, and it is where the reel starts and ends.
     let mut reel: Option<Reel> = None;
     // Art advances every other wake: ~31 fps off a 16 ms tick.
     let mut art_wake = false;
-    let mut repaint = true;
-    let mut last_reply = Duration::ZERO;
     let tmux = Tmux::default();
     if !tmux.server_running() {
         // Said plainly, not fatal. A missing server is the normal state at
@@ -727,151 +897,105 @@ fn main() -> ExitCode {
 
         let elapsed = started.elapsed();
 
-        // Poll for the device. `midir` enumerates ports; it does not tell
-        // you when one appears, so this is the same reconcile shape as
-        // everything else here.
-        if device.is_none() && elapsed.saturating_sub(last_device_try) >= RECONCILE {
-            last_device_try = elapsed;
-            match Device::open() {
-                Ok(d) => {
-                    eprintln!("tallyd: Launchpad connected");
-                    device = Some(d);
-                    repaint = true;
-                    last_reply = elapsed;
-                }
-                // Unplugged, or plugged in and still settling: a port can
-                // enumerate a moment before the device answers an inquiry.
-                // Both are ordinary and both resolve on the next try, so
-                // neither gets a line every two seconds.
-                Err(Error::NotFound | Error::NotALaunchpad) => {}
-                Err(e) => eprintln!("tallyd: {e}"),
-            }
-        }
+        link.connect(elapsed);
 
-        // Presses are event-driven, not on the reconcile clock.
-        if let Some(d) = device.as_mut() {
-            for event in d.poll().collect::<Vec<_>>() {
-                match event {
-                    Event::Press { button, down } => {
-                        // Captured before `feed`, which answers `None` for
-                        // plenty of presses and would skip this with the
-                        // `continue` below. The clock deliberately lives
-                        // here and not in `chord.rs`: that module is pure
-                        // and has no `now` (`docs/20-the-overview.md`).
-                        if button == Button::Top(1) {
-                            home_press = down.then_some(elapsed);
+        // Presses are event-driven, not on the reconcile clock. Drained
+        // into a batch first so the handlers below can reach the rest of
+        // `link` -- the art's repaint, a reprogram -- without holding a
+        // borrow on the port they would all have to be threaded through.
+        let events: Vec<Event> = link.device().map_or_else(Vec::new, |d| d.poll().collect());
+        for event in events {
+            match event {
+                Event::Press { button, down } => {
+                    // Captured before `feed`, which answers `None` for
+                    // plenty of presses and would skip this with the
+                    // `continue` below. The clock deliberately lives
+                    // here and not in `chord.rs`: that module is pure
+                    // and has no `now` (`docs/20-the-overview.md`).
+                    grip.aim(button, down, elapsed);
+                    // Before the corner's clock and before `feed`:
+                    // an art swallows the press whole, so neither
+                    // gets to act on one the eye never aimed at a
+                    // session (`docs/21-the-arts.md`).
+                    if art_press(&mut reel, &mut link.repaint, button, down) {
+                        continue;
+                    }
+                    // Same reason, same place: a double-tap is two
+                    // presses close in time, and the release that
+                    // completes one answers `None` from `feed`.
+                    link.repaint |= grip.feel(&mut chords, button, down, elapsed);
+                    let Some(gesture) = chords.feed(button, down) else {
+                        continue;
+                    };
+                    grip.corner.saw(gesture);
+                    match gesture {
+                        Gesture::Arts => {
+                            next_art(&mut reel);
+                            link.repaint = true;
                         }
-                        // Before the corner's clock and before `feed`:
-                        // an art swallows the press whole, so neither
-                        // gets to act on one the eye never aimed at a
-                        // session (`docs/21-the-arts.md`).
-                        if art_press(&mut reel, &mut repaint, button, down) {
-                            continue;
-                        }
-                        // Same reason, same place: a double-tap is two
-                        // presses close in time, and the release that
-                        // completes one answers `None` from `feed`.
-                        repaint |= corner_event(
-                            &mut corner,
-                            &mut chords,
-                            &mut hand,
-                            button,
-                            down,
-                            elapsed,
-                        );
-                        let Some(gesture) = chords.feed(button, down) else {
-                            continue;
-                        };
-                        corner.saw(gesture);
-                        match gesture {
-                            Gesture::Arts => {
-                                next_art(&mut reel);
-                                repaint = true;
-                            }
-                            Gesture::Launch { row } => {
-                                repaint |= launch(
-                                    offset.saturating_add(row),
-                                    &sessions,
-                                    &pages,
-                                    &grid,
-                                    &anchor,
-                                );
-                            }
-                            Gesture::Goto { row, col } => {
-                                goto(row, col, &mut offset, &grid, &mut journal_out);
-                            }
-                            Gesture::PageUp
-                            | Gesture::PageDown
-                            | Gesture::Home
-                            | Gesture::Next
-                            | Gesture::Back => navigate(
-                                gesture,
-                                &mut offset,
-                                head.as_ref(),
-                                queued,
+                        Gesture::Launch { row } => {
+                            link.repaint |= launch(
+                                offset.saturating_add(row),
+                                &sessions,
                                 &pages,
-                                &tmux,
-                                &mut journal_out,
-                            ),
-                            Gesture::Tap { row, col } | Gesture::Chord { row, col, .. } => {
-                                // The window turns a pad into an address.
-                                // Past the end of the address space there
-                                // is no pad, and nothing happens.
-                                let Some(at) = Slot::at_absolute(offset + row, col) else {
-                                    continue;
-                                };
-                                let ctx = Context {
-                                    client: &anchor,
-                                    // Last tick's grid: what the pad the
-                                    // finger landed on was showing, which
-                                    // is the only honest thing to act on.
-                                    pads: model::Pads::new(&grid, &config, &purgeable, hand),
-                                };
-                                perform(&ctx, gesture, at, &pages, &tmux).apply(&mut hand);
-                                // Whatever it was, the grid is now stale.
-                                // Pull the list forward rather than
-                                // leaving the pad wrong for two seconds.
-                                last_reconcile = Duration::ZERO;
-                            }
+                                &grid,
+                                &anchor,
+                            );
                         }
-                    }
-                    Event::Reply(r) => {
-                        last_reply = elapsed;
-                        // It answered Live mode: it was power-cycled under
-                        // us. Put it back and repaint from scratch.
-                        if tally::surface::sysex::programmer_mode_from(&r) == Some(false) {
-                            eprintln!("tallyd: Launchpad came back in Live mode, reprogramming");
-                            if let Err(e) = d.reprogram() {
-                                eprintln!("tallyd: {e}");
-                            }
-                            repaint = true;
+                        Gesture::Goto { row, col } => {
+                            goto(row, col, &mut offset, &grid, &mut journal);
+                        }
+                        Gesture::PageUp
+                        | Gesture::PageDown
+                        | Gesture::Home
+                        | Gesture::Next
+                        | Gesture::Back => navigate(
+                            gesture,
+                            &mut offset,
+                            waiting.head.as_ref(),
+                            waiting.queued,
+                            &pages,
+                            &tmux,
+                            &mut journal,
+                        ),
+                        Gesture::Tap { row, col } | Gesture::Chord { row, col, .. } => {
+                            // The window turns a pad into an address.
+                            // Past the end of the address space there
+                            // is no pad, and nothing happens.
+                            let Some(at) = Slot::at_absolute(offset + row, col) else {
+                                continue;
+                            };
+                            let ctx = Context {
+                                client: &anchor,
+                                // Last tick's grid: what the pad the
+                                // finger landed on was showing, which
+                                // is the only honest thing to act on.
+                                pads: model::Pads::new(&grid, &config, &purgeable, grip.hand),
+                            };
+                            perform(&ctx, gesture, at, &pages, &tmux).apply(&mut grip.hand);
+                            // Whatever it was, the grid is now stale.
+                            // Pull the list forward rather than
+                            // leaving the pad wrong for two seconds.
+                            last_reconcile = Duration::ZERO;
                         }
                     }
                 }
-            }
-
-            // Liveness probe on the reconcile clock. A failed write is not
-            // how you learn the device is gone -- CoreMIDI accepts sends to
-            // a removed endpoint without complaint -- so absence of a reply
-            // is the only signal there is.
-            if elapsed.saturating_sub(last_device_try) >= RECONCILE {
-                last_device_try = elapsed;
-                if let Err(e) = d.ping() {
-                    eprintln!("tallyd: {e}");
+                Event::Reply(r) => {
+                    link.heard(elapsed);
+                    // It answered Live mode: it was power-cycled under
+                    // us. Put it back and repaint from scratch.
+                    if tally::surface::sysex::programmer_mode_from(&r) == Some(false) {
+                        eprintln!("tallyd: Launchpad came back in Live mode, reprogramming");
+                        if let Some(e) = link.device().and_then(|d| d.reprogram().err()) {
+                            eprintln!("tallyd: {e}");
+                        }
+                        link.repaint = true;
+                    }
                 }
-            }
-            if elapsed.saturating_sub(last_reply) >= DEVICE_SILENCE {
-                eprintln!("tallyd: Launchpad stopped answering, dropping it");
-                // It is gone, so do not try to restore it on the way out
-                // and do not warn that the restore failed.
-                d.abandon();
-                device = None;
-                repaint = true;
-                // The release for anything held went out with the cable.
-                // Without this the first tap after a replug is a kill.
-                chords.clear();
             }
         }
+
+        link.probe(elapsed);
 
         if elapsed.saturating_sub(last_reconcile) >= RECONCILE || last_reconcile.is_zero() {
             last_reconcile = elapsed;
@@ -904,57 +1028,42 @@ fn main() -> ExitCode {
         let now = tally::now_ms();
         let resolved = model::resolve(&sessions, &watchers.snapshot(), &pages, now);
         grid.clone_from(&resolved);
-        if let Some(out) = journal_out.as_mut() {
-            // Unbuffered on purpose. This is a few lines a day, and a
-            // buffer would hold them until a flush that SIGKILL never
-            // reaches -- losing exactly the transitions it exists to count.
-            if let Err(e) = journal
-                .record(&resolved, &pages, now, out)
-                .and_then(|()| out.flush())
-            {
-                eprintln!("tallyd: attention journal: {e}");
-                journal_out = None;
-            }
-        }
+        journal.tick(&resolved, &pages, now);
 
         // The queue, after the journal has been brought up to date: the
         // map it keeps *is* the queue, ordered by when each slot started
         // asking (`docs/16-the-queue.md`).
-        let pads = model::Pads::new(&resolved, &config, &purgeable, hand);
+        let pads = model::Pads::new(&resolved, &config, &purgeable, grip.hand);
         let viewing: std::collections::BTreeSet<Slot> = tmux
             .viewing()
             .iter()
             .filter_map(|id| resolved.values().find(|r| &r.session == id))
             .map(|r| r.slot)
             .collect();
-        head = queue::head(journal.waiting(), &pads, &viewing);
-        queued = queue::depth(journal.waiting(), &pads, &viewing);
+        waiting = Waiting {
+            head: queue::head(journal.waiting(), &pads, &viewing),
+            queued: queue::depth(journal.waiting(), &pads, &viewing),
+        };
         // How fast the surface breathes: the age of the oldest thing
         // waiting (`docs/17-the-tempo.md`). The ramp still runs on the
         // device -- only the beat is ours.
-        let was = bpm;
-        bpm = tempo::bpm(queue::oldest(journal.waiting(), &pads).map(|since| now - since));
-        if bpm != was {
-            eprintln!("tallyd: tempo {bpm} bpm");
-        }
+        beat.retune(queue::oldest(journal.waiting(), &pads).map(|since| now - since));
 
-        // Which `>` would act, from the same resolution the press uses.
-        // `▲` held past the threshold means *all the way up*. Taking the
-        // press out of `home_press` latches it: one `⌂` per press, no
-        // autorepeat, and nothing more until the finger lifts and lands
-        // again.
-        if home_press.is_some_and(|since| elapsed.saturating_sub(since) >= HOME_HOLD) {
-            home_press = None;
+        // `▲` held past the threshold means *all the way up*
+        // ([`Grip::home_due`]).
+        if grip.home_due(elapsed) {
             navigate(
                 Gesture::Home,
                 &mut offset,
-                head.as_ref(),
-                queued,
+                waiting.head.as_ref(),
+                waiting.queued,
                 &pages,
                 &tmux,
-                &mut journal_out,
+                &mut journal,
             );
         }
+
+        // Which `>` would act, from the same resolution the press uses.
 
         let launchable: std::collections::BTreeSet<u8> = (1..=7u8)
             .filter(|row| {
@@ -970,9 +1079,9 @@ fn main() -> ExitCode {
             anchord_reachable: reachable,
             now,
             can_go_back: tmux.can_go_back(),
-            queued,
+            queued: waiting.queued,
             held: chords.modifier(),
-            hand,
+            hand: grip.hand,
             overview: chords.overview(),
             art: reel.is_some(),
             pressed: &pressed,
@@ -982,37 +1091,17 @@ fn main() -> ExitCode {
         advance_art(reel.as_mut(), &mut art_wake);
         let frame = reel
             .as_ref()
-            .map_or(frame, |r| art_surface(r, reachable, queued));
-        if let Some(d) = device.as_mut() {
-            // A full repaint on (re)connect: the device may have been
-            // unplugged, power-cycled, or left in another process's idea
-            // of a frame, so the first thing we put on it is total.
-            let wrote = if repaint {
-                d.repaint(&frame)
-            } else {
-                d.render(&frame)
-            };
-            match wrote {
-                Ok(()) => repaint = false,
-                Err(e) => {
-                    // The write failed, which on this stack means the port
-                    // went away. Drop it and go back to polling; the pads
-                    // are dark anyway, because the device is gone.
-                    eprintln!("tallyd: Launchpad disconnected ({e})");
-                    device = None;
-                    repaint = true;
-                    chords.clear();
-                }
-            }
+            .map_or(frame, |r| art_surface(r, reachable, waiting.queued));
+        link.paint(&frame);
+
+        // One departure, one response, wherever this tick it happened:
+        // the release for anything held went out with the cable, and
+        // without this the first tap after a replug is a kill.
+        if link.take_departed() {
+            chords.clear();
         }
 
-        beat(
-            device.as_mut(),
-            elapsed,
-            bpm,
-            &mut clock_started,
-            &mut next_clock,
-        );
+        beat.pulse(link.device(), elapsed);
 
         std::thread::sleep(TICK);
     };
@@ -1023,12 +1112,10 @@ fn main() -> ExitCode {
     // Only on a *clean* exit: a `tallyd` that is killed stops the clock
     // dead, and the frozen breathing is the point
     // (`docs/17-the-tempo.md`).
-    if let Some(d) = device.as_mut() {
-        if let Err(e) = d.clock_stop() {
-            eprintln!("tallyd: clock stop: {e}");
-        }
+    if let Some(e) = link.device().and_then(|d| d.clock_stop().err()) {
+        eprintln!("tallyd: clock stop: {e}");
     }
-    drop(device); // Drop restores Live mode and verifies it by readback.
+    drop(link); // Dropping the device restores Live mode, verified by readback.
     reraise(signum);
 }
 
@@ -1135,5 +1222,96 @@ mod tests {
         assert!(!c.feed(false, ms(900)), "an abort, not a tap");
         assert!(!c.feed(true, ms(950)));
         assert!(!c.feed(false, ms(1000)), "so this is a first tap again");
+    }
+
+    /// What a departure means, independent of why it happened.
+    ///
+    /// **Both drop paths are one method**, which is the whole reason
+    /// [`Link`] is a type: a device that leaves always leaves the same
+    /// way — no device, a total frame owed to the next one, and exactly
+    /// one departure for the loop to answer
+    /// (`docs/29-what-the-loop-holds.md`).
+    #[test]
+    fn a_device_that_leaves_always_leaves_the_same_way() {
+        let mut link = Link::new();
+        assert!(link.repaint, "the first frame on any device is total");
+        assert!(!link.take_departed(), "nothing has left yet");
+
+        link.repaint = false;
+        link.lost();
+        assert!(link.device.is_none());
+        assert!(link.repaint, "whatever comes back gets a total frame");
+        assert!(link.take_departed(), "the loop is told once");
+        assert!(
+            !link.take_departed(),
+            "and not twice -- clearing the chords twice is free, but a \
+             second report is how a drained flag stops meaning anything"
+        );
+    }
+
+    /// With no device every method is a no-op rather than a branch at the
+    /// call site. No device is the normal state at login
+    /// ([08](08-lifecycle.md#who-starts-it)), so it cannot be the
+    /// exceptional path.
+    #[test]
+    fn a_link_with_no_device_does_nothing_quietly() {
+        let mut link = Link::new();
+        link.repaint = false;
+        // `connect` is the one that would try to open a port; it is on
+        // the reconcile clock and this is well inside the first tick.
+        link.probe(Duration::from_secs(600));
+        link.paint(&Frame::dark());
+        assert!(link.device.is_none());
+        assert!(
+            !link.take_departed(),
+            "nothing left, because nothing was here"
+        );
+        assert!(!link.repaint, "and nothing arrived to owe a frame to");
+    }
+
+    /// The beat stops when the device does, and starts over when one
+    /// comes back: `clock_start` has to be accepted by the device in
+    /// front of us, not by the one that was here before the cable moved.
+    #[test]
+    fn an_unplugged_beat_starts_over() {
+        let mut beat = Beat::new();
+        assert_eq!(beat.bpm, tempo::FLOOR_BPM, "calm, not stopped");
+        beat.started = true;
+        beat.pulse(None, Duration::from_millis(16));
+        assert!(
+            !beat.started,
+            "a device that is gone has not started a clock"
+        );
+    }
+
+    /// The tempo is a function of the oldest wait and nothing else, and
+    /// `None` is the floor rather than a special case
+    /// (`docs/17-the-tempo.md`).
+    #[test]
+    fn the_tempo_follows_the_oldest_wait() {
+        let mut beat = Beat::new();
+        beat.retune(Some(tempo::KNEE_MS));
+        assert_eq!(beat.bpm, tempo::CEILING_BPM);
+        beat.retune(None);
+        assert_eq!(beat.bpm, tempo::FLOOR_BPM);
+    }
+
+    /// `▲` arms on the press and fires once, however long it is held.
+    #[test]
+    fn the_home_hold_fires_once_per_press() {
+        let mut grip = Grip::default();
+        grip.aim(Button::Top(1), true, Duration::ZERO);
+        assert!(!grip.home_due(HOME_HOLD.saturating_sub(Duration::from_millis(1))));
+        assert!(grip.home_due(HOME_HOLD));
+        assert!(
+            !grip.home_due(HOME_HOLD * 10),
+            "no autorepeat: the press was taken when it fired"
+        );
+
+        // A release before the threshold disarms it -- that is a tap on
+        // `▲`, which scrolls one row and is `chord.rs`'s business.
+        grip.aim(Button::Top(1), true, Duration::ZERO);
+        grip.aim(Button::Top(1), false, Duration::from_millis(10));
+        assert!(!grip.home_due(HOME_HOLD * 10));
     }
 }

@@ -13,6 +13,7 @@ pub mod chord;
 pub mod cli;
 pub mod config;
 pub mod device;
+pub mod effect;
 pub mod journal;
 pub mod jump;
 pub mod lock;
