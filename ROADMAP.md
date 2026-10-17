@@ -805,6 +805,117 @@ Exit:
 
 ---
 
+## M17 — The bridge
+
+The Launchpad is on a Windows desk and the agents are in WSL, and USB
+does not cross that line without a kernel build. Cut the process instead:
+`tallybridge` owns the device on Windows, `tallyd` owns everything else
+in WSL, and raw MIDI runs between them
+([docs/30](docs/30-the-bridge.md)).
+
+**This milestone was specified on a Mac with no Windows hardware in
+reach.** Five facts it rests on have never been run. That is why M17.0
+exists and why it comes before a line of the codec.
+
+### M17.0 — Answer the five, before building
+
+No code. Each row is one command and one observation, and two of them can
+move the design.
+
+| probe | how | why it can move the design |
+|---|---|---|
+| the WinMM port name | `tallybridge --list` — a dozen lines of `midir` enumeration, the only Windows code written before the answers | [docs/02](docs/02-surface.md#two-ports-and-which-one-we-want) claims Windows decorates it with nothing. If `PORT_SUBSTRING` does not match, the substring rule is wrong on one platform and that is a `device.rs` change, not a bridge change |
+| the bind address | `nc -l 127.0.0.1 7373` in WSL, reach it from Windows; repeat on `0.0.0.0` | if `0.0.0.0` is required the socket is on the local network, unauthenticated, driving the grid. **Stop and raise it** — that is a product decision, not a config line |
+| interop | `powershell.exe -c "echo ok"` from WSL | if it is off, `raise` goes back to the reserved `0x10` control frame and the bridge grows a second job |
+| `AppActivate` | raise the terminal from WSL while another window has focus | if Windows refuses the foreground steal more often than not, `raise` is not worth its code on this platform |
+| clock over the hop | after M17.4, not before | if the breath stutters, the tempo moves to the bridge and the wire carries a BPM instead of pulses — the largest possible change here |
+
+Exit:
+- ⬜ five answers, written into [docs/30](docs/30-the-bridge.md) in place
+  of the ⚠️ rows, each one a ✅ or a correction
+- ⬜ the bind-address answer reported before anything is built on it
+
+### M17.1 — The codec
+
+`src/bridge.rs`: kind, big-endian length, payload; 64 KiB cap. One
+definition, compiled into both binaries. Pure, no I/O, no sockets.
+
+Exit:
+- ⬜ every kind round-trips
+- ⬜ a frame split across two reads reassembles — the test that matters,
+  because TCP will do this and a local socket in a test usually will not
+- ⬜ a truncated frame is not a message and does not block
+- ⬜ an oversize `len` is a hang-up, not an allocation
+
+### M17.2 — `Device` becomes a trait
+
+`Local` is today's struct renamed and otherwise untouched. `poll` becomes
+`-> Vec<Event>` because `impl Iterator` is not object-safe; `Link` holds
+`Box<dyn Device>` and `Link::connect` picks the impl from
+`TALLY_BRIDGE_LISTEN`.
+
+Exit:
+- ⬜ the suite is green with no test changed except the `poll` call shape
+- ⬜ on a Mac with a Launchpad, behaviour is bit-identical — no listener,
+  no socket, no new code on that path
+
+### M17.3 — `Remote`, against a fake bridge
+
+A fake bridge in-process, so this is testable in WSL with no hardware.
+
+Exit:
+- ⬜ the identity handshake completes over the pipe inside `REPLY_TIMEOUT`
+- ⬜ a press arrives as exactly one `Event` — including two presses
+  written back-to-back, which is where coalescing would eat one
+- ⬜ `render` diffs exactly as `Local` does; the same frame sequence puts
+  the same bytes on the wire
+- ⬜ `{"device":"gone"}` lands `Link` in the same state `NotFound` does
+
+### M17.4 — `tallybridge`
+
+The Windows binary: enumerate, open, pipe both ways, `TCP_NODELAY`,
+reconnect forever, and restore Live mode on every way out.
+
+Exit:
+- ⬜ a pad lights from WSL
+- ⬜ a press in Windows reaches a WSL chord
+- ⬜ **kill the bridge with `taskkill /F` and the Setup menu still
+  works** — the restore is the one thing in this milestone that cannot be
+  argued, only run
+- ⬜ unplug and replug the Launchpad: `gone`, then `present`, then a full
+  repaint, with `tallyd` never restarted
+- ⬜ restart `tallyd`: the bridge reconnects on its own
+
+### M17.5 — Raise, by interop
+
+`raise()` gains `TALLY_RAISE_CMD`, split on spaces, default unchanged.
+No bridge involvement.
+
+Exit:
+- ⬜ a pad press brings Windows Terminal forward from behind another window
+- ⬜ a refused raise is silent and the pane still switched
+
+### M17.6 — A day beside it
+
+Not a formality, and the only instrument that has ever caught anything
+here. The hard amber flash and the green working pulse both passed a
+glance on real hardware and failed a day of use
+([M9](#m9--the-tempo-says-how-long)), and this milestone adds a network
+hop to the surface those were measured on.
+
+Exit:
+- ⬜ a working day on the Windows desk with no restart of either binary
+- ⬜ the breath is still legible — or the clock moves to the bridge, which
+  is M17.0's last row coming due
+
+> **The bridge may not grow.** Every argument for putting one more thing
+> on the Windows side is an argument for a second implementation of tally,
+> and the second one has no tests. If something seems to need to live
+> there, it is a sign the seam is in the wrong place — move the seam, in
+> a document, before moving the code.
+
+---
+
 ## What is next
 
 Nothing here is a build item. Everything that was one is done, and what is
