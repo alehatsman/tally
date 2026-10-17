@@ -65,7 +65,7 @@ session and dies with it. A squad member is a pane in `r07` on tally's
 socket, created by `anchor`, outliving every process that ever spoke to it
 — including its master. That is the only part worth building, and it is
 built out of pieces that already exist: `anchor create`, `tl.slot`,
-`remain-on-exit`, respawn-in-place ([19](19-the-dead-pane.md)).
+`remain-on-exit`, respawn-in-place ([26](26-the-dead-pane.md)).
 
 If the answer to *why not just use agent teams* is ever "because ours
 spawns more agents", stop and use agent teams.
@@ -884,7 +884,7 @@ already declared and already pays for.
 
 | | how | why |
 |---|---|---|
-| kill the processes | hold kill + `>` | reversible — respawn in place exists ([19](19-the-dead-pane.md)) |
+| kill the processes | hold kill + `>` | reversible — respawn in place exists ([26](26-the-dead-pane.md)) |
 | reap the worktrees | CLI, and it refuses when one is dirty or unmerged | holds commits that are nowhere else |
 
 **The Launchpad is fast because it cannot lose anything.** A pad that could

@@ -1,6 +1,6 @@
 # 14 — Attention, measured
 
-> **Amended by [26](26-the-claude-session-id.md).** The hook this
+> **Amended by [26](26-the-dead-pane.md).** The hook this
 > document designs now reports a second fact on the same call: `tl.claude`,
 > the conversation the agent is running.
 

@@ -67,7 +67,7 @@ pub const PANE_OPTION: &str = "@tally_session";
 /// Separate from [`PANE_OPTION`] because it answers a different question
 /// and is often not answerable at all: a view of a shell has no
 /// conversation, and a view of an agent has none until its first turn
-/// (`docs/26-the-claude-session-id.md`).
+/// (`docs/26-the-dead-pane.md`).
 ///
 /// Pane-scoped for the same reason [`PANE_OPTION`] is: a window option is
 /// inherited by every pane in the window.
@@ -346,7 +346,7 @@ fn set_slot_args(pane: &str, at: &str) -> Vec<String> {
 /// because *not knowing* is the ordinary state — `tally spawn` makes a
 /// view before the agent has had a turn — and a jump that blanked the
 /// tag would take the resume command off the dead line of a session that
-/// still has one (`docs/26-the-claude-session-id.md`).
+/// still has one (`docs/26-the-dead-pane.md`).
 fn set_claude_args(pane: &str, claude: &str) -> Vec<String> {
     vec![
         "set-option".into(),
@@ -399,7 +399,7 @@ fn remain_on_exit_args(pane: &str) -> Vec<String> {
 /// since 3.2 its text is the `remain-on-exit-format` pane option. The
 /// default — `Pane is dead (status 0, …)` — is the last thing a view ever
 /// tells you, and it does not name the session it was
-/// (`docs/19-the-dead-pane.md`).
+/// (`docs/26-the-dead-pane.md`).
 ///
 /// **The id is read from the tag, not baked in here.** A literal would go
 /// stale the moment the pane is rebound to another session; `#{@…}`
@@ -411,9 +411,9 @@ fn remain_on_exit_args(pane: &str) -> Vec<String> {
 /// attach client's, not the agent's.
 ///
 /// **The conversation goes first, ahead of the anchor id**
-/// (`docs/26-the-claude-session-id.md`). 19's rule was *payload early,
-/// because the tail is what truncation eats*; this is that rule applied
-/// to a longer line. Measured at 80 columns with the conversation second,
+/// (`docs/26-the-dead-pane.md`). The rule is *payload early, because
+/// the tail is what truncation eats*. Measured at 80 columns with the
+/// conversation second,
 /// the cut landed mid-UUID — `claude --resume c1567a67-d7e0` — and half
 /// an id resumes nothing, while half an anchor id costs nothing: it names
 /// a PTY that is gone by the time you are reading this line.
@@ -898,7 +898,7 @@ pub fn place(session: &str, at: &str, where_: Place) -> Result<(), Error> {
     let tmux = Tmux::default();
     // No conversation: the agent has not had a turn, so no hook has
     // reported one. The first press tags it
-    // (`docs/26-the-claude-session-id.md`).
+    // (`docs/26-the-dead-pane.md`).
     let _pane = tmux.view_pane(session, None, where_, at)?;
     Ok(())
 }
@@ -1336,7 +1336,7 @@ mod tests {
     }
 
     /// The conversation is the id you can actually use after a kill:
-    /// anchor's names a PTY that is gone (`docs/26-the-claude-session-id.md`).
+    /// anchor's names a PTY that is gone (`docs/26-the-dead-pane.md`).
     #[test]
     fn the_dead_line_offers_the_conversation_as_a_resume_command() {
         let fmt = dead_pane_format();
@@ -1386,7 +1386,7 @@ mod tests {
 
     /// `attach exit` is the attach client's status, not the agent's. The
     /// agent's exit is on the pad; calling this one `exit` would be a lie
-    /// on every kill (`docs/19-the-dead-pane.md`).
+    /// on every kill (`docs/26-the-dead-pane.md`).
     #[test]
     fn the_dead_line_does_not_claim_the_agents_exit() {
         let fmt = dead_pane_format();

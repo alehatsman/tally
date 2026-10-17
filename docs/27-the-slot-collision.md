@@ -36,7 +36,7 @@ tallyd: tmux new-window: create window failed: index 4 in use
 
 | | |
 |---|---|
-| 1 | The kill ends the PTY; `remain-on-exit` keeps the pane, so window `r01:4` stays — tagged with the **old** session (`docs/19`). |
+| 1 | The kill ends the PTY; `remain-on-exit` keeps the pane, so window `r01:4` stays — tagged with the **old** session (`docs/26`). |
 | 2 | The new session is a new id. `view_for` (`src/jump.rs`) looks that id up and misses: the corpse carries the other one. |
 | 3 | Miss means create. `make_view` → `new_window_args` targets `r01:4` (`src/jump.rs`). |
 | 4 | Index in use. `view_pane` returns `Err`, `jump` dies on it, and the grid has no way to show you an error. |
