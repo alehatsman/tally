@@ -32,11 +32,14 @@ file.
 ## `tally spawn`
 
 ```text
-tally spawn     [--detach] <row:col | page:row:col> [-- command [args…]]
-tally purge     <row:col | page:row:col>
-tally mute      <row:col | page:row:col> [--off]
+tally spawn     [--detach] [--count N] <addr> [-- command [args…]]
+tally fork      [--detach] [--count N] <src> <dst> [-- command [args…]]
+tally purge     <addr>
+tally mute      <addr> [--off]
 tally attention <on | off>
 ```
+
+An `addr` is `row:col` or `page:row:col`, everywhere.
 
 `purge` and `mute` are here because the grid gave them up
 ([18](18-the-launch-column.md)), and they could not simply be deleted:
@@ -61,27 +64,31 @@ spawned 01M53KR… on work:3:4
 | command | defaults to `claude` | the thing this grid is for |
 | cwd | **always `$PWD`** | the entire point; there is no `--cwd`, `cd` is the flag |
 | login shell | always | you want your `PATH`, and a spawn that cannot find `claude` is not useful |
-| pane | **adopted**, unless `--detach` | you navigated here on purpose ([15](15-views.md#adoption-tally-spawn-from-a-pane)) |
+| view | opened on tally's tmux server, unless `--detach` | a pane on *your* server can never be a view ([24](24-the-tally-server.md)) |
 
-**Inside tmux, `spawn` does not return.** The pane you ran it in becomes
-the view: the shell is replaced by `anchor attach`, and the pad focuses
-that pane rather than a window under `tally`. Navigate to it with normal
-tmux keys or press its pad — same pane, either way.
+⚠️ **`spawn` used to hand your shell over, and it no longer can.** The
+pane you ran it in became the view, which stopped being possible when
+views moved to tally's own tmux server — a pane on your personal server
+cannot be one ([24](24-the-tally-server.md)). The command now creates the
+session, opens the view over there, and **returns to your shell**. The
+folder still comes from where you are standing, which was always the half
+worth having.
 
-Nothing execs before the claim is accepted. Every refusal below happens
-with the shell still alive; by the time the pane is handed over, the
-session exists.
+So **`--detach` survives with a narrower meaning**: not *do not adopt my
+pane*, which is no longer a thing that happens, but **open no view at
+all**. The session runs, the pad lights, and the first press is what
+opens it.
 
-| where | what |
+| | what |
 |---|---|
-| inside tmux | adopts `$TMUX_PANE`, execs |
-| inside tmux, `--detach` | prints and returns |
-| outside tmux | prints and returns |
+| `tally spawn 1:1` | creates it, opens the view, prints, returns |
+| `tally spawn --detach 1:1` | creates it, opens nothing, prints, returns |
+| `--count N`, `N > 1` | creates N, opens nothing — one shell, N views, and picking one is a guess |
 
-**Outside tmux it falls back rather than adopting the terminal.** A bare
-terminal running `anchor attach` is a perfectly good view and a completely
-unfindable one — no pane to tag, so a pad press could never focus it and
-would open a second view onto the same session.
+**Opening the view is not fatal.** The session exists by the time the
+view is attempted, so a tmux that will not cooperate costs you a view the
+next pad press makes anyway. It prints where the session went and exits
+`0`.
 
 **No `--cwd` is deliberate.** A flag would re-admit the thing we are
 removing — a directory typed by hand — and the shell has a perfectly good
@@ -130,6 +137,101 @@ for `1:1` in the same second. When a session goes missing, `anchor ls
 --label tl.slot=1:1:1` is the only thing that shows it, and killing it by
 id is the only way to end it.
 
+## `tally fork <src> <dst>`
+
+`spawn` answers *claim a pad for what I am doing here*. `fork` answers the
+other half of the same question: **another one of those**, where *those* is
+a pad you can see and a directory you are not standing in.
+
+```sh
+$ tally fork 1:1 1:2
+forked 01M53KS… from 1:1:1 onto 1:1:2
+```
+
+It is `spawn` with one substitution: **the directory comes from the source
+pad instead of from `$PWD`**. Everything else — the occupancy check, the
+`tl.slot` label, adoption, the absence of `tl.spec` — is the same code and
+the same rules.
+
+| | | |
+|---|---|---|
+| `src` | **required** | the pad to inherit from |
+| `dst` | **required** | the pad to land on. There is no pad-picking here either |
+| cwd | the source's | the whole point |
+| command | the source's `argv[0]`, unless `--` says otherwise | |
+| args | **dropped**, unless `--` gives new ones | see below |
+| login shell | the source's | you get the environment that one got |
+
+**It inherits from the newest session the source pad has ever held, dead
+rows included.** That is the same rule `>` runs on
+([18](18-the-launch-column.md)) and it is what makes fork work on a pad
+whose agent has already exited: anchord keeps `cwd` and `command` on every
+row it has, so a pad that has *ever* held a session can be forked from.
+
+**The arguments are deliberately dropped**, and this is the rule that
+makes fork safe rather than clever. A pad running `claude --resume <id>`
+describes **one conversation**. Copying its argv would put a second agent
+on the same conversation, which is the one thing a new agent must not be.
+Same sentence, same reason, as `model::row_launch`.
+
+So fork is *same place, fresh agent*. It is not "fork the conversation",
+and the surface has no way to be — the session id a resume would need is
+the agent's to know, not ours ([23](23-gesture-brainstorm.md)).
+
+**`src` and `dst` may be the same pad** only if that pad is not drawn —
+which is the ordinary re-spawn-a-dead-pad case and is allowed by exactly
+the occupancy rule above, not by a carve-out.
+
+## `--count N`
+
+Both `spawn` and `fork` take `--count N`, `1..=8`. It claims **N
+consecutive pads, rightwards, in the address's row.**
+
+```sh
+$ cd ~/projects/futurumlab/tally
+$ tally spawn 2:1 --count 4 -- claude -p "port the parser to the new API"
+spawned 01M5…A on 1:2:1
+spawned 01M5…B on 1:2:2
+spawned 01M5…C on 1:2:3
+spawned 01M5…D on 1:2:4
+```
+
+That line is the whole of *"spawn four agents and give them a goal"*, and
+the two halves it is made of are worth separating:
+
+- **the four pads** are this flag,
+- **the goal** is not a feature at all. It is `argv`, after `--`, exactly
+  as it has always been.
+
+**There is no `--goal`.** A goal is text handed to a *new* process, which
+is what a command line already is. There is deliberately no way to send
+text to a session that is **already running**: tally attaches as an
+observer and never holds the control lease ([01](01-scope.md)), so it
+cannot type into a live PTY and must not learn how. *Spawn four on a goal*
+is free; *redirect four onto a goal* is out of scope by construction.
+
+### The rules
+
+**It refuses before it spawns anything.** Every target address is checked
+— in the row, inside column 8, and not drawn — and a single bad one fails
+the whole command with nothing created. The alternative is a partial fleet
+you then have to clean up by hand, which is worse than retyping.
+
+**It never leaves the row.** `--count 4` from `1:7` is a usage error, not
+a wrap onto row 2. Same rule as every address here: refused, not clamped
+([03](03-model.md#limits)).
+
+**`--count N` for `N > 1` does not adopt**, in tmux or out of it. There is
+one pane and N sessions, and picking one of them to show is a guess. It
+prints every id and returns. `--count 1` is exactly the command without
+the flag, adoption included.
+
+**A failure part-way through stops and reports.** The check is advisory
+for the same reason `spawn`'s is — list, decide, create, with nothing
+holding the addresses in between — so the honest thing on the third create
+failing is to say three landed and where, not to unwind two working
+agents.
+
 ## What it does not do
 
 - **No socket to tallyd.** [08-lifecycle.md](08-lifecycle.md#one-process-no-socket)
@@ -146,7 +248,11 @@ id is the only way to end it.
   tap on a dark pad ([18](18-the-launch-column.md)).
 - **No pad-picking.** It will not find you a free slot. The address is how
   you build muscle memory, and a grid that assigns addresses is one you look
-  up rather than know.
+  up rather than know. `--count` is not an exception: it fills *from* an
+  address you named, rightwards, and refuses rather than looking elsewhere.
+- **No text into a running session.** There is no `--goal`, no broadcast
+  and no send. tally is an observer and never holds the control lease
+  ([01](01-scope.md)); a goal reaches an agent as `argv` or not at all.
 - **No other subcommands** beyond the one below. `anchor ls` already lists,
   `$EDITOR` already edits. Each subcommand here exists because nothing else
   could do it.
@@ -197,6 +303,9 @@ reaches anchord reports what anchord said.
 | `9:1`, `a:b`, `1:2:3:4` | refused, **not clamped** — same rule as a label, and for the same reason ([03](03-model.md#limits)) |
 | a page name no `slots.toml` declares | refused, and lists the ones that exist |
 | the pad is drawn | refused, naming the session holding it and its state |
+| `--count` running past column 8 | refused, **not clamped** and not wrapped |
+| `--count` with any target drawn | refused before anything is created, naming the one in the way |
+| `fork` from a pad nothing has ever held | refused — there is no directory to inherit |
 | anchord unreachable | refused — a surface that cannot see is not a surface that spawns |
 | `--` with nothing after it | refused; an empty argv is a config error, not a spawn of the empty string |
 
