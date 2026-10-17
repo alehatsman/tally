@@ -226,6 +226,15 @@ pub enum Effect {
     /// putting a pad back where it came from is not a move, and the
     /// write that would express it is the one anchord already has.
     Holds,
+    /// A live session is here and the pad in your hand cannot land on
+    /// it. A tap does nothing, exactly as [`Skips`](Effect::Skips) — but
+    /// it is a separate variant because it is the only pad under a hold
+    /// that is *dim by consequence and bright by content*. With a hand
+    /// full, the question the grid answers flips from "what can I
+    /// touch" to "where is there room", and occupancy is the half of
+    /// that answer that has to stay readable
+    /// (`docs/22-the-mode-button.md#the-colours`).
+    Occupied,
     /// Something is here and this gesture does not apply to it. Dim.
     Skips,
     /// Nothing here for this gesture. Dark.
@@ -431,10 +440,12 @@ pub fn effect(action: Action, pad: Pad, hand: Option<Slot>) -> Effect {
             }
         }
         // Hand full: what it can land on. A pad with something alive on
-        // it is dim rather than a swap — two label writes are two calls,
-        // and a failure between them leaves two sessions claiming one
-        // address (`docs/22-the-mode-button.md#what-is-deliberately-not-here`).
-        Action::Move if pad.alive() => Effect::Skips,
+        // it is not a swap — two label writes are two calls, and a
+        // failure between them leaves two sessions claiming one address
+        // (`docs/22-the-mode-button.md#what-is-deliberately-not-here`).
+        // It stays occupancy-coloured rather than dim, because that is
+        // the shape the empty space is read against.
+        Action::Move if pad.alive() => Effect::Occupied,
         Action::Move => Effect::Acts(Consequence::Dropped),
     }
 }
@@ -952,7 +963,7 @@ mod tests {
         );
         assert_eq!(
             effect(Action::Move, pad(Some(SlotState::Working)), Some(held)),
-            Effect::Skips,
+            Effect::Occupied,
             "no swap: two writes are two calls"
         );
         assert_eq!(
@@ -964,6 +975,54 @@ mod tests {
             Effect::Acts(Consequence::Dropped),
             "dead history underneath is what every reused pad looks like"
         );
+    }
+
+    /// Dark grey carries two meanings — *this gesture will not touch
+    /// it* under a held Stop, and *you can put it down here* with a
+    /// full hand — and the only thing keeping them apart is that they
+    /// can never share a frame. That is this: **with a pad in hand,
+    /// every pad is Holds, Occupied or Dropped**, and `Skips` is
+    /// unreachable. If an arm is ever added that breaks this, the dim
+    /// level starts lying (`docs/22-the-mode-button.md#the-colours`).
+    #[test]
+    fn a_full_hand_never_dims_for_the_other_reason() {
+        let held = Slot {
+            page: 1,
+            row: 2,
+            col: 2,
+        };
+        let carried = Pad {
+            state: Some(SlotState::Working),
+            in_hand: true,
+            ..Pad::default()
+        };
+        let every_pad = [
+            carried,
+            pad(None),
+            pad(Some(SlotState::Empty)),
+            pad(Some(SlotState::Working)),
+            pad(Some(SlotState::Quiet)),
+            pad(Some(SlotState::NeedsAnswer {
+                source: crate::signal::Source::Derived,
+            })),
+            pad(Some(SlotState::Failed { code: 1 })),
+            pad(Some(SlotState::Lost { reclaimable: false })),
+            Pad {
+                purgeable: true,
+                ..Pad::default()
+            },
+        ];
+        for p in every_pad {
+            let e = effect(Action::Move, p, Some(held));
+            assert_ne!(e, Effect::Skips, "{p:?} dims for the wrong reason");
+            assert!(
+                matches!(
+                    e,
+                    Effect::Holds | Effect::Occupied | Effect::Acts(Consequence::Dropped)
+                ),
+                "{p:?} -> {e:?}"
+            );
+        }
     }
 
     /// Move never ends anything and never forgets anything. The two

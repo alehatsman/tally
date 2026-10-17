@@ -119,7 +119,10 @@ impl Context<'_> {
             // where it came from is not a move and writes nothing, which
             // is the same answer the preview gave by lighting it rather
             // than dimming it.
-            Effect::None | Effect::Skips | Effect::Holds => Ok(Done::Nothing),
+            // `Occupied` is a live session with your hand already full.
+            // It is not a swap and never has been — the colour changed,
+            // the answer did not.
+            Effect::None | Effect::Skips | Effect::Holds | Effect::Occupied => Ok(Done::Nothing),
             Effect::Acts(Consequence::Ends) => self.kill(at),
             Effect::Acts(Consequence::Forgotten) => Ok(self.forget(at)),
             // A pick-up is surface state, not an anchord call. It is

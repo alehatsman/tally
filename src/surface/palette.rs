@@ -24,8 +24,17 @@ pub const OFF: Entry = 0;
 /// — a navigation button with somewhere to go ([`crate::render::arrow`],
 /// [`crate::render::overview_button`], [`crate::render::arts`]), a `>`
 /// that would launch ([`crate::render::launch`]), a pad a held modifier
-/// will skip ([`crate::render::preview`]), and the empty run that marks
-/// where the window is standing ([`crate::render::overview`]).
+/// will skip ([`crate::render::preview`]), the empty run that marks where
+/// the window is standing ([`crate::render::overview`]), and — with a pad
+/// in hand under a held Move — every pad it could land on.
+///
+/// That last one is the only place this value means *the target* rather
+/// than *not the target*, and it is safe because the two can never share
+/// a frame: with a full hand `Effect::Skips` is unreachable. It reads
+/// right for the same reason it reads right everywhere else, though —
+/// most of the grid is a legal destination, and a surface that lights
+/// two thirds of itself brightly has said nothing
+/// (`docs/22-the-mode-button.md#the-colours`).
 ///
 /// Brightness answers "where am I" before hue answers anything, which is
 /// why the top row spends exactly one bright colour and this carries
@@ -55,7 +64,11 @@ pub const RED: Entry = 5;
 /// (`docs/22-the-mode-button.md`).
 pub const DARK_RED: Entry = 7;
 /// Orange. **Needs an answer** — the one colour the product lives or dies
-/// by, and since `9b2eee5` the only thing on the surface that moves.
+/// by, and since `9b2eee5` the only thing that moves on the resting
+/// surface. A held Move flashes the pad in your hand — faster than this,
+/// deliberately, because a flash is one beat where this ramp is two and
+/// the clock they share is not allowed to move for it
+/// (`docs/22-the-mode-button.md#the-colours`).
 pub const AMBER: Entry = 9;
 /// Yellow with a green cast.
 ///
@@ -76,7 +89,9 @@ pub const GREEN: Entry = 21;
 /// Unused, and the reason is worth keeping: it *was* "exited clean", and
 /// three greens on one grid proved legible yet unmemorable.
 pub const DARK_GREEN: Entry = 23;
-/// Cyan. **Move at rest, and a pad you could pick up**
+/// Cyan. **Move at rest, and a session that is there** — a pad you could
+/// pick up with an empty hand, every occupied pad once your hand is full,
+/// and, flashing against [`OFF`], the pad in your hand
 /// ([`crate::render::action`], [`crate::render::preview`]).
 ///
 /// It failed once, as a page button lit beside a white current page: both

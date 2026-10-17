@@ -15,6 +15,13 @@
 //! somebody sits beside all day, and a hard 50% flash reads as urgent for
 //! a minute and as stressful by the afternoon.
 //!
+//! Both of those are claims about the surface **at rest**, and at rest
+//! amber is the only thing moving. The one exemption is the pad in your
+//! hand under a held Move, which does blink: one pad, for as long as
+//! your thumb is down, on a grid amber has been painted off of. Nothing
+//! sits beside it all day, so nothing it costs is anything the rules
+//! above were buying (`docs/22-the-mode-button.md#the-colours`).
+//!
 //! Green used to move too: a pulse meant *producing output*. That cost
 //! more than it bought and was reported as **tiring** after a day beside
 //! it, which is the same measurement that killed the hard amber flash and
@@ -31,7 +38,7 @@
 use crate::chord::Action;
 use crate::model::{Consequence, Effect};
 use crate::signal::SlotState;
-use crate::surface::palette::{AMBER, DARK_GREY, DARK_RED, GREEN, RED, TURQUOISE, WHITE};
+use crate::surface::palette::{AMBER, DARK_GREY, DARK_RED, GREEN, OFF, RED, TURQUOISE, WHITE};
 use crate::surface::Cell;
 
 /// How one slot is lit.
@@ -229,7 +236,20 @@ pub fn action(button: Option<Action>, held: bool) -> Cell {
 /// would have to be wrong about one of them.
 ///
 /// Nothing here pulses — a preview lasts as long as your thumb does, and
-/// motion on sixty pads for two seconds is noise.
+/// motion on sixty pads for two seconds is noise. The pad in your hand
+/// is the one exemption, and it flashes rather than pulses.
+///
+/// **Dim is not always the skipped level.** Under a held Stop, bright is
+/// the target and dim is what will be spared. Under a held Move with a
+/// pad in hand it inverts: most of the grid is a legal destination, so
+/// dim is the target and bright is what is in the way. The two readings
+/// cannot collide, because `Effect::Skips` is unreachable with a full
+/// hand (`docs/22-the-mode-button.md#the-colours`).
+#[expect(
+    clippy::match_same_arms,
+    reason = "skipped and droppable are the same pixel for different reasons, \
+              and they are kept apart so that stays an observation"
+)]
 pub fn preview(effect: Effect) -> Cell {
     match effect {
         Effect::None => Cell::Off,
@@ -239,14 +259,61 @@ pub fn preview(effect: Effect) -> Cell {
         // are already gone.
         Effect::Acts(Consequence::Ends) => Cell::Static(RED),
         Effect::Acts(Consequence::Forgotten) => Cell::Static(DARK_RED),
-        // Both halves of a move are turquoise, and they never share a
-        // grid: your hand is either empty or full, so one colour answers
-        // "what can I pick up" and "where can it land" without ever
-        // having to mean both at once.
-        Effect::Acts(Consequence::PickedUp | Consequence::Dropped) => Cell::Static(TURQUOISE),
-        // The pad in your hand. White is already *this is live right
-        // now*, which is what a pad you are carrying is.
-        Effect::Holds => Cell::Static(WHITE),
+        // Turquoise is *a session is here*, and it means that in both
+        // halves of a move: what you could pick up while your hand was
+        // empty, and what is in the way once it is full. So the
+        // occupied board does not repaint under you when you pick
+        // something up — what changes is that the free pads light
+        // instead (`docs/22-the-mode-button.md#the-colours`).
+        Effect::Acts(Consequence::PickedUp) | Effect::Occupied => Cell::Static(TURQUOISE),
+        // Where it can land, at the dimmest level the language has.
+        //
+        // Not bright, and that is the correction: with a hand full,
+        // *most of the grid* is a legal destination, so lighting
+        // destinations brightly lights two thirds of the surface and
+        // the one pad you care about stops standing out. Dim inverts
+        // it — the room reads as room, and the two things that matter
+        // (what is occupied, what is in your hand) are the only bright
+        // things left.
+        //
+        // [`DARK_GREY`] rather than a new entry because it is the only
+        // dim level in the language and it already means *available,
+        // not urgent* (`docs/02-surface.md#colour`), which is a landing
+        // spot exactly. It also means *this gesture will not touch it*
+        // under a held Stop — two meanings for one value, and they
+        // never share a frame: with a hand full, `Effect::Skips` is
+        // unreachable (`model::effect`), which
+        // `a_full_hand_never_dims_for_the_other_reason` pins.
+        Effect::Acts(Consequence::Dropped) => Cell::Static(DARK_GREY),
+        // The pad in your hand: turquoise, like every other occupied
+        // pad, and the only one that moves. It is one of them, and it
+        // is the one you are carrying — hue says the first, motion says
+        // the second.
+        //
+        // **Flash, not pulse**, and the difference is the point. Both
+        // run on the one clock ([`crate::tempo`]), so the only way to
+        // make this pad faster than amber without dragging amber along
+        // is to pick the shorter figure: a pulse is a two-beat ramp, a
+        // flash is one beat. Twice the rate, on the one pad that is
+        // allowed to be impatient.
+        //
+        // It flashes against [`OFF`] rather than another colour. Dark
+        // is the one thing on this grid that cannot be misread here —
+        // an occupied pad is turquoise and a destination is a dim grey
+        // that never goes fully out, so the gap says *nothing*, which
+        // is what a pad that is no longer anywhere should say half the
+        // time.
+        //
+        // This is the single exemption to both *only amber animates*
+        // and *nothing blinks*, and it costs nothing either rule was
+        // protecting: those were measured on a surface somebody sits
+        // beside all day. This lasts as long as your thumb, it is
+        // exactly one pad, and a held modifier has already painted
+        // amber off the grid it is on.
+        Effect::Holds => Cell::Flash {
+            b: TURQUOISE,
+            a: OFF,
+        },
     }
 }
 
@@ -295,8 +362,9 @@ mod tests {
         SlotState::Lost { reclaimable: false },
     ];
 
-    /// Two things move, and both breathe. What separates them is hue, not
-    /// rhythm -- green for alive, amber for wanting you.
+    /// At rest, one thing moves. (Under a held Move a second one does --
+    /// the pad in your hand -- but that is a preview, not a slot, and
+    /// `at_most_one_pad_in_a_preview_moves` is where it is pinned.)
     #[test]
     fn only_attention_moves_and_it_breathes() {
         let moving: Vec<_> = ALL.into_iter().filter(|&s| animated(slot(s))).collect();
@@ -310,9 +378,15 @@ mod tests {
         );
     }
 
-    /// Nothing blinks, anywhere. A hard 50% flash is legible and tiring,
-    /// and this is a surface somebody sits beside all day -- so urgency is
-    /// carried by hue, which does not wear out.
+    /// Nothing blinks, anywhere -- among the things that are *there* when
+    /// you are not touching the surface. A hard 50% flash is legible and
+    /// tiring, and this is a surface somebody sits beside all day, so
+    /// urgency is carried by hue, which does not wear out.
+    ///
+    /// The pad in your hand is the one exemption and is not covered here
+    /// by design: it is a preview, it lasts as long as your thumb, and
+    /// `the_pad_in_your_hand_is_the_fastest_thing_on_the_grid` is where
+    /// it is pinned.
     #[test]
     fn nothing_on_the_surface_blinks() {
         let blinking: Vec<_> = ALL
@@ -535,12 +609,13 @@ mod tests {
         assert_eq!(arrow(true), Cell::Static(DARK_GREY));
     }
 
-    const EFFECTS: [Effect; 7] = [
+    const EFFECTS: [Effect; 8] = [
         Effect::Acts(Consequence::Ends),
         Effect::Acts(Consequence::Forgotten),
         Effect::Acts(Consequence::PickedUp),
         Effect::Acts(Consequence::Dropped),
         Effect::Holds,
+        Effect::Occupied,
         Effect::Skips,
         Effect::None,
     ];
@@ -557,12 +632,15 @@ mod tests {
     }
 
     /// A preview lasts as long as your thumb. Motion on sixty pads for
-    /// two seconds is noise, not information.
+    /// two seconds is noise, not information — so **at most one pad in
+    /// any preview moves**, and it is the one in your hand.
     #[test]
-    fn nothing_in_a_preview_moves() {
-        for effect in EFFECTS {
-            assert!(!animated(preview(effect)), "{effect:?}");
-        }
+    fn at_most_one_pad_in_a_preview_moves() {
+        let moving: Vec<Effect> = EFFECTS
+            .into_iter()
+            .filter(|&e| animated(preview(e)))
+            .collect();
+        assert_eq!(moving, vec![Effect::Holds], "{moving:?}");
     }
 
     /// Three levels, and the middle one is the one that earns its keep.
@@ -610,15 +688,66 @@ mod tests {
         }
     }
 
-    /// Both halves of a move are turquoise and neither moves. After
-    /// 9b2eee5 the only animated thing on the surface is amber, so a
-    /// preview that breathed would be claiming something is asking.
+    /// Turquoise is *a session is here*, in both halves of a move: it
+    /// is what you can pick up with an empty hand, and it is every
+    /// occupied pad once your hand is full. The pad being carried wears
+    /// it too and is the only thing on the grid that moves.
     #[test]
-    fn a_move_is_turquoise_and_still() {
-        for c in [Consequence::PickedUp, Consequence::Dropped] {
-            assert_eq!(preview(Effect::Acts(c)), Cell::Static(TURQUOISE), "{c:?}");
+    fn turquoise_means_a_session_is_here_in_both_halves() {
+        assert_eq!(
+            preview(Effect::Acts(Consequence::PickedUp)),
+            Cell::Static(TURQUOISE)
+        );
+        assert_eq!(preview(Effect::Occupied), Cell::Static(TURQUOISE));
+        assert_eq!(
+            preview(Effect::Holds),
+            Cell::Flash {
+                b: TURQUOISE,
+                a: OFF
+            }
+        );
+    }
+
+    /// Both rules it is exempt from -- *only amber animates* and
+    /// *nothing blinks* -- were measured on a surface at rest. This pad
+    /// is not at rest: it is the thing you are holding, and it is the
+    /// fastest figure the device offers, because a flash is one beat
+    /// where amber's pulse is two.
+    #[test]
+    fn the_pad_in_your_hand_is_the_fastest_thing_on_the_grid() {
+        let hand = preview(Effect::Holds);
+        assert!(
+            matches!(hand, Cell::Flash { .. }),
+            "a pulse is half the rate: {hand:?}"
+        );
+        assert!(
+            !matches!(
+                slot(SlotState::NeedsAnswer {
+                    source: Source::Derived
+                }),
+                Cell::Flash { .. }
+            ),
+            "and amber must not have been dragged along with it"
+        );
+        for e in EFFECTS {
+            if e != Effect::Holds {
+                assert!(!matches!(preview(e), Cell::Flash { .. }), "{e:?}");
+            }
         }
-        assert_eq!(preview(Effect::Holds), Cell::Static(WHITE));
+    }
+
+    /// With a pad in hand, most of the grid is a legal destination — so
+    /// room is drawn at the **dimmest** level the language has, and the
+    /// two things that are not room stay the only bright things. It
+    /// still has to be tellable from unlit, or "most of the grid" and
+    /// "none of it" look the same.
+    #[test]
+    fn somewhere_to_land_is_dim_but_never_dark() {
+        let lands = preview(Effect::Acts(Consequence::Dropped));
+        assert_eq!(lands, Cell::Static(DARK_GREY));
+        assert_ne!(lands, Cell::Off, "unlit is not an invitation");
+        assert_ne!(lands, preview(Effect::Occupied));
+        assert_ne!(lands, preview(Effect::Holds));
     }
 
     /// An unassigned button lit like a live one is an invitation to press
@@ -641,7 +770,7 @@ mod tests {
     fn at_most_one_top_row_button_is_bright() {
         let bright = |c: Cell| {
             matches!(c, Cell::Static(e) | Cell::Pulse(e)
-                if e != crate::surface::palette::OFF && e != DARK_GREY)
+                if e != OFF && e != DARK_GREY)
         };
         let lit = [arrow(true), arrow(true), back(true), next(true)];
         let count = lit.into_iter().filter(|&c| bright(c)).count();

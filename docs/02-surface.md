@@ -141,15 +141,15 @@ is its one definition:
 | entry | colour | used for | on the device |
 |---:|---|---|---|
 | 0 | off | nothing here, and nothing this gesture would touch | unlit — see the note below |
-| 1 | dark grey | **available, not urgent** — a live arrow, a `>` that would launch, `Session`, `Drums`, a pad a held modifier will skip, the overview's window marker | a dim glow, cooler than "grey" suggests |
+| 1 | dark grey | **available, not urgent** — a live arrow, a `>` that would launch, `Session`, `Drums`, a pad a held modifier will skip, the overview's window marker, and under a held Move with a pad in hand, every pad it could land on | a dim glow, cooler than "grey" suggests |
 | 3 | white | **what your hand is doing** — a held modifier, `◄` with an origin, `Session` while the map is up | white |
 | 5 | red | exited non-zero; the corner resting in Stop; a pad that hold would terminate | red |
 | 7 | dark red | *the daemon had a problem* — a `lost` session, an unreachable anchord on the logo; and a pad whose ended rows a held Stop would forget | a deeper red, clearly distinct from 5 |
-| 9 | **amber** | **needs an answer** — and the only thing on the surface that moves | orange |
+| 9 | **amber** | **needs an answer** — and the only thing that moves on the resting surface | orange |
 | 13 | yellow | nothing in the colour language. The Uprising's smile, which is why ([21](21-the-arts.md)) | yellow with a green cast |
 | 21 | **green** | **alive**, static, working and quiet alike | green |
 | 23 | dark green | unused. It *was* "exited clean", and three greens proved legible yet unmemorable | green — close to 21, but distinguishable |
-| 37 | turquoise | Move at rest, and a pad you could pick up ([22](22-the-mode-button.md)) | cyan |
+| 37 | turquoise | Move at rest, and **a session is here** under a held Move — what you could pick up, what is in the way, and, flashing against dark, the pad in your hand ([22](22-the-mode-button.md)) | cyan |
 | 45 | blue | unused. It *was* the action buttons at rest, until kill took the colour of its own consequence | blue |
 
 Three of these took a judgment a photograph could not make, and all three
