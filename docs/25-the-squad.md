@@ -271,14 +271,12 @@ the same time. So, plainly, what is not known:
   the join never needed it. **The join is free.**
 - **550 ms per poll is heavy for a 2 s tick.** A hook pushes; this polls.
 
-**And it breaks a line written earlier in this document.** The section
-below says `tallyd` never reads `claude agents`. If `waitingFor` is the
-amber, `tallyd` is precisely who wants it. The reconciliation that may
-survive both is *hooks stay the amber because they push, and `waitingFor`
-is corroboration on a slower cadence* — but that is a decision about
-[04](04-signals.md) and [14](14-attention.md), **not one this document gets
-to make.** It is recorded here because it was measured here, and it is
-flagged as unresolved rather than quietly folded in.
+**It was measured here and it is decided elsewhere.**
+[26](26-the-level-and-the-edge.md) is that page: a hook is an edge and
+`status` is a level, they fail in opposite directions, and the level gets
+one job — vetoing an amber that the hook raised and never lowered. The
+squad reads the same field for its own reasons; neither use makes
+`claude agents` a roster.
 
 ### What the spike did not find
 
@@ -573,12 +571,13 @@ The two sets are not the same. anchor sees `isayes`, `codex` and bare
 shells, and the grid is about all of them; `status` exists only for Claude
 members, and a squad is the only thing that needs it.
 
-⚠️ **That line held for about an hour.** `waitingFor: "permission prompt"`
-is the amber, and the amber is `tallyd`'s business — so the rule is
-already under a pressure this document cannot relieve. **It is named here,
-not resolved here.** Whatever decides it belongs with
-[04](04-signals.md) and [14](14-attention.md), and until then no code
-reads `claude agents` from the daemon.
+⚠️ **That line did not survive the day.**
+[26](26-the-level-and-the-edge.md) spends it: `waitingFor` is the amber,
+the amber is `tallyd`'s business, and `tallyd` is given one read of
+`claude agents` — to **clear** a stale `tl.attention`, never to raise one.
+The roster is still `anchor ls` alone. The rule bent in exactly one
+direction, on a page of its own, which is the only way it was ever going
+to bend.
 
 ## What this costs
 
@@ -618,14 +617,17 @@ than feel.
 
 ## Open questions
 
-1. **Does `waitingFor` replace the hook, corroborate it, or neither?** The
-   one question here that is not about squads, and the one with the most
-   riding on it — it touches [04](04-signals.md), [14](14-attention.md) and
-   the week of `attention.jsonl` the [README](../README.md) is waiting on.
-   It needs its own page.
-2. **Does `waiting` cover a question, or only a permission prompt?** One
-   value has been observed. If an agent asking you something does not raise
-   it, the field covers less of the amber than it appears to.
+1. ~~**Does `waitingFor` replace the hook, corroborate it, or neither?**~~
+   **Answered, and it moved out** — [26](26-the-level-and-the-edge.md).
+   Neither: it corroborates, and it is allowed to *clear* a stale amber and
+   nothing else. It cannot replace the hooks, because a finished turn —
+   the moment [14](14-attention.md) says the grid exists to report — reads
+   `idle`, the same string as a session that was never given anything.
+2. ~~**Does `waiting` cover a question, or only a permission prompt?**~~
+   **Both**, measured: `waitingFor` is `input needed` for an
+   `AskUserQuestion` and `permission prompt` for a tool dialog *and* a plan
+   approval. A session on the startup trust dialog is absent from the array
+   entirely, which is why none of this can be a liveness source.
 3. **How does a member tell the ledger it is done?** One writer per field
    is the rule; the mechanism is not designed. A hook is the obvious
    candidate, which is how the amber already works
