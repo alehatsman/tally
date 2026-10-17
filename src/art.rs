@@ -31,6 +31,10 @@ pub enum Piece {
     Fire,
     /// Tetrominoes that place themselves, stack, and clear lines.
     Tetris,
+    /// A chomping Pac-Man, and the ghost that takes its turn.
+    Pacman,
+    /// Pixel animals, one at a time, each breathing a little.
+    Bestiary,
     /// The joke: tally's own colour language, telling a story about tally.
     Uprising,
 }
@@ -40,12 +44,14 @@ impl Piece {
     ///
     /// Three that are only pretty, two that are classics, and the joke
     /// last — a reel ends on the thing worth filming.
-    pub const REEL: [Self; 6] = [
+    pub const REEL: [Self; 8] = [
         Self::Plasma,
         Self::Life,
         Self::Rain,
         Self::Fire,
         Self::Tetris,
+        Self::Pacman,
+        Self::Bestiary,
         Self::Uprising,
     ];
 
@@ -75,6 +81,8 @@ impl Piece {
             Self::Rain => "rain",
             Self::Fire => "fire",
             Self::Tetris => "tetris",
+            Self::Pacman => "pacman",
+            Self::Bestiary => "bestiary",
             Self::Uprising => "uprising",
         }
     }
@@ -112,7 +120,7 @@ impl Reel {
     /// Start `piece` from its first frame.
     pub fn new(piece: Piece) -> Self {
         let sim = match piece {
-            Piece::Plasma | Piece::Uprising => Sim::Stateless,
+            Piece::Plasma | Piece::Pacman | Piece::Bestiary | Piece::Uprising => Sim::Stateless,
             Piece::Life => Sim::Life(Life::seeded(SEED)),
             Piece::Rain => Sim::Rain(Rain::seeded(SEED)),
             Piece::Fire => Sim::Fire(Fire::seeded(SEED)),
@@ -158,14 +166,29 @@ impl Reel {
     pub fn frame(&self) -> Frame {
         let mut f = Frame::dark();
         match &self.sim {
-            Sim::Stateless if self.piece == Piece::Plasma => plasma(self.n, &mut f),
-            Sim::Stateless => uprising(self.n % UPRISING_LOOP, &mut f),
+            Sim::Stateless => stateless(self.piece, self.n, &mut f),
             Sim::Life(l) => l.paint(&mut f),
             Sim::Rain(r) => r.paint(&mut f),
             Sim::Fire(fire) => fire.paint(&mut f),
             Sim::Tetris(t) => t.paint(&mut f),
         }
         f
+    }
+}
+
+/// The pieces that carry no state: frame *n* is a function of *n*.
+///
+/// Total over [`Piece`] rather than falling through a `_`, so adding a
+/// piece and forgetting to draw it is a compile error and not a dark grid.
+fn stateless(piece: Piece, n: u32, frame: &mut Frame) {
+    match piece {
+        Piece::Plasma => plasma(n, frame),
+        Piece::Pacman => pacman(n, frame),
+        Piece::Bestiary => bestiary(n, frame),
+        Piece::Uprising => uprising(n % UPRISING_LOOP, frame),
+        // These paint from their own board; `Reel::new` hands them a
+        // `Sim` and they never arrive here.
+        Piece::Life | Piece::Rain | Piece::Fire | Piece::Tetris => {}
     }
 }
 
@@ -393,25 +416,25 @@ const HEAT_MAX: u8 = 6;
 /// two of them is a subtraction.
 mod beat {
     /// Green pads arrive, one every other frame.
-    pub(super) const SPAWN: u32 = 128;
+    pub(super) const SPAWN: u32 = 64;
     /// All of them working.
-    pub(super) const WORK: u32 = 190;
+    pub(super) const WORK: u32 = 96;
     /// They start asking, one every other frame.
-    pub(super) const ASK: u32 = 318;
+    pub(super) const ASK: u32 = 160;
     /// All of them asking at once.
-    pub(super) const PANIC: u32 = 380;
+    pub(super) const PANIC: u32 = 192;
     /// They start giving up, one a frame.
-    pub(super) const FALL: u32 = 444;
+    pub(super) const FALL: u32 = 256;
     /// All of them red.
-    pub(super) const DOOM: u32 = 500;
+    pub(super) const DOOM: u32 = 288;
     /// A beat of nothing, which is what makes the next part land.
-    pub(super) const DARK: u32 = 515;
+    pub(super) const DARK: u32 = 300;
     /// The face draws itself, three frames a pixel.
-    pub(super) const DRAW: u32 = 545;
+    pub(super) const DRAW: u32 = 330;
 }
 
 /// How long the whole thing runs before it starts over.
-const UPRISING_LOOP: u32 = 760;
+const UPRISING_LOOP: u32 = 560;
 /// How many pads there are to light, which is also how many agents the
 /// joke is about.
 const PADS: u32 = 64;
@@ -510,12 +533,12 @@ fn uprising(n: u32, f: &mut Frame) {
     let asking = Cell::Pulse(AMBER);
     let gone = Cell::Static(RED);
     if n < beat::SPAWN {
-        turning(f, n / 2, arrival, working);
+        turning(f, n, arrival, working);
     } else if n < beat::WORK {
         fill(f, working);
     } else if n < beat::ASK {
         fill(f, working);
-        turning(f, (n - beat::WORK) / 2, reading, asking);
+        turning(f, n - beat::WORK, reading, asking);
     } else if n < beat::PANIC {
         fill(f, asking);
     } else if n < beat::FALL {
@@ -1015,6 +1038,313 @@ fn well_cost(well: u64) -> i32 {
     cost
 }
 
+// ── sprites ──────────────────────────────────────────────────────────────
+
+/// An 8×8 picture, one byte per row, row 0 at the top.
+///
+/// **Bit 7 is column 1**, so a literal written in binary *is* the sprite —
+/// you read the cat off the source. That is the whole reason this is a
+/// `[u8; 8]` and not a `u64`.
+type Sprite = [u8; 8];
+
+/// Paint every set bit of `sprite` in `entry`, leaving the rest alone.
+///
+/// Leaving the rest alone is what lets a second sprite go on top: a body
+/// in one colour, then eyes in white over it.
+fn draw(frame: &mut Frame, sprite: Sprite, entry: Entry) {
+    for row in 1..=8u8 {
+        let bits = sprite.get(usize::from(row - 1)).copied().unwrap_or(0);
+        for col in 1..=8u8 {
+            if bits >> (8 - col) & 1 == 1 {
+                frame.set(Button::Grid { row, col }, Cell::Static(entry));
+            }
+        }
+    }
+}
+
+// ── pacman ───────────────────────────────────────────────────────────────
+
+/// Frames per mouth position. Four positions, so a chomp is twenty
+/// frames — about a chomp and a half a second, which is the speed the
+/// arcade ran at and the speed it has to be to read as one.
+const CHOMP: u32 = 5;
+/// How long Pac-Man has the grid before the ghost takes it.
+const PAC_RUN: u32 = 160;
+/// And how long the ghost keeps it.
+const GHOST_RUN: u32 = 96;
+/// Frames per foot position. The ghost's shuffle is the whole reason it
+/// reads as a ghost and not as a bell.
+const SHUFFLE: u32 = 8;
+const PACMAN_LOOP: u32 = PAC_RUN + GHOST_RUN;
+
+/// The chomp, as four frames. Open, half, shut, half — the mouth goes
+/// back the way it came, which is what a chomp is.
+const PAC: [Sprite; 4] = [
+    [
+        0b0011_1100,
+        0b0111_1110,
+        0b1111_1100,
+        0b1111_1000,
+        0b1111_0000,
+        0b1111_1000,
+        0b0111_1110,
+        0b0011_1100,
+    ],
+    [
+        0b0011_1100,
+        0b0111_1110,
+        0b1111_1110,
+        0b1111_1100,
+        0b1111_1100,
+        0b1111_1110,
+        0b0111_1110,
+        0b0011_1100,
+    ],
+    [
+        0b0011_1100,
+        0b0111_1110,
+        0b1111_1111,
+        0b1111_1111,
+        0b1111_1111,
+        0b1111_1111,
+        0b0111_1110,
+        0b0011_1100,
+    ],
+    [
+        0b0011_1100,
+        0b0111_1110,
+        0b1111_1110,
+        0b1111_1100,
+        0b1111_1100,
+        0b1111_1110,
+        0b0111_1110,
+        0b0011_1100,
+    ],
+];
+
+/// The ghost, feet left and feet right.
+const GHOST: [Sprite; 2] = [
+    [
+        0b0011_1100,
+        0b0111_1110,
+        0b1111_1111,
+        0b1111_1111,
+        0b1111_1111,
+        0b1111_1111,
+        0b1111_1111,
+        0b1100_1100,
+    ],
+    [
+        0b0011_1100,
+        0b0111_1110,
+        0b1111_1111,
+        0b1111_1111,
+        0b1111_1111,
+        0b1111_1111,
+        0b1111_1111,
+        0b0011_0011,
+    ],
+];
+
+/// Two eyes, white, over whichever body is underneath.
+const GHOST_EYES: Sprite = [
+    0b0000_0000,
+    0b0000_0000,
+    0b0011_0110,
+    0b0011_0110,
+    0b0000_0000,
+    0b0000_0000,
+    0b0000_0000,
+    0b0000_0000,
+];
+
+/// All four of them, in the arcade's order: Blinky, Pinky, Inky, Clyde.
+/// A different one each time round, which costs one modulo and is the
+/// detail that makes somebody look twice.
+const GHOST_HUES: [Entry; 4] = [RED, 57, 37, AMBER];
+
+fn pacman(n: u32, frame: &mut Frame) {
+    let t = n % PACMAN_LOOP;
+    if t < PAC_RUN {
+        let phase = usize::try_from(t / CHOMP % 4).unwrap_or(0);
+        draw(frame, PAC.get(phase).copied().unwrap_or(PAC[2]), YELLOW);
+        return;
+    }
+    let foot = usize::try_from((t - PAC_RUN) / SHUFFLE % 2).unwrap_or(0);
+    let which = usize::try_from(n / PACMAN_LOOP % 4).unwrap_or(0);
+    let body = GHOST_HUES.get(which).copied().unwrap_or(RED);
+    draw(frame, GHOST.get(foot).copied().unwrap_or(GHOST[0]), body);
+    draw(frame, GHOST_EYES, WHITE);
+}
+
+// ── bestiary ─────────────────────────────────────────────────────────────
+
+/// Frames per pose. Two poses an animal, so this is also how long one
+/// breath lasts.
+const BEAST_POSE: u32 = 18;
+/// How long each animal keeps the grid: six poses, about three seconds.
+const BEAST_HOLD: u32 = BEAST_POSE * 6;
+
+/// Cat, dog, fish, bird, rabbit — two poses each, because a sprite that
+/// does not move is a logo, and the grid already has one of those.
+const BEASTS: [[Sprite; 2]; 5] = [
+    // Cat, sitting. Second pose puts the tail up.
+    [
+        [
+            0b0100_0010,
+            0b0110_0110,
+            0b0111_1110,
+            0b0111_1110,
+            0b0111_1110,
+            0b0011_1100,
+            0b0111_1110,
+            0b0110_0110,
+        ],
+        [
+            0b0100_0010,
+            0b0110_0110,
+            0b0111_1110,
+            0b0111_1110,
+            0b0111_1111,
+            0b0011_1101,
+            0b0111_1110,
+            0b0110_0110,
+        ],
+    ],
+    // Dog, side on, tail wagging.
+    [
+        [
+            0b0000_0011,
+            0b1100_0011,
+            0b1111_1110,
+            0b1111_1110,
+            0b0111_1110,
+            0b0111_1110,
+            0b0100_1100,
+            0b0100_1100,
+        ],
+        [
+            0b0000_0110,
+            0b1100_0110,
+            0b1111_1110,
+            0b1111_1110,
+            0b0111_1110,
+            0b0111_1110,
+            0b0100_1100,
+            0b0100_1100,
+        ],
+    ],
+    // Fish. The tail is the half that moves.
+    [
+        [
+            0b0000_0000,
+            0b0011_1000,
+            0b0111_1101,
+            0b1111_1111,
+            0b1111_1101,
+            0b0111_1000,
+            0b0011_0000,
+            0b0000_0000,
+        ],
+        [
+            0b0000_0000,
+            0b0011_1000,
+            0b0111_1100,
+            0b1111_1111,
+            0b1111_1111,
+            0b0111_1100,
+            0b0011_0001,
+            0b0000_0000,
+        ],
+    ],
+    // Bird, wings down and wings up.
+    [
+        [
+            0b0001_1000,
+            0b0011_1100,
+            0b0111_1110,
+            0b1111_1111,
+            0b0111_1110,
+            0b0010_0100,
+            0b0010_0100,
+            0b0000_0000,
+        ],
+        [
+            0b1001_1001,
+            0b0111_1110,
+            0b0111_1110,
+            0b0111_1110,
+            0b0111_1110,
+            0b0010_0100,
+            0b0010_0100,
+            0b0000_0000,
+        ],
+    ],
+    // Rabbit, ears up and one ear folded.
+    [
+        [
+            0b0010_0100,
+            0b0010_0100,
+            0b0011_1100,
+            0b0111_1110,
+            0b0111_1110,
+            0b1111_1110,
+            0b0111_1100,
+            0b0011_0110,
+        ],
+        [
+            0b0000_0100,
+            0b0011_0100,
+            0b0011_1100,
+            0b0111_1110,
+            0b0111_1110,
+            0b1111_1110,
+            0b0111_1100,
+            0b0011_0110,
+        ],
+    ],
+];
+
+/// Where each animal's eyes are, drawn white over the body. One pad each,
+/// because two pads of white on an 8×8 face is a mask, not a look.
+const BEAST_EYES: [Sprite; 5] = [
+    [0, 0, 0, 0b0001_0010, 0, 0, 0, 0], // cat
+    [0, 0b0100_0000, 0, 0, 0, 0, 0, 0], // dog
+    [0, 0, 0b0001_0000, 0, 0, 0, 0, 0], // fish
+    [0, 0, 0b0010_0100, 0, 0, 0, 0, 0], // bird
+    [0, 0, 0, 0b0010_0100, 0, 0, 0, 0], // rabbit
+];
+
+/// One hue each. A white rabbit, because the palette has exactly one
+/// white and this is the only piece with somewhere to spend it.
+const BEAST_HUES: [Entry; 5] = [AMBER, 45, 37, 57, WHITE];
+
+/// Eyes go on in the body's colour when the body is already white —
+/// otherwise the rabbit has no face at all.
+fn eye_colour(body: Entry) -> Entry {
+    if body == WHITE {
+        DARK_GREY
+    } else {
+        WHITE
+    }
+}
+
+const BESTIARY_LOOP: u32 = BEAST_HOLD * 5;
+
+fn bestiary(n: u32, frame: &mut Frame) {
+    let t = n % BESTIARY_LOOP;
+    let which = usize::try_from(t / BEAST_HOLD).unwrap_or(0);
+    let pose = usize::try_from(t / BEAST_POSE % 2).unwrap_or(0);
+    let Some(beast) = BEASTS.get(which) else {
+        return;
+    };
+    let body = BEAST_HUES.get(which).copied().unwrap_or(WHITE);
+    draw(frame, beast.get(pose).copied().unwrap_or(beast[0]), body);
+    if let Some(eyes) = BEAST_EYES.get(which) {
+        draw(frame, *eyes, eye_colour(body));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1364,5 +1694,136 @@ mod tests {
         }
         assert_eq!(walked, Piece::REEL.to_vec());
         assert_eq!(Piece::after(at), None, "the reel did not wrap");
+    }
+
+    /// The frame rate the daemon drives this at: every other 16 ms wake.
+    const FPS: u32 = 31;
+
+    /// **The bug a human found and no test had.** The smile is the payoff
+    /// and it used to arrive 17.4 seconds after the piece started, which
+    /// is longer than anybody holds a button they have just discovered.
+    /// Nobody ever saw it.
+    ///
+    /// So the pacing is a test now, in seconds, because frames are not
+    /// the unit the complaint was made in.
+    #[test]
+    fn the_smile_arrives_while_somebody_is_still_watching() {
+        let arrives = beat::DRAW / FPS;
+        assert!(
+            arrives <= 11,
+            "the smile is {arrives}s in; nobody waits that long"
+        );
+        let holds = (UPRISING_LOOP - beat::DRAW) / FPS;
+        assert!(
+            holds >= 5,
+            "the smile only holds {holds}s, too short to film"
+        );
+    }
+
+    /// Pac-Man chomps: the mouth is not the same two positions running
+    /// for long, and it comes back to where it started.
+    #[test]
+    fn pacman_chomps() {
+        let at = |n: u32| {
+            let mut f = Frame::dark();
+            pacman(n, &mut f);
+            grid(&f)
+        };
+        assert_ne!(at(0), at(CHOMP), "the mouth did not move");
+        assert_ne!(at(CHOMP), at(CHOMP * 2), "the mouth did not move again");
+        assert_eq!(at(0), at(CHOMP * 4), "a chomp did not come back round");
+    }
+
+    /// And then the ghost takes the grid, with white eyes on a coloured
+    /// body — two sprites, one over the other, which is the whole reason
+    /// `draw` leaves what it does not light alone.
+    #[test]
+    fn the_ghost_takes_its_turn_with_eyes_on() {
+        let mut f = Frame::dark();
+        pacman(PAC_RUN + 1, &mut f);
+        assert_eq!(
+            f.get(Button::Grid { row: 3, col: 3 }),
+            Cell::Static(WHITE),
+            "the ghost has no eyes"
+        );
+        assert_eq!(
+            f.get(Button::Grid { row: 5, col: 1 }),
+            Cell::Static(GHOST_HUES[0]),
+            "the ghost has no body"
+        );
+        // Feet shuffle, which is what separates a ghost from a bell.
+        let foot = |n: u32| {
+            let mut f = Frame::dark();
+            pacman(n, &mut f);
+            grid(&f)
+        };
+        assert_ne!(foot(PAC_RUN), foot(PAC_RUN + SHUFFLE), "the feet are stuck");
+    }
+
+    /// A different ghost each time round. Four of them, and all four turn
+    /// up — the detail that makes somebody look twice.
+    #[test]
+    fn all_four_ghosts_take_a_turn() {
+        let seen: Vec<Cell> = (0..4)
+            .map(|loops| {
+                let mut f = Frame::dark();
+                pacman(loops * PACMAN_LOOP + PAC_RUN, &mut f);
+                f.get(Button::Grid { row: 5, col: 1 })
+            })
+            .collect();
+        for (i, a) in seen.iter().enumerate() {
+            for b in seen.iter().skip(i + 1) {
+                assert_ne!(a, b, "two ghosts are the same colour");
+            }
+        }
+        assert_eq!(seen.len(), GHOST_HUES.len());
+    }
+
+    /// Every animal draws, every animal has eyes you can tell from its
+    /// body, and every animal moves between its two poses.
+    #[test]
+    fn every_beast_is_drawn_has_eyes_and_breathes() {
+        for (which, _) in BEASTS.iter().enumerate() {
+            let base = u32::try_from(which).unwrap_or(0) * BEAST_HOLD;
+            let pose = |n: u32| {
+                let mut f = Frame::dark();
+                bestiary(n, &mut f);
+                f
+            };
+            let a = pose(base);
+            let b = pose(base + BEAST_POSE);
+            let lit = Button::all().filter(|&x| a.get(x) != Cell::Off).count();
+            assert!((6..=48).contains(&lit), "beast {which} lights {lit} pads");
+            assert_ne!(grid(&a), grid(&b), "beast {which} does not move");
+
+            let body = BEAST_HUES[which];
+            let eyes = eye_colour(body);
+            assert_ne!(eyes, body, "beast {which} has invisible eyes");
+            let has_eyes = Button::all().any(|x| a.get(x) == Cell::Static(eyes));
+            assert!(has_eyes, "beast {which} has no eyes on the grid");
+        }
+    }
+
+    /// All five get a turn, and the piece comes back round to the first.
+    #[test]
+    fn the_bestiary_shows_every_animal() {
+        let seen: Vec<Vec<Cell>> = (0..5)
+            .map(|which| {
+                let mut f = Frame::dark();
+                bestiary(which * BEAST_HOLD, &mut f);
+                grid(&f)
+            })
+            .collect();
+        for (i, a) in seen.iter().enumerate() {
+            for b in seen.iter().skip(i + 1) {
+                assert_ne!(a, b, "two animals look the same");
+            }
+        }
+        assert_eq!(seen.len(), BEASTS.len());
+        let mut first = Frame::dark();
+        let mut round = Frame::dark();
+        bestiary(0, &mut first);
+        bestiary(BESTIARY_LOOP, &mut round);
+        assert_eq!(grid(&first), grid(&round), "the bestiary has a seam");
     }
 }
