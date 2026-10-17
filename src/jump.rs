@@ -196,22 +196,23 @@ fn new_row_session_args(place: Place, session: &str, anchor_bin: &str) -> Vec<St
     ]
 }
 
-/// Args splitting a view pane into an existing row.
+/// Args opening a view as a new **window** in an existing row.
 ///
-/// `before` inserts to the left of `target` rather than the right, which
-/// is how a column lands in order when the row already holds a higher one
-/// — measured on 3.6b: creating col 1, col 4, then col 2 with `-hb` gives
-/// `pane_left` 0 / 27 / 54 in column order (`docs/24`).
+/// The window index *is* the column, so a row reads left to right in
+/// tmux's own status line with no insertion order to maintain: tab 3 is
+/// column 3 whether or not 1 and 2 exist yet. That is the whole reason a
+/// column is a window and not a pane — eight agents side by side are
+/// eight unreadable 23-column slivers, and the thing you actually do with
+/// a row is look at one of them at a time (`docs/24`).
 ///
 /// `-d` because creating a view must not move anybody: the switch is a
 /// separate, deliberate step.
-fn split_args(target: &str, before: bool, session: &str, anchor_bin: &str) -> Vec<String> {
+fn new_window_args(place: Place, session: &str, anchor_bin: &str) -> Vec<String> {
     vec![
-        "split-window".into(),
-        if before { "-hb" } else { "-h" }.into(),
+        "new-window".into(),
         "-d".into(),
         "-t".into(),
-        target.into(),
+        format!("{}:{}", row_session(place.row), place.col),
         "-P".into(),
         "-F".into(),
         "#{pane_id}".into(),
@@ -219,43 +220,44 @@ fn split_args(target: &str, before: bool, session: &str, anchor_bin: &str) -> Ve
     ]
 }
 
-/// Args listing one row's panes with the column each claims.
+/// Args moving a freshly-made row session's only window to its column.
 ///
-/// Scoped to the row and carrying **one** possibly-empty field, last, for
-/// the same reason [`list_panes_args`] is shaped that way.
-fn row_panes_args(row: u8) -> Vec<String> {
+/// `new-session` puts the first window at the server's `base-index`,
+/// which is whatever the user's config says and is not the column. One
+/// `move-window` afterwards is what makes the index an address again.
+fn move_window_args(pane: &str, place: Place) -> Vec<String> {
     vec![
-        "list-panes".into(),
+        "move-window".into(),
+        "-s".into(),
+        pane.into(),
         "-t".into(),
-        row_session(row),
-        "-F".into(),
-        format!("#{{pane_id}} #{{{SLOT_OPTION}}}"),
+        format!("{}:{}", row_session(place.row), place.col),
     ]
 }
 
-/// Args re-evening a row after a pane was added to it.
+/// Args stopping tmux renaming a view's window after whatever is running
+/// in it. The name is an address; addresses are not opinions.
 ///
-/// **On creation only.** Resizing a pane by hand is a thing you did, and
-/// tally does not get to undo it on the next tick.
-fn even_layout_args(row: u8) -> Vec<String> {
-    vec![
-        "select-layout".into(),
-        "-t".into(),
-        row_session(row),
-        "even-horizontal".into(),
-    ]
-}
-
-/// Args stopping tmux renaming a row window after whatever is running in
-/// it. The name is an address; addresses are not opinions.
-fn automatic_rename_off_args(row: u8) -> Vec<String> {
+/// Targeted by **pane**, not by row: a row is many windows now, and
+/// `-t r07:` would set this on whichever one happened to be current.
+fn automatic_rename_off_args(pane: &str) -> Vec<String> {
     vec![
         "set-option".into(),
         "-w".into(),
         "-t".into(),
-        format!("{}:", row_session(row)),
+        pane.into(),
         "automatic-rename".into(),
         "off".into(),
+    ]
+}
+
+/// Args naming a view's window, which is what a tab reads as.
+fn rename_window_args(pane: &str, place: Place, at: &str, session: &str) -> Vec<String> {
+    vec![
+        "rename-window".into(),
+        "-t".into(),
+        pane.into(),
+        pane_title(place, at, session),
     ]
 }
 
@@ -319,21 +321,6 @@ fn pane_title_args(pane: &str, place: Place, at: &str, session: &str) -> Vec<Str
         pane.into(),
         "-T".into(),
         pane_title(place, at, session),
-    ]
-}
-
-/// Args drawing the pane title on the border of a row's window.
-///
-/// Window-scoped on purpose, unlike every other option here: it is how a
-/// *row* is drawn, and a row window holds nothing but tally's panes.
-fn border_status_args(row: u8) -> Vec<String> {
-    vec![
-        "set-option".into(),
-        "-w".into(),
-        "-t".into(),
-        format!("{}:", row_session(row)),
-        "pane-border-status".into(),
-        "top".into(),
     ]
 }
 
@@ -466,35 +453,6 @@ fn pane_title(place: Place, at: &str, session: &str) -> String {
         return format!("c{col} · {tail}");
     }
     format!("c{col} · {at} · {tail}")
-}
-
-/// The column a pane claims, from a `row_panes_args` listing.
-///
-/// Untagged panes — a shell somebody split in by hand — have no column
-/// and are skipped: they are not views, and placing a view relative to
-/// one would order the row by something that is not an address.
-fn row_columns(listing: &str) -> Vec<(&str, u8)> {
-    listing
-        .lines()
-        .filter_map(|line| {
-            let (pane, at) = line.trim_end().split_once(' ')?;
-            let col = at.rsplit(':').next()?.parse().ok()?;
-            (1..=8).contains(&col).then_some((pane, col))
-        })
-        .collect()
-}
-
-/// Where a new pane for `col` goes: the pane to split, and whether to
-/// insert before it.
-///
-/// The first column to the **right** of `col`, split before it; failing
-/// that the rightmost pane, split after. `None` when the row holds no
-/// tagged pane at all, which means the session has to be created.
-fn placement<'a>(columns: &[(&'a str, u8)], col: u8) -> Option<(&'a str, bool)> {
-    if let Some(&(pane, _)) = columns.iter().find(|&&(_, c)| c > col) {
-        return Some((pane, true));
-    }
-    columns.last().map(|&(pane, _)| (pane, false))
 }
 
 /// A view found in a `list-panes` listing.
@@ -688,6 +646,13 @@ impl Tmux {
         // does not take the jump down with it.
         let _slot = self.run("set-option", &set_slot_args(pane, at));
         let _title = self.run("select-pane", &pane_title_args(pane, place, at, session));
+        // Per window, because a row is many windows now. Both are for the
+        // eye, so both are best-effort for the same reason the title is.
+        let _auto = self.run("set-option", &automatic_rename_off_args(pane));
+        let _name = self.run(
+            "rename-window",
+            &rename_window_args(pane, place, at, session),
+        );
         Ok(())
     }
 
@@ -715,39 +680,27 @@ impl Tmux {
         Ok(pane)
     }
 
-    /// Put a new view pane in its row, creating the row if it is not there.
+    /// Put a new view window in its row, creating the row if it is not
+    /// there.
     ///
-    /// Splitting into the row is what makes a column a pane; creating the
-    /// session *around* the first view is what keeps a stray shell from
-    /// appearing. `new-session -d` on a dead server also starts one, which
-    /// is why a missing tally server is not a startup failure.
+    /// The column is the **window index**, so there is nothing to order:
+    /// `new-window -t r07:3` lands at 3 whatever else the row holds.
+    /// Creating the session *around* the first view is what keeps a stray
+    /// shell from appearing; `new-session -d` on a dead server also
+    /// starts one, which is why a missing tally server is not a startup
+    /// failure.
     fn make_view(&self, session: &str, place: Place) -> Result<String, Error> {
-        let row = place.row;
-        let listing = self
-            .stdout("list-panes", &row_panes_args(row))
-            .unwrap_or_default();
-        let columns = row_columns(&listing);
-        let Some((target, before)) = placement(&columns, place.col) else {
+        if !self.session_exists(&row_session(place.row)) {
             let args = new_row_session_args(place, session, &self.anchor_bin);
             let pane = self.stdout("new-session", &args)?.trim().to_owned();
-            self.dress_row(row);
+            // `new-session` puts it at `base-index`; the column is where
+            // it belongs. Best-effort: a view at the wrong index is read
+            // in the wrong order, not lost.
+            let _moved = self.run("move-window", &move_window_args(&pane, place));
             return Ok(pane);
-        };
-        let args = split_args(target, before, session, &self.anchor_bin);
-        let pane = self.stdout("split-window", &args)?.trim().to_owned();
-        // On creation only: a row somebody resized by hand stays that way
-        // until the next time it gains a pane.
-        let _even = self.run("select-layout", &even_layout_args(row));
-        Ok(pane)
-    }
-
-    /// Set the window options a row wants, once, when it is made.
-    ///
-    /// Best-effort: an undressed row is a row that renames itself and
-    /// draws no borders, which is ugly and still correct.
-    fn dress_row(&self, row: u8) {
-        let _rename = self.run("set-option", &automatic_rename_off_args(row));
-        let _border = self.run("set-option", &border_status_args(row));
+        }
+        let args = new_window_args(place, session, &self.anchor_bin);
+        Ok(self.stdout("new-window", &args)?.trim().to_owned())
     }
 
     /// Make sure there is something for a terminal to attach to, and that
@@ -981,12 +934,6 @@ mod tests {
 %4 @3 1 01M52MXB4WQTA79K5FTHMXZ8YN\n\
 %5 @3 0 \n";
 
-    /// `#{pane_id} #{@tally_slot}`, one row's worth.
-    const ROW: &str = "\
-%3 1:4:1\n\
-%7 1:4:4\n\
-%9 \n";
-
     #[test]
     fn a_view_is_created_in_the_row_session_for_its_row() {
         let args = new_row_session_args(PLACE, SESSION, "anchor");
@@ -1015,44 +962,54 @@ mod tests {
     /// Creating a view must not move anybody: the switch is a separate,
     /// deliberate step.
     #[test]
-    fn splitting_a_view_into_a_row_does_not_steal_focus() {
-        let args = split_args("%3", false, SESSION, "anchor");
+    fn opening_a_view_in_a_row_does_not_steal_focus() {
+        let args = new_window_args(PLACE, SESSION, "anchor");
         assert!(args.contains(&"-d".to_owned()));
-        assert!(args.contains(&"-h".to_owned()), "a row splits sideways");
         assert!(
             args.last()
                 .is_some_and(|c| c == &format!("anchor attach {SESSION}")),
-            "the pane runs the attach"
+            "the window runs the attach"
         );
     }
 
-    /// Measured on 3.6b: `-hb` inserts to the left, `-h` to the right, so
-    /// the columns of a row read left to right whatever order they
-    /// arrived in (`docs/24-the-tally-server.md`).
+    /// The column *is* the window index, so a row reads left to right
+    /// whatever order its tabs arrived in — and with nothing to order,
+    /// there is no insertion rule left to get wrong
+    /// (`docs/24-the-tally-server.md`).
     #[test]
-    fn a_column_lands_in_column_order() {
-        let columns = row_columns(ROW);
-        assert_eq!(columns, vec![("%3", 1), ("%7", 4)], "untagged panes skip");
-        // Before the first higher column.
-        assert_eq!(placement(&columns, 2), Some(("%7", true)));
-        assert_eq!(placement(&columns, 3), Some(("%7", true)));
-        // Past every column there is: after the rightmost.
-        assert_eq!(placement(&columns, 6), Some(("%7", false)));
-        // An empty row has nothing to split; the session gets created.
-        assert_eq!(placement(&[], 1), None);
+    fn a_column_is_the_window_index() {
+        let args = new_window_args(Place { row: 7, col: 3 }, SESSION, "anchor");
+        let t = args.iter().position(|a| a == "-t").expect("-t");
+        assert_eq!(args.get(t + 1).map(String::as_str), Some("r07:3"));
+
+        // Column 8 and column 1 address the same row, never each other.
+        let eight = new_window_args(Place { row: 7, col: 8 }, SESSION, "anchor");
+        let t = eight.iter().position(|a| a == "-t").expect("-t");
+        assert_eq!(eight.get(t + 1).map(String::as_str), Some("r07:8"));
     }
 
-    /// A pane somebody split in by hand carries no address. Ordering the
-    /// row against one would place a view by something that is not an
-    /// address at all.
+    /// `new-session` puts the first window at `base-index`, which is the
+    /// user's config and not an address. The move is what makes the index
+    /// mean the column again.
     #[test]
-    fn an_untagged_pane_does_not_order_a_row() {
-        assert!(row_columns("%9 \n").is_empty());
-        assert!(row_columns("%9 not-an-address\n").is_empty());
-        assert!(
-            row_columns("%9 1:4:9\n").is_empty(),
-            "column 9 does not exist"
-        );
+    fn a_rows_first_view_is_moved_to_its_column() {
+        let args = move_window_args("%3", Place { row: 7, col: 4 });
+        let t = args.iter().position(|a| a == "-t").expect("-t");
+        assert_eq!(args.get(t + 1).map(String::as_str), Some("r07:4"));
+        let src = args.iter().position(|a| a == "-s").expect("-s");
+        assert_eq!(args.get(src + 1).map(String::as_str), Some("%3"));
+    }
+
+    /// A row is many windows now, so anything window-scoped has to be
+    /// aimed at the pane that identifies one. `-t r07:` would land on
+    /// whichever tab happened to be current.
+    #[test]
+    fn window_options_are_aimed_at_a_pane_not_a_row() {
+        let auto = automatic_rename_off_args("%7");
+        assert!(auto.contains(&"%7".to_owned()));
+        assert!(auto.iter().all(|a| !a.ends_with(':')), "not a row target");
+        let name = rename_window_args("%7", PLACE, "work:7:3", SESSION);
+        assert!(name.contains(&"%7".to_owned()));
     }
 
     /// A freshly created session has exactly one pane, so the id it
@@ -1062,7 +1019,7 @@ mod tests {
     fn creating_a_view_prints_a_pane_not_a_window() {
         for args in [
             new_row_session_args(PLACE, SESSION, "anchor"),
-            split_args("%3", true, SESSION, "anchor"),
+            new_window_args(PLACE, SESSION, "anchor"),
         ] {
             let f = args.iter().position(|a| a == "-F").expect("-F");
             assert_eq!(args.get(f + 1).map(String::as_str), Some("#{pane_id}"));
@@ -1075,7 +1032,7 @@ mod tests {
     #[test]
     fn no_command_relies_on_a_current_session_or_client() {
         assert!(switch_args("/dev/ttys000", "%7").contains(&"-c".to_owned()));
-        assert!(split_args("%3", false, SESSION, "anchor").contains(&"-t".to_owned()));
+        assert!(new_window_args(PLACE, SESSION, "anchor").contains(&"-t".to_owned()));
         assert!(new_row_session_args(PLACE, SESSION, "anchor").contains(&"-s".to_owned()));
         for args in [
             set_option_args("%7", SESSION),
