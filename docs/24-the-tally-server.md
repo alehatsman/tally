@@ -18,7 +18,16 @@ take your terminal away from you to do it.
 
 This document separates the two. **tally gets its own tmux server, its own
 terminal window, and a layout that is the grid**: a row is a session, a
-column is a pane.
+column is a **window** — a tab in that session.
+
+> ⚠️ **Amended.** This document first said a column is a *pane*, and the
+> measurements below were taken against that. It shipped, and eight
+> agents side by side turned out to be eight 23-column slivers reflowing
+> megabytes of scrollback. What was wrong was never the addressing — it
+> was that a split shows you all eight at once when the thing you do with
+> a row is read **one** of them. The pane rules are kept below rather
+> than deleted, for the same reason [15](15-views.md) keeps its adoption
+> section: the record of a reversal is worth more than a tidy document.
 
 ## What was measured
 
@@ -113,21 +122,35 @@ tmux -L tally
         └── %11 @tally_slot=ops:4:2   @tally_session=01K…Q1
 ```
 
-**Panes are created lazily and kept afterwards.** Column 4 gets a pane
-the first time something runs on `x:y:4`, inserted in column order, and
-`remain-on-exit` keeps it when the attach ends — which is already how a
-view behaves ([15](15-views.md)). A row with two agents is a two-pane
-split, not eight unreadable slivers.
+**Windows are created lazily and kept afterwards.** Column 4 gets a
+window the first time something runs on `x:y:4`, and `remain-on-exit`
+keeps it when the attach ends — which is already how a view behaves
+([15](15-views.md)). A row with two agents is a two-tab session; a row
+with eight is eight tabs, each the full width of the terminal.
 
-⚠️ **Pane index is not the column.** `pane_index` renumbers when a pane
+**The window index *is* the column.** `new-window -t r07:3` lands at 3
+whatever else the row holds, so there is no insertion order to maintain
+and no placement rule to get wrong. `@tally_slot` still carries the
+address and is still what a jump reads back — the index is how a human
+reads the row, not how tally finds a view.
+
+~~⚠️ **Pane index is not the column.** `pane_index` renumbers when a pane
 is killed, and a user can move panes by hand. The column lives in
 `@tally_slot` and the ordering is a *placement* rule applied at creation,
-not an invariant anything reads back. A row somebody rearranged still
-jumps correctly; it just looks shuffled.
+not an invariant anything reads back.~~ **Superseded.** This was true of
+panes and is the reason the pane layout needed an insertion rule at all.
+Window indexes do not renumber on kill, so the index can simply *be* the
+column. A user who drags a tab still jumps correctly, for the unchanged
+reason: the address is in `@tally_slot`, not in the position.
 
-**`select-layout even-horizontal` on creation only.** The row re-evens
-itself when a pane is added, and never again — resizing a pane by hand is
-a thing you did and tally does not get to undo it.
+~~**`select-layout even-horizontal` on creation only.**~~ **Gone with the
+split.** There is no layout to even when each column is a window of its
+own, and nothing resizes anything any more.
+
+**Window-scoped options are aimed at a pane.** `-t r07:` means *the
+current window of r07*, which was harmless when a row was one window and
+is a bug now. `automatic-rename off` and the window name are both set
+with the view's own pane as the target.
 
 ## The home session
 
