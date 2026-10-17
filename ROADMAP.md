@@ -1,17 +1,20 @@
 # Roadmap
 
-Each milestone retires one risk and is independently abandonable. No
-milestone starts before the previous one's exit criteria are met.
+**What shipped, what each one cost to find, and what is still open.** The
+design is in [docs/](docs/); this is the record of the order it arrived in
+and the measurements that decided it.
 
-Ordering principle, borrowed from anchor: **the risky subsystem first, the
-ergonomics last.** Here the risk is in an unusual place — the hardware is
-documented but unverified, and the *attention signal* is the thing the
-product lives or dies by. The launcher is the easy half.
+Each milestone retires one risk and is independently abandonable, ordered
+on a principle borrowed from anchor: **the risky subsystem first, the
+ergonomics last.** The risk sat in an unusual place here — the hardware
+was documented but unverified, and the *attention signal* is the thing the
+product lives or dies by. The launcher was the easy half.
 
 > **Read [What is next](#what-is-next) before anything else here.** The
-> rule above stopped holding at M10: everything since has shipped with
-> open exit criteria, and one of them has been open since M1. That section
-> says which, and what closes them.
+> rule that no milestone starts before the previous one's exit criteria
+> are met stopped holding at M10: everything since has shipped with open
+> criteria, and one of them has been open since M1. That section says
+> which, and what closes them.
 
 ---
 
@@ -51,10 +54,10 @@ because that list is what this milestone exists to delete:
 > Live mode and the Setup menu restored on SIGTERM, verified by readback
 > rather than assumed.
 >
-> **Two of our own claims were wrong**, and neither was Novation's fault:
-> the port is **not** exclusive on macOS — CoreMIDI multiplexes, so
-> `tallyd` needs its own single-instance lock — and the SysEx byte budget
-> was off by one per frame.
+> **Two things this project asserted are false**, and neither was
+> Novation's fault: the port is **not** exclusive on macOS — CoreMIDI
+> multiplexes, so `tallyd` carries its own single-instance lock — and the
+> SysEx overhead is 8 bytes per frame, not 7.
 >
 > Residue, both harmless:
 > [docs/10](docs/10-open-questions.md#verified-against-hardware-2026-10-16).
@@ -176,31 +179,17 @@ Exit:
   logo goes dark the moment the attention is on-screen
 - ✅ the top row is readable at a glance, which took a second attempt
 
-> **The top row had to be rebuilt.** It lit the current page white and
-> occupied pages turquoise: both bright, both legible, and no way to tell
-> which was which without recalling a table. *"I am confused which one is
-> selected, the white one or the turquoise one."*
+> **Two perceptual gates cost a build each, and both answers are now
+> rules in [docs/05](docs/05-interaction.md).** A row lighting the current
+> page white and occupied pages turquoise was legible and unreadable —
+> *"I am confused which one is selected"* — which is where *brightness
+> answers where-am-I before hue answers anything* comes from. And a title
+> scrolled across eight pads is about two legible characters at a time,
+> which is where *the pad cannot say what it wants* comes from.
 >
-> The same failure as the three greens, and it is now stated as a rule
-> rather than a fix: **exactly one thing in the top row is bright, and it
-> is always where you are.** Brightness answers *where am I* before hue
-> answers anything; hue is then spent only on the thing that is urgent.
-
-> **The title scroll was cut**, after being built and run. Eight pads is
-> about two legible characters at a time, so a scrolling title is a
-> two-character window you guess through. The verdict after one hold:
-> *"impossible to read anything."*
->
-> Third time this project has learned the same lesson — after the three
-> greens and the hard amber flash — and the one worth stating plainly:
-> **a surface fact only shows up on the surface.** The byte budget was
-> fine, the sanitiser was correct, the tests were green, the feature was
-> worthless. The build was not wasted; it bought the measurement, which
-> is the only thing that could have settled it.
->
-> So the pad says *that* something wants you, and never *what*. The what
-> is one press away in a window with eighty columns and a font
-> ([05](docs/05-interaction.md#the-pad-cannot-say-what-it-wants)).
+> Neither build was wasted: each bought a measurement nothing else could
+> take. That is the milestone's real output
+> ([09](docs/09-testing.md#what-a-green-suite-does-not-prove)).
 
 ---
 
@@ -220,20 +209,17 @@ Exit:
   label follows, and the reason it has tests
 - ⬜ a week of claiming pads this way without reaching for `anchor create`
 
-> **The config file was the wrong half for this.** `slots.toml` wants the
-> folder declared in advance, which is a prediction about work you have not
-> done — so the spawn-from-a-dark-pad feature built in M3 went unused from
-> the day it shipped. Not broken: aimed at the wrong context. **The only
-> thing that knows the directory is a shell standing in it.**
+> **The only thing that knows the directory is a shell standing in it.**
+> `slots.toml` wants the folder declared in advance, which is a prediction
+> about work you have not done — so M3's spawn-from-a-dark-pad went unused
+> from the day it shipped. Not broken; aimed at the wrong context, and
+> M3's machinery is exactly what `tally spawn` calls.
 >
-> Which makes this the fourth time the project has learned that a feature
-> is settled by use and not by design, and the first time the lesson cost
-> nothing to apply — M3's machinery is what `tally spawn` calls.
->
-> The deferral in [docs/10](docs/10-open-questions.md) is what made that
-> cheap. *"Defer until something is actually awkward"* meant the CLI was
-> built around a measured gap rather than a guessed one, and it came out
-> one subcommand wide.
+> **The deferral is what made that cheap.** *"Defer until something is
+> actually awkward"* ([docs/10](docs/10-open-questions.md)) meant the CLI
+> was built around a measured gap rather than a guessed one, and it came
+> out one subcommand wide. A feature is settled by use, not by design, and
+> this is the first time that cost nothing to act on.
 
 ---
 
@@ -283,27 +269,29 @@ Exit:
 > surface, and the first time the lesson arrived as *we were about to
 > throw away something that works*.
 
-> **A second thing the code had outgrown.** `docs/04` promised tallyd would
-> clear `tl.attention` on output. It was never built — a reader, a
-> constant, a test, and nothing that removes it. A hook shipped against the
-> old binary would have stuck a pad amber permanently. Found by grep while
-> writing the spec, not by the suite, because there was no test for a
-> feature nobody had written.
+> **A promise with no implementation behind it, found by grep.**
+> `docs/04` had tallyd clearing `tl.attention` on output; the codebase had
+> a constant, a reader, a test, and nothing that removed it. A hook
+> shipped against that binary would have stuck a pad amber permanently.
+> The suite could not have caught it — **there is no test for a feature
+> nobody wrote.** Both edges are hooks now, and both ship here.
 
 ---
 
 ## M7 — Where views live
 
-Not three fixes. **One sentence in `docs/06` was wrong**, and the three
-open issues are what you get downstream of it: a view is a tmux *window*.
-That was true when `tallyd` under launchd was the only thing creating
-views, and it has been the definition ever since.
+Not three fixes but one, and the three open issues are all downstream of
+the same definition: **a view is addressed as a pane**
+([docs/15](docs/15-views.md)). Calling it a *window* is only correct while
+`tallyd` under launchd is the one thing creating views, and that special
+case had become the definition.
 
-A view is a **pane** ([docs/15](docs/15-views.md)). Then
-[#1](https://github.com/alehatsman/tally/issues/1) has a unit to adopt,
-[#2](https://github.com/alehatsman/tally/issues/2) has a pane that does
-not close, and [#3](https://github.com/alehatsman/tally/issues/3) has a
-coordinate that is the whole address rather than most of it.
+Change the unit and the three collapse:
+[#1](https://github.com/alehatsman/tally/issues/1) gets a unit it can
+adopt, [#2](https://github.com/alehatsman/tally/issues/2) gets a pane that
+does not close under you, and
+[#3](https://github.com/alehatsman/tally/issues/3) gets a coordinate that
+is the whole address rather than most of it.
 
 Scope, in dependency order. All three cleared by
 [docs/16](docs/16-the-queue.md), which settled the layout question #8 was
@@ -342,18 +330,19 @@ Exit, for step 1:
 > *displayed*. `list-clients -F '#{client_name} #{pane_id}'` is the
 > correct call, and the incorrect one looks more correct.
 
-> **#2 goes first, and not as a compromise.** The issue asked whether to
-> fix it before #1 or alongside it. It is the step the other two are built
-> on: adoption needs a pane that survives its agent, and a return needs a
-> pane-level coordinate to return to.
+> **The pane that survives its agent is what the other two are built
+> on.** A view you can adopt needs it; a return gesture needs a pane-level
+> coordinate to return to. So #2 is the step that goes first, and not as a
+> compromise.
 
-> **Steps 2 and 3 were written before anyone checked the layout work, and
-> collided with it** — the second tap on a pad was already spoken for, and
-> adoption was written against an address format #8 might have replaced.
-> Both are released by [docs/16](docs/16-the-queue.md): the return gesture
-> moves to its own button and addressing does not change. Recorded because
-> a spec validated against the code and not against the other specs will do
-> this again.
+> **A spec validated against the code and not against the other specs
+> will collide with them.** Steps 2 and 3 did: the second tap on a pad was
+> already spoken for, and the address format one of them assumed might
+> have been replaced. Both were released by
+> [docs/16](docs/16-the-queue.md) rather than by rework — the return
+> gesture has its own button and addressing never changed — but the
+> collision cost a day of not knowing, which is what an open design
+> question charges everything downstream of it.
 
 ---
 
@@ -393,11 +382,11 @@ Exit:
 > argument — and navigation commits
 > nothing, which is exactly why *answer-and-advance* was rejected.
 
-> **What it costs.** `docs/05` spent four paragraphs on a rule learned in
-> real confusion: exactly one page button is bright and it is the one you
-> are on. This deletes it. The defence is one number — **pages used, 70 :
-> 2** — and if pages ever become load-bearing this is the first decision to
-> revisit.
+> **What it costs: the current-page readout.** The rule it deletes was
+> paid for in real confusion — *exactly one page button is bright and it is
+> the one you are on* — and the defence is one number, **pages used,
+> 70 : 2**. If pages ever become load-bearing this is the first decision to
+> revisit ([docs/12](docs/12-the-layout.md)).
 
 
 > **The instrument caught the spec, not the code.** `◄` shipped dark: the
@@ -445,41 +434,35 @@ Exit:
   glance, wearing by the afternoon
 - ⬜ a wedged `tallyd` is visibly frozen rather than quietly stale
 
-**The fix was not in the tempo.** Time-weighted over 10.1 h the mapping
-behaved as designed — 61% at the floor, 19% in the 120-140 band — so the
-number of beats was right and the **number of pads** was wrong. `docs/17`
-had explicitly defended driving four working agents at 140 bpm because one
-unrelated pad had been ignored; that paragraph is the thing that made it
-tiring, and it is now marked as such.
+**The number of beats was right and the number of pads was wrong.**
+Time-weighted over 10.1 h the mapping behaved exactly as designed — 61% at
+the floor, 19% in the 120-140 band — so the tempo was never the defect.
+One global clock driving *four unrelated green pulses* to 140 bpm on
+behalf of one ignored pad was.
 
-Green stopped moving. Confirmed on the device — *"green are not pulsing
-no, orange yes"* — with four slots asking at the time, so the amber half
-was live and checked rather than assumed. Motion is spent only on amber,
-so the surface is still unless something is asking, and the one global clock now modulates
-only the pads that are actually waiting. The cost: working and quiet look
-identical, and *which agent is producing output* is no longer visible —
-information it turned out you watch rather than act on
+So **green stopped moving**, and motion is spent only on amber. Confirmed
+on the device — *"green are not pulsing no, orange yes"* — with four slots
+asking at the time, so the amber half was live and checked rather than
+assumed. The surface is now still unless something is asking, and the one
+clock modulates only the pads that are actually waiting. The cost: working
+and quiet look identical, and *which agent is producing output* is no
+longer visible — information it turned out you watch rather than act on
 ([docs/05](docs/05-interaction.md#nothing-blinks-and-only-attention-moves)).
 
-> **It trades "set once and forget" for one byte, forever.** `docs/02`
-> sells the palette animations on *no timer, no repaint loop, no drift*,
-> and a clock gives one third of that back. The important third stays: the
-> **ramp** still runs on the device, so a pulse is smooth under load and
-> never stutters. Only the beat boundary becomes ours, and one byte at
-> tens of hertz is cheaper than anything else on this surface.
-
-> **Frozen breath is the point, not the risk.** A wedged `tallyd` today
-> leaves a perfectly normal-looking grid showing a stale snapshot — the
-> worst failure a status display can have, because it is indistinguishable
-> from "nothing changed". With a clock it stops breathing mid-ramp and is
-> visibly wrong from six metres. That is why the floor is 60 bpm and not
-> 30: a very slow breath and a stopped one have to be tellable apart.
-
-> **The range is narrow on purpose.** The device's own unsynced 120 bpm
-> sits inside it. The failure this project has already paid for once is a
-> surface that is correct and *exhausting* — the hard amber flash read as
-> urgent on hardware and as stressful after a few hours. A tempo that
-> sprints is that mistake with a different knob.
+> **A clock costs one byte, forever, and buys a liveness indicator.** It
+> gives back one third of what [docs/02](docs/02-surface.md#colour) sells
+> the palette animations on — *no timer, no repaint loop, no drift* — and
+> keeps the important third: the **ramp** still runs on the device, so a
+> pulse is smooth under load. What it buys is that a wedged `tallyd`
+> stops breathing mid-ramp instead of leaving a normal-looking grid
+> showing a stale snapshot, which is the worst failure a status display
+> can have because it is indistinguishable from *nothing changed*.
+>
+> The floor is 60 bpm and not 30 for the same reason: a very slow breath
+> and a stopped one have to be tellable apart. The ceiling is 140 because
+> **a surface that is correct and exhausting is a failure this project has
+> already paid for once**, and a tempo that sprints is that mistake with a
+> different knob ([docs/17](docs/17-the-tempo.md)).
 
 ---
 
@@ -514,25 +497,27 @@ Exit:
 - ⬜ a week in which `>` is used at all — if the shell still wins, the
   column has again been given work it does not want
 
-> **Arguments are dropped on purpose.** A row running
-> `claude --resume d37ee7e5…` describes one conversation; copying that
-> would put a second pad on the same conversation, which is the one thing
-> a new agent must not be. Keeping `command` keeps the choice that matters
-> — a row running `isayes` gets another `isayes`.
+> **Arguments are dropped, and the rule outlives this button.** A row
+> running `claude --resume d37ee7e5…` describes one conversation, and
+> copying that would put a second pad on it — the one thing a new agent
+> must not be. Keeping `command` keeps the choice that matters: a row
+> running `isayes` gets another `isayes`. `fork` inherits the same rule in
+> [M14](#m14--tally-fork-and-four-at-a-time).
 
-> **Row 8 is shell-only, by rule.** Eight buttons, eight rows, and one must
-> be the kill modifier. Moving kill means moving the one button that is
-> 8 mm from the wrong pad, with four presses of muscle memory in the corner
-> the silkscreen labels *Stop*. A grid where one row behaves differently is
-> a grid you remember rather than feel — affordable only because the window
-> scrolls, so row 8 is one `▼` from being row 7.
+> **Zero presses in a day is not an argument that a gesture is
+> unneeded.** It is an argument that the thing it guards has not failed
+> yet. Mute scored zero and keeps existing because it is the starvation
+> hatch for `►` and the tempo; purge scored zero and keeps existing
+> because `anchor` has no `purge` subcommand (anchor#14), so deleting it
+> would leave rows accumulating with no remedy anywhere. Both moved to the
+> shell rather than off the map ([docs/18](docs/18-the-launch-column.md)).
 
-> **Purge and mute had to keep existing.** `anchor` has no `purge`
-> subcommand (anchor#14), so deleting the gesture without replacing it
-> would leave rows accumulating with no remedy anywhere. And mute is the
-> starvation hatch for `►` and now the tempo: zero presses in a day is not
-> an argument that it is unneeded, it is an argument that the signal has
-> not lied yet.
+> **One row behaves differently, and it is a rule rather than a gap.**
+> Eight buttons, eight rows, one of which must be the kill modifier — and
+> moving kill means moving the one button that is 8 mm from the wrong pad,
+> in the corner the silkscreen labels *Stop*. A grid you remember rather
+> than feel is affordable here only because the window scrolls: row 8 is
+> one `▼` from being row 7.
 
 ---
 
@@ -572,16 +557,19 @@ Exit:
 - ✅ 500 ms is unreachable by a lazy tap and does not feel like waiting —
   three `⌂` presses in the first hour, none of them apparently accidental
 
-> **The clock stays out of `chord.rs`.** It is pure — presses in, gestures
-> out, no `now` — and that is what lets the four chord rules be tested
-> without a device or a timeline. The hold timer goes in `tallyd`'s 16 ms
-> loop, which already has `elapsed` on the line that calls `feed`. The
-> consequence: `Gesture::Home` survives and `chord.rs` never emits it.
+> **The clock stays out of `chord.rs`.** It is pure — presses in,
+> gestures out, no `now` — and that purity is what lets the four chord
+> rules be tested without a device or a timeline. Timed gestures live in
+> `tallyd`'s 16 ms loop, which already has `elapsed` on the line that
+> calls `feed`. The consequence, stated so nobody looks for it:
+> `Gesture::Home` is in the enum and `chord.rs` never emits it.
 
-> **A latched mode was rejected.** The top row is built on *dark does
-> nothing, lit does one thing, there is no state to remember*. A latched
-> overview makes the grid mean two things depending on something invisible,
-> and it is the only proposal here that breaks that rule.
+> **The overview is momentary, not latched.** The top row is built on
+> *dark does nothing, lit does one thing, there is no state to remember*,
+> and a latched overview makes the grid mean two things depending on
+> something invisible. ([M12](#m12--the-corner-carries-two-verbs) does
+> latch one button, and the difference is that the grid does not change
+> until you hold it.)
 
 > **If `lit` sits at seven for a month, the follow-up is not a better map.**
 > It is a smaller address space. The instrument is written to be able to
@@ -621,14 +609,15 @@ Exit:
 - ⬜ a week of logs: does the mode ever sit on Move, and does anything get
   purged from the grid that never got purged from the shell
 
-> **This overturns [M10](#m10--the-right-column-launches) deliberately.**
-> `docs/18` rejected a merged kill/purge because *"it widens the blast
-> radius of the single gesture `05` spends a section protecting"*. It does.
-> The cost is named rather than argued away: under the old chord the dark
-> two-thirds of the grid was a free miss, and a thumb one pad off now
-> forgets a dead row's log. What makes it affordable is that **the hold is
-> what reveals them** — they stop being invisible at the exact moment they
-> become targets.
+> **Merging kill and purge widens the blast radius, and that is the
+> price.** Purge's targets include pads that draw dark, so a thumb one pad
+> off forgets a dead row's log where before it did nothing. What makes it
+> affordable is that **the hold is what reveals them** — they stop being
+> invisible at the exact moment they become targets — and that the two
+> target sets are disjoint, so every pad under the thumb has exactly one
+> outcome and one colour. Priced at one order below killing a live agent,
+> which is why purge wears the dark-red *consequence* colour rather than
+> kill's red.
 
 > **The first press froze the surface, and no test could have caught it.**
 > A double-tap completes on the *release*, and `tallyd` flipped the mode
@@ -675,28 +664,28 @@ Exit:
 - ⬜ a week of living in a second terminal window: is a dedicated window
   for agents a relief or a thing you keep losing
 
-> **The column was a pane, and eight of them was unreadable.** This
-> document shipped pane-per-column, measured and correct, and a row of
-> eight agents turned out to be eight 23-column slivers reflowing megabytes
-> of scrollback. What was wrong was never the addressing — it was that a
-> split shows you all eight at once when the thing you do with a row is
-> read **one** of them. A column is a tab now. The pane rules are kept in
-> `docs/24` rather than deleted, for the same reason `docs/15` keeps its
-> adoption section.
+> **A column is a tab, because eight of them side by side is
+> unreadable.** Pane-per-column shipped, measured and correct, and a row
+> of eight agents was eight 23-column slivers reflowing megabytes of
+> scrollback. The addressing was never wrong; the reading was. **A split
+> shows you all eight at once when the thing you do with a row is read
+> one of them**, and that sentence is the whole of it
+> ([docs/24](docs/24-the-tally-server.md)).
 
-> **And then a corpse held the slot shut.** `remain-on-exit` keeps a dead
-> view's pane, which keeps its *window index* — and a window index is a
-> namespace. Kill a session, spawn a new one on the same pad, press it:
-> `create window failed: index 4 in use`, and the grid has no way to show
+> **A window index is a namespace, and a corpse occupies one.**
+> `remain-on-exit` keeps a dead view's pane and therefore its index, so
+> killing a session and spawning a new one on the same pad gives
+> `create window failed: index 4 in use` — and the grid has no way to show
 > you an error. The identity lookup was right; what was missing is that
-> **the address is also a lookup**, and tally had been writing
-> `@tally_slot` on every pane since this milestone without ever reading it
-> back ([docs/27](docs/27-the-slot-collision.md)).
+> **the address is also a lookup**. `@tally_slot` had been written on
+> every pane since this milestone and never read back
+> ([docs/27](docs/27-the-slot-collision.md)).
 >
-> Caught something else on the way: `back()` parsed the same pane listing
+> Fixing it caught a second thing: `back()` parsed the same pane listing
 > with its own `split_whitespace`, so changing the separator would have
-> made every origin look closed and `◄` silently stop working. Every read
-> of that listing goes through one function now.
+> made every origin look closed and `◄` silently stop working. **Every
+> read of that listing goes through one function**, which is the only
+> reason a format change is safe to make.
 
 ---
 
@@ -720,12 +709,10 @@ Exit:
   `--count` is *spawn four on a goal*; both are guesses about how work
   arrives, which is the thing this project has been wrong about before
 
-> **Arguments are dropped, for the third time and the same reason.** A pad
-> running `claude --resume <id>` describes one conversation, and copying
-> its argv would put a second agent on it. `>` learned this
-> ([M10](#m10--the-right-column-launches)), `fork` inherits it, and the
-> sentence is now in three places because it is the rule that keeps *same
-> place, fresh agent* from quietly becoming *clone*.
+> **`fork` is *same place, fresh agent*, never *clone*.** It drops `args`
+> for the reason `>` does ([M10](#m10--the-right-column-launches)): the
+> argv of a resumed pad names one conversation, and two pads on one
+> conversation is the thing a new agent must not be.
 
 > **There is no `--goal`, and there cannot be.** Spawning four agents on a
 > goal is free — the goal is `argv`, after `--`, exactly as it always was.
@@ -759,12 +746,12 @@ Exit:
 - ⬜ on the live grid: spawn a pad, press it, let one turn happen, hold
   Stop, and read the dead tab
 
-> **The order was wrong in the first draft, and 80 columns said so.**
-> `19`'s rule is *payload early, because truncation eats the tail*, and the
-> draft kept the anchor id first on the grounds that it is the half that is
-> always there. Half a UUID resumes nothing; half an anchor id costs
-> nothing, because it names a PTY that is gone by the time you are reading
-> the line. The conversation goes first.
+> **The conversation goes first, and 80 columns is why.** The rule is
+> *payload early, because truncation eats the tail*
+> ([docs/19](docs/19-the-dead-pane.md)). Half a UUID resumes nothing; half
+> an anchor id costs nothing, because it names a PTY that is already gone
+> by the time you are reading the line. The obvious ordering — the id that
+> is always there first — is the wrong one.
 
 ---
 
@@ -798,13 +785,12 @@ Exit:
 - ⬜ it survives contact with someone who has not seen it before, which is
   the only test a demo has
 
-> **Seventeen seconds to the punchline, and nobody waited.** The Uprising
-> ends on a yellow smile. Everything worked, every test was green, the
-> renderer drew the face correctly at frame 759 — and the first person to
-> press the button never saw it, because nobody holds a button they have
-> just discovered for eighteen seconds. The pacing is asserted in
-> **seconds** now, not frames, because seconds are the unit the complaint
-> was made in.
+> **Nobody holds a button they have just discovered for eighteen
+> seconds.** The Uprising ends on a yellow smile and the renderer drew it
+> correctly at frame 759 — which is seventeen seconds in, and the first
+> person to press the button never saw it. The pacing is asserted in
+> **seconds**, not frames, because seconds are the unit the complaint was
+> made in and frames are the unit that hid it.
 
 > **It is the largest file in the crate, and that is worth saying out
 > loud.** `src/art.rs` is bigger than `model.rs` and bigger than
