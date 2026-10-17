@@ -34,14 +34,15 @@ made the row a queue. The rule the top row runs on is *dark does nothing,
 lit does exactly one thing*, and this keeps it: dark while no art is
 playing, white while one is.
 
-One button, six pieces, and a press moves to the next:
+One button, eight pieces, and a press moves to the next:
 
 ```text
-dark → Plasma → Life → Rain → Fire → Tetris → Uprising → dark → …
+dark → Plasma → Life → Rain → Fire → Tetris → Pacman → Bestiary
+     → Uprising → dark → …
 ```
 
-Three that are only pretty, two classics, and the joke last, because a
-reel ends on the thing worth filming.
+Three that are only pretty, four that are somebody else's icons, and the
+joke last, because a reel ends on the thing worth filming.
 
 No menu, no mode indicator beyond the button itself, and no way to get
 lost: keep pressing and you arrive back where you started.
@@ -87,7 +88,7 @@ So while art is playing:
 Everything else on the surface goes dark. The art owns the 64 pads; it
 does not own the three lights that report.
 
-## The six pieces
+## The eight pieces
 
 ### Plasma
 
@@ -157,6 +158,45 @@ event in the piece and taking it away silently would waste it. A top-out
 flashes the whole well and empties it, which is the only honest ending for
 something that has to keep running.
 
+### Pacman
+
+A chomping Pac-Man, filling all sixty-four, and then the ghost takes its
+turn. Four mouth positions — open, half, shut, half, because the mouth
+goes back the way it came and that is what a chomp is — and two foot
+positions for the ghost, which is the whole reason it reads as a ghost
+rather than as a bell.
+
+**A different ghost each time round.** Blinky, Pinky, Inky, Clyde, in the
+arcade's order. It costs one modulo and it is the detail that makes
+somebody look at the grid twice.
+
+### Bestiary
+
+Cat, dog, fish, bird, rabbit. Two poses each, because a sprite that does
+not move is a logo and the grid already has one of those: the cat lifts
+its tail, the dog wags, the fish flicks, the bird beats once, the rabbit
+folds an ear.
+
+The eyes are a second sprite drawn over the first, which is why [`draw`]
+paints set bits and leaves everything else alone rather than clearing the
+grid first. The white rabbit gets grey eyes for the same reason — eyes
+the colour of the body are no eyes at all.
+
+### The sprite format
+
+Both of the above are `[u8; 8]`, one byte a row, **bit 7 is column 1**.
+That is deliberate and it is the only reason this is not a `u64`: written
+as binary literals, the source *is* the picture. You read the cat off the
+screen:
+
+```rust
+0b0100_0010,   //  . # . . . . # .    ears
+0b0110_0110,   //  . # # . . # # .
+0b0111_1110,   //  . # # # # # # .    head
+```
+
+A sprite you cannot see in the source is a sprite nobody will ever fix.
+
 ### Uprising
 
 The joke, and the only piece that is *about* tally.
@@ -181,7 +221,16 @@ has sat in
 `surface::palette::YELLOW` marked *currently unused* since M0. It is the
 face, and it is the only place it goes.
 
-Then it winks, holds, and starts over.
+Then it winks, holds, and starts over — eighteen seconds end to end, with
+the face arriving at ten.
+
+**That timing is a test, and it is a test because a human found the bug.**
+The first cut spent 17.4 seconds getting to the smile. Everything worked,
+every test was green, the renderer drew the face correctly at frame 759 —
+and the first person to press the button never saw it, because nobody
+holds a button they have just discovered for eighteen seconds. The pacing
+is asserted in **seconds** now, not frames, because seconds are the unit
+the complaint was made in.
 
 ## Where the code lives
 
@@ -216,8 +265,8 @@ holds send nothing at all.
 
 ## What this does not do
 
-- **There is no way out but through.** Six pieces is six presses back to
-  the grid. That is the cost of one button, and it is paid by every other
+- **There is no way out but through.** Eight pieces is eight presses back
+  to the grid. That is the cost of one button, and it is paid by every other
   button also being an exit — you are never more than one press from the
   thing you actually wanted.
 - **It does not run by itself.** No screensaver, no idle timeout, no
