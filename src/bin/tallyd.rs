@@ -344,21 +344,37 @@ fn next_art(reel: &mut Option<Reel>) {
     }
 }
 
+/// The two top-row buttons the art treats specially: the one that moves
+/// along the reel, and the one that is allowed through it.
+const ARTS_BUTTON: Button = Button::Top(6);
+/// `►`. See [`left_art`].
+const NEXT_BUTTON: Button = Button::Top(4);
+
 /// End the art if this press should, and say whether the press itself is
 /// then **swallowed**.
 ///
-/// Everything except `Drums` ends it, because you reached for the thing
-/// you actually wanted and the pad under your finger a quarter second ago
-/// was a sine wave, not a session. `►` is the one that still acts: making
-/// you press it twice would be the toy charging rent on the one gesture
-/// this product exists to provide (`docs/21-the-arts.md`).
-fn left_art(reel: &mut Option<Reel>, gesture: Gesture) -> bool {
-    if reel.is_none() || gesture == Gesture::Arts {
+/// Takes `repaint` the way [`beat`] takes its cursor, so `main` is left
+/// with one branch rather than three — the complexity cap here is real
+/// and this loop is already against it.
+///
+/// **Every press except `Drums`, not every gesture.** This is read from
+/// the raw button and before `chords.feed`, because `feed` answers `None`
+/// for a held modifier — so a `CC19` press used to reach the corner's
+/// double-tap clock and silently toggle Stop/Move behind a plasma field,
+/// where nothing on the surface could show that it had changed. You
+/// reached for the grid; the art is over, and nothing else happened.
+///
+/// `►` is the one that still acts: making you press it twice would be the
+/// toy charging rent on the one gesture this product exists to provide
+/// (`docs/21-the-arts.md`).
+fn left_art(reel: &mut Option<Reel>, repaint: &mut bool, button: Button, down: bool) -> bool {
+    if !down || reel.is_none() || button == ARTS_BUTTON {
         return false;
     }
     *reel = None;
+    *repaint = true;
     eprintln!("tallyd: arts off");
-    gesture != Gesture::Next
+    button != NEXT_BUTTON
 }
 
 /// Advance the art one frame, on every other wake.
@@ -718,6 +734,13 @@ fn main() -> ExitCode {
                         if button == Button::Top(1) {
                             home_press = down.then_some(elapsed);
                         }
+                        // Before the corner's clock and before `feed`:
+                        // an art swallows the press whole, so neither
+                        // gets to act on one the eye never aimed at a
+                        // session (`docs/21-the-arts.md`).
+                        if left_art(&mut reel, &mut repaint, button, down) {
+                            continue;
+                        }
                         // Same reason, same place: a double-tap is two
                         // presses close in time, and the release that
                         // completes one answers `None` from `feed`.
@@ -733,11 +756,6 @@ fn main() -> ExitCode {
                             continue;
                         };
                         corner.saw(gesture);
-                        let swallowed = left_art(&mut reel, gesture);
-                        repaint |= swallowed;
-                        if swallowed {
-                            continue;
-                        }
                         match gesture {
                             Gesture::Arts => {
                                 next_art(&mut reel);

@@ -48,9 +48,18 @@ lost: keep pressing and you arrive back where you started.
 
 ## Leaving
 
-**Every other button exits.** A press on the grid, an action, an arrow —
+**Every other press exits.** A press on the grid, an action, an arrow —
 whatever it was, the art stops, the grid comes back, and the press itself
-is swallowed. That is deliberate. You left art mode by *reaching for the
+is swallowed.
+
+*Press*, not *gesture*, and the distinction is load-bearing. It is read
+from the raw button before `chords.feed`, because `feed` answers `None`
+for a held modifier and for the release half of a double-tap. Reading it
+from the gesture instead left `CC19` able to reach the corner's
+double-tap clock while an art was playing and toggle Stop/Move behind a
+plasma field — a mode change with nothing on the surface able to report
+it, discovered only on coming out of the art
+([22](22-the-mode-button.md)). That is deliberate. You left art mode by *reaching for the
 thing you actually wanted*, and the pad under your finger a quarter second
 ago was a sine wave, not a session. Acting on it would be acting on a grid
 the eye never saw, which is the same rule [16](16-the-queue.md) applies to
