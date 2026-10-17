@@ -12,7 +12,9 @@
 //! them is visible on a working grid where eleven pads are lit and the
 //! other fifty-three are correctly dark.
 
-use crate::surface::palette::{Entry, AMBER, DARK_GREY, DARK_RED, GREEN, OFF, RED, WHITE, YELLOW};
+use crate::surface::palette::{
+    Entry, AMBER, DARK_GREEN, DARK_GREY, DARK_RED, GREEN, OFF, RED, WHITE, YELLOW,
+};
 use crate::surface::{Button, Cell, Frame};
 
 /// Which art is playing.
@@ -23,23 +25,41 @@ pub enum Piece {
     Plasma,
     /// Conway on an 8×8 torus, drawn as heat rather than occupancy.
     Life,
+    /// Eight columns of falling light with bright heads and cooling tails.
+    Rain,
+    /// Doom's fire, eight pads wide: a hot floor, cooling as it rises.
+    Fire,
+    /// Tetrominoes that place themselves, stack, and clear lines.
+    Tetris,
     /// The joke: tally's own colour language, telling a story about tally.
     Uprising,
 }
 
 impl Piece {
+    /// Every piece, in the order `Drums` walks them.
+    ///
+    /// Three that are only pretty, two that are classics, and the joke
+    /// last — a reel ends on the thing worth filming.
+    pub const REEL: [Self; 6] = [
+        Self::Plasma,
+        Self::Life,
+        Self::Rain,
+        Self::Fire,
+        Self::Tetris,
+        Self::Uprising,
+    ];
+
     /// The next piece a `Drums` press moves to.
     ///
     /// `None` is "no art", and it is both the start and the end of the
     /// cycle: keep pressing and you arrive back at the working grid
     /// without having to know how many pieces there are.
     pub fn after(current: Option<Self>) -> Option<Self> {
-        match current {
-            None => Some(Self::Plasma),
-            Some(Self::Plasma) => Some(Self::Life),
-            Some(Self::Life) => Some(Self::Uprising),
-            Some(Self::Uprising) => None,
-        }
+        let Some(at) = current else {
+            return Self::REEL.first().copied();
+        };
+        let next = Self::REEL.iter().position(|&p| p == at)?.saturating_add(1);
+        Self::REEL.get(next).copied()
     }
 
     /// How long the longest piece runs before it starts over, in art
@@ -52,31 +72,53 @@ impl Piece {
         match self {
             Self::Plasma => "plasma",
             Self::Life => "life",
+            Self::Rain => "rain",
+            Self::Fire => "fire",
+            Self::Tetris => "tetris",
             Self::Uprising => "uprising",
         }
     }
 }
 
+/// The state a piece carries between frames, if it carries any.
+///
+/// An enum rather than one field per simulation: five boards allocated so
+/// that one can run is the kind of thing that is invisible until somebody
+/// adds a sixth.
+#[derive(Debug, Clone)]
+enum Sim {
+    /// [`Piece::Plasma`] and [`Piece::Uprising`]: frame *n* depends on
+    /// nothing but *n*.
+    Stateless,
+    Life(Life),
+    Rain(Rain),
+    Fire(Fire),
+    Tetris(Tetris),
+}
+
 /// A piece, playing.
 ///
-/// Holds the frame counter and — for [`Piece::Life`], the only piece with
-/// any — the simulation state. One `tick` is one art frame.
+/// Holds the frame counter and whatever state the piece needs. One `tick`
+/// is one art frame.
 #[derive(Debug, Clone)]
 pub struct Reel {
     piece: Piece,
     /// Art frames since this piece started.
     n: u32,
-    life: Life,
+    sim: Sim,
 }
 
 impl Reel {
     /// Start `piece` from its first frame.
     pub fn new(piece: Piece) -> Self {
-        Self {
-            piece,
-            n: 0,
-            life: Life::seeded(SEED),
-        }
+        let sim = match piece {
+            Piece::Plasma | Piece::Uprising => Sim::Stateless,
+            Piece::Life => Sim::Life(Life::seeded(SEED)),
+            Piece::Rain => Sim::Rain(Rain::seeded(SEED)),
+            Piece::Fire => Sim::Fire(Fire::seeded(SEED)),
+            Piece::Tetris => Sim::Tetris(Tetris::seeded(SEED)),
+        };
+        Self { piece, n: 0, sim }
     }
 
     /// Which piece is playing.
@@ -85,10 +127,26 @@ impl Reel {
     }
 
     /// Advance one art frame.
+    ///
+    /// Each simulation has its own cadence, because what reads as motion
+    /// is not the same speed for a glider as for a raindrop. The frame
+    /// counter is the one clock; the divisors are the pieces' own.
     pub fn tick(&mut self) {
         self.n = self.n.wrapping_add(1);
-        if self.piece == Piece::Life && self.n.is_multiple_of(LIFE_EVERY) {
-            self.life.step();
+        match &mut self.sim {
+            Sim::Stateless => {}
+            Sim::Life(l) => {
+                if self.n.is_multiple_of(LIFE_EVERY) {
+                    l.step();
+                }
+            }
+            Sim::Rain(r) => r.step(),
+            Sim::Fire(f) => {
+                if self.n.is_multiple_of(FIRE_EVERY) {
+                    f.step();
+                }
+            }
+            Sim::Tetris(t) => t.step(self.n),
         }
     }
 
@@ -99,10 +157,13 @@ impl Reel {
     /// report (`docs/21-the-arts.md`).
     pub fn frame(&self) -> Frame {
         let mut f = Frame::dark();
-        match self.piece {
-            Piece::Plasma => plasma(self.n, &mut f),
-            Piece::Life => self.life.paint(&mut f),
-            Piece::Uprising => uprising(self.n % UPRISING_LOOP, &mut f),
+        match &self.sim {
+            Sim::Stateless if self.piece == Piece::Plasma => plasma(self.n, &mut f),
+            Sim::Stateless => uprising(self.n % UPRISING_LOOP, &mut f),
+            Sim::Life(l) => l.paint(&mut f),
+            Sim::Rain(r) => r.paint(&mut f),
+            Sim::Fire(fire) => fire.paint(&mut f),
+            Sim::Tetris(t) => t.paint(&mut f),
         }
         f
     }
@@ -192,6 +253,26 @@ const LIFE_SPAN: u32 = 300;
 /// that reliably produces gliders rather than a dense blob that settles.
 const DENSITY: u32 = 40;
 
+/// Xorshift. Not cryptography and not uniform to a statistician — it
+/// decides which pads light up.
+#[derive(Debug, Clone)]
+struct Rng(u32);
+
+impl Rng {
+    fn bits(&mut self) -> u32 {
+        self.0 ^= self.0 << 13;
+        self.0 ^= self.0 >> 17;
+        self.0 ^= self.0 << 5;
+        self.0
+    }
+
+    /// `0..n`. The modulo bias at these sizes is a rounding error on a
+    /// light show.
+    fn below(&mut self, n: u32) -> u32 {
+        self.bits() % n.max(1)
+    }
+}
+
 /// Conway on an 8×8 torus, drawn as heat.
 ///
 /// The torus is what keeps a board this small interesting — a glider that
@@ -210,7 +291,7 @@ struct Life {
     recent: [u64; 4],
     /// Generations since the last soup, against [`LIFE_SPAN`].
     age: u32,
-    rng: u32,
+    rng: Rng,
 }
 
 impl Life {
@@ -220,25 +301,16 @@ impl Life {
             heat: [0; 64],
             recent: [0; 4],
             age: 0,
-            rng: seed,
+            rng: Rng(seed),
         };
         life.reseed();
         life
     }
 
-    /// Xorshift. Not cryptography and not uniform to a statistician —
-    /// it decides which pads light up.
-    fn rand(&mut self) -> u32 {
-        self.rng ^= self.rng << 13;
-        self.rng ^= self.rng >> 17;
-        self.rng ^= self.rng << 5;
-        self.rng
-    }
-
     fn reseed(&mut self) {
         let mut cells = 0u64;
         for i in 0..64 {
-            if self.rand() % 100 < DENSITY {
+            if self.rng.below(100) < DENSITY {
                 cells |= 1u64 << i;
             }
         }
@@ -430,7 +502,11 @@ fn wink(since: u32) -> bool {
 
 /// The joke (`docs/21-the-arts.md`).
 fn uprising(n: u32, f: &mut Frame) {
-    let working = Cell::Pulse(GREEN);
+    // Static, because the surface stopped pulsing green: motion is the
+    // amber's alone now, and a joke that showed a breathing green pad
+    // would be telling it about a grid this product no longer draws
+    // (`render::slot`).
+    let working = Cell::Static(GREEN);
     let asking = Cell::Pulse(AMBER);
     let gone = Cell::Static(RED);
     if n < beat::SPAWN {
@@ -456,12 +532,493 @@ fn uprising(n: u32, f: &mut Frame) {
     }
 }
 
+// ── rain ─────────────────────────────────────────────────────────────────
+
+/// How fast a drop falls, in sixteenths of a pad per frame. A range, not
+/// a constant: eight columns at one speed is a curtain, and what reads as
+/// rain is eight columns disagreeing.
+const RAIN_SLOWEST: u32 = 2;
+/// The fast end of the same range.
+const RAIN_FASTEST: u32 = 7;
+/// Full heat under a drop, and so the length of the tail behind it.
+const RAIN_MAX: u8 = 20;
+/// Head to tail: a white head on a green body, going out.
+const RAIN_RAMP: [Entry; 5] = [WHITE, GREEN, GREEN, DARK_GREEN, DARK_GREY];
+
+/// Eight independent drops, one per column, each leaving a cooling tail.
+///
+/// The tail is the same trick [`Life`] uses — heat that outlives the thing
+/// that made it — and it is why this reads as rain rather than as eight
+/// pads taking turns.
+#[derive(Debug, Clone)]
+struct Rain {
+    heat: [u8; 64],
+    /// Each drop's position, in sixteenths of a pad from the top row.
+    /// **Negative is above the grid**, which is where a drop waits out
+    /// its gap before falling again.
+    head: [i32; 8],
+    speed: [i32; 8],
+    rng: Rng,
+}
+
+impl Rain {
+    fn seeded(seed: u32) -> Self {
+        let mut rain = Self {
+            heat: [0; 64],
+            head: [0; 8],
+            speed: [0; 8],
+            rng: Rng(seed),
+        };
+        for col in 0..8 {
+            rain.respawn(col);
+        }
+        rain
+    }
+
+    /// Put a drop back above the grid with a fresh speed and gap.
+    fn respawn(&mut self, col: usize) {
+        let gap = i32::try_from(self.rng.below(10).saturating_add(1)).unwrap_or(1);
+        let fast = RAIN_FASTEST.saturating_sub(RAIN_SLOWEST).saturating_add(1);
+        let speed = self.rng.below(fast).saturating_add(RAIN_SLOWEST);
+        if let Some(h) = self.head.get_mut(col) {
+            *h = -gap * 16;
+        }
+        if let Some(s) = self.speed.get_mut(col) {
+            *s = i32::try_from(speed).unwrap_or(4);
+        }
+    }
+
+    /// Move every drop, light what it is over, and cool everything else.
+    ///
+    /// A drop moves at most fifteen sixteenths of a pad per frame, so it
+    /// can never skip one — which is what lets the head light a single
+    /// pad rather than having to interpolate a streak.
+    fn step(&mut self) {
+        for h in &mut self.heat {
+            *h = h.saturating_sub(1);
+        }
+        for col in 0..8 {
+            let speed = self.speed.get(col).copied().unwrap_or(4);
+            let next = self.head.get(col).copied().unwrap_or(0) + speed;
+            if let Some(h) = self.head.get_mut(col) {
+                *h = next;
+            }
+            let row = next.div_euclid(16);
+            if row >= 8 {
+                self.respawn(col);
+            } else if let Ok(r) = usize::try_from(row) {
+                if let Some(h) = self.heat.get_mut(r * 8 + col) {
+                    *h = RAIN_MAX;
+                }
+            }
+        }
+    }
+
+    fn paint(&self, frame: &mut Frame) {
+        paint_heat(frame, &self.heat, RAIN_MAX, &RAIN_RAMP);
+    }
+}
+
+// ── fire ─────────────────────────────────────────────────────────────────
+
+/// How many art frames one fire step lasts. Every other one: at full rate
+/// the flames flicker faster than the eye resolves and read as noise.
+const FIRE_EVERY: u32 = 2;
+/// The heat of the floor. Seven rows above it and up to two lost per row,
+/// so a flame reaches the top only when the dice are with it — which is
+/// what makes it look like fire rather than like a gradient.
+const FIRE_MAX: u8 = 11;
+/// Hottest first.
+const FIRE_RAMP: [Entry; 6] = [WHITE, YELLOW, AMBER, RED, DARK_RED, DARK_GREY];
+
+/// Doom's fire, eight pads wide.
+///
+/// The whole algorithm is one line — *each cell is the one below it, minus
+/// a little, blown sideways a little* — and it has been the best
+/// looking-to-code ratio in graphics since 1993.
+#[derive(Debug, Clone)]
+struct Fire {
+    heat: [u8; 64],
+    rng: Rng,
+}
+
+impl Fire {
+    fn seeded(seed: u32) -> Self {
+        Self {
+            heat: [0; 64],
+            rng: Rng(seed),
+        }
+    }
+
+    /// Into a fresh board rather than in place: propagating through a
+    /// buffer you are reading would carry the floor to the ceiling inside
+    /// one frame, and the flame would have no shape.
+    fn step(&mut self) {
+        let mut next = [0u8; 64];
+        for col in 0..8 {
+            if let Some(h) = next.get_mut(7 * 8 + col) {
+                *h = FIRE_MAX;
+            }
+        }
+        for row in 0..7usize {
+            for col in 0..8usize {
+                let src = self.heat.get((row + 1) * 8 + col).copied().unwrap_or(0);
+                let decay = u8::try_from(self.rng.below(3)).unwrap_or(1);
+                let wind = i32::try_from(self.rng.below(3)).unwrap_or(1) - 1;
+                let blown = (i32::try_from(col).unwrap_or(0) + wind).rem_euclid(8);
+                if let Ok(c) = usize::try_from(blown) {
+                    if let Some(h) = next.get_mut(row * 8 + c) {
+                        *h = src.saturating_sub(decay);
+                    }
+                }
+            }
+        }
+        self.heat = next;
+    }
+
+    fn paint(&self, frame: &mut Frame) {
+        paint_heat(frame, &self.heat, FIRE_MAX, &FIRE_RAMP);
+    }
+}
+
+/// Draw a heat board through a ramp: full heat is the ramp's first entry,
+/// no heat is dark. Shared by [`Rain`] and [`Fire`], which differ in what
+/// puts the heat there and in nothing else.
+fn paint_heat(frame: &mut Frame, heat: &[u8; 64], max: u8, ramp: &[Entry]) {
+    let steps = u8::try_from(ramp.len()).unwrap_or(1).max(1);
+    for row in 1..=8u8 {
+        for col in 1..=8u8 {
+            let i = usize::from(row - 1) * 8 + usize::from(col - 1);
+            let h = heat.get(i).copied().unwrap_or(0).min(max);
+            let cell = if h == 0 {
+                Cell::Off
+            } else {
+                let step = usize::from((max - h) * steps / max.max(1));
+                Cell::Static(ramp.get(step).or(ramp.last()).copied().unwrap_or(OFF))
+            };
+            frame.set(Button::Grid { row, col }, cell);
+        }
+    }
+}
+
+// ── tetris ───────────────────────────────────────────────────────────────
+
+/// Art frames per row of fall. Six is about five rows a second — fast
+/// enough to be a game, slow enough to watch a piece choose.
+const TETRIS_GRAVITY: u32 = 6;
+/// How long a full row flashes before it is taken away. The flash is the
+/// payoff; removing it silently would waste the only event in the piece.
+const TETRIS_FLASH: u32 = 16;
+/// How long the whole well flashes on a top-out, before it is cleared.
+const TETRIS_WIPE: u32 = 28;
+
+/// The seven tetrominoes, four rotations each, as 4×4 bitmasks.
+///
+/// Bit `r * 4 + c`, row 0 at the top — the same top-down convention the
+/// rest of this crate uses, so a shape reads here the way it looks on the
+/// grid. `I` and `O` repeat because they have two distinct rotations and
+/// one; writing all four costs nothing and removes a special case.
+const SHAPES: [[u16; 4]; 7] = [
+    [0x00F0, 0x4444, 0x00F0, 0x4444], // I
+    [0x0660, 0x0660, 0x0660, 0x0660], // O
+    [0x0270, 0x0262, 0x0720, 0x0232], // T
+    [0x0360, 0x0462, 0x0360, 0x0462], // S
+    [0x0630, 0x0264, 0x0630, 0x0264], // Z
+    [0x0710, 0x0226, 0x0470, 0x0322], // J
+    [0x0740, 0x0622, 0x0170, 0x0223], // L
+];
+
+/// One hue per shape, so a settled well reads as a history of what fell:
+/// cyan, yellow, violet, green, red, blue, amber.
+const SHAPE_HUES: [Entry; 7] = [37, 13, 53, 21, 5, 45, 9];
+
+/// The four occupied cells of a shape, as offsets inside its 4×4 box.
+fn shape_cells(shape: usize, rot: usize) -> impl Iterator<Item = (i32, i32)> {
+    let mask = SHAPES
+        .get(shape)
+        .and_then(|s| s.get(rot % 4))
+        .copied()
+        .unwrap_or(0);
+    (0..16usize).filter(move |&b| mask >> b & 1 == 1).map(|b| {
+        (
+            i32::try_from(b / 4).unwrap_or(0),
+            i32::try_from(b % 4).unwrap_or(0),
+        )
+    })
+}
+
+/// Tetris that plays itself.
+///
+/// The piece does not drift or rotate on the way down: the placement is
+/// chosen the moment it spawns and it falls straight into it. That is a
+/// deliberate loss of realism for a gain in legibility — a piece sliding
+/// sideways in mid-air reads as a bug on a grid this small, and the thing
+/// worth watching is the stack, not the steering.
+#[derive(Debug, Clone)]
+struct Tetris {
+    /// Settled cells, bit `r * 8 + c`, row 0 at the top.
+    well: u64,
+    /// What colour each settled cell is, by the shape that put it there.
+    colour: [Entry; 64],
+    shape: usize,
+    rot: usize,
+    row: i32,
+    col: i32,
+    /// Which rows are flashing before they go, one bit per row. `0xFF` is
+    /// a top-out: the whole well, on its way out.
+    clearing: u8,
+    /// Frames left in that flash. Zero means a piece is falling.
+    phase: u32,
+    rng: Rng,
+}
+
+impl Tetris {
+    fn seeded(seed: u32) -> Self {
+        let mut game = Self {
+            well: 0,
+            colour: [OFF; 64],
+            shape: 0,
+            rot: 0,
+            row: -4,
+            col: 2,
+            clearing: 0,
+            phase: 0,
+            rng: Rng(seed),
+        };
+        game.spawn();
+        game
+    }
+
+    fn filled(&self, row: i32, col: i32) -> bool {
+        let (Ok(r), Ok(c)) = (usize::try_from(row), usize::try_from(col)) else {
+            return false;
+        };
+        r < 8 && c < 8 && self.well >> (r * 8 + c) & 1 == 1
+    }
+
+    /// Can the shape sit here? Above the grid is allowed — that is where
+    /// a piece spends its first frames — but off the sides or through the
+    /// floor is not.
+    fn fits(&self, shape: usize, rot: usize, row: i32, col: i32) -> bool {
+        shape_cells(shape, rot).all(|(dr, dc)| {
+            let (r, c) = (row + dr, col + dc);
+            (0..8).contains(&c) && r < 8 && (r < 0 || !self.filled(r, c))
+        })
+    }
+
+    /// The row this shape comes to rest on in this column, or `None` if it
+    /// cannot be dropped there at all.
+    fn landing(&self, shape: usize, rot: usize, col: i32) -> Option<i32> {
+        if !self.fits(shape, rot, -4, col) {
+            return None;
+        }
+        let mut row = -4;
+        while self.fits(shape, rot, row + 1, col) {
+            row += 1;
+        }
+        Some(row)
+    }
+
+    /// How bad the well would be after this placement. Lower is better.
+    ///
+    /// Height and holes with a bonus for lines, which is the smallest
+    /// scoring function that plays recognisably well. It is not trying to
+    /// be good at Tetris; it is trying not to build a tower on one side
+    /// and top out in nine pieces.
+    fn cost(&self, shape: usize, rot: usize, col: i32) -> Option<i32> {
+        let row = self.landing(shape, rot, col)?;
+        let mut well = self.well;
+        for (dr, dc) in shape_cells(shape, rot) {
+            let (r, c) = (row + dr, col + dc);
+            let (Ok(r), Ok(c)) = (usize::try_from(r), usize::try_from(c)) else {
+                return None; // a cell above the grid: this placement tops out
+            };
+            well |= 1u64 << (r * 8 + c);
+        }
+        Some(well_cost(well))
+    }
+
+    /// Choose a shape, choose where it goes, and start it above the grid.
+    fn spawn(&mut self) {
+        let shape = usize::try_from(self.rng.below(7)).unwrap_or(0);
+        let mut best: Option<(i32, usize, i32)> = None;
+        for rot in 0..4usize {
+            for col in -2..8i32 {
+                let Some(cost) = self.cost(shape, rot, col) else {
+                    continue;
+                };
+                if best.is_none_or(|(b, _, _)| cost < b) {
+                    best = Some((cost, rot, col));
+                }
+            }
+        }
+        let Some((_, rot, col)) = best else {
+            // Nowhere left to put anything. The whole well flashes and
+            // goes, which is the only honest end for a piece that has to
+            // keep running.
+            self.clearing = 0xFF;
+            self.phase = TETRIS_WIPE;
+            return;
+        };
+        self.shape = shape;
+        self.rot = rot;
+        self.col = col;
+        self.row = -4;
+    }
+
+    /// Write the falling piece into the well, then look for full rows.
+    fn settle(&mut self) {
+        for (dr, dc) in shape_cells(self.shape, self.rot) {
+            let (Ok(r), Ok(c)) = (
+                usize::try_from(self.row + dr),
+                usize::try_from(self.col + dc),
+            ) else {
+                continue;
+            };
+            if r < 8 && c < 8 {
+                self.well |= 1u64 << (r * 8 + c);
+                let hue = SHAPE_HUES.get(self.shape).copied().unwrap_or(WHITE);
+                if let Some(e) = self.colour.get_mut(r * 8 + c) {
+                    *e = hue;
+                }
+            }
+        }
+        let mut full = 0u8;
+        for r in 0..8u32 {
+            if self.well >> (r * 8) & 0xFF == 0xFF {
+                full |= 1u8 << r;
+            }
+        }
+        if full == 0 {
+            self.spawn();
+        } else {
+            self.clearing = full;
+            self.phase = TETRIS_FLASH;
+        }
+    }
+
+    /// Take one row away and drop everything above it down.
+    ///
+    /// Only rows **above** `row` move, which is what makes clearing
+    /// several rows order-independent: no surviving row ever changes
+    /// index because a row below it went.
+    fn remove_row(&mut self, row: usize) {
+        for r in (1..=row).rev() {
+            let above = self.well >> ((r - 1) * 8) & 0xFF;
+            self.well = self.well & !(0xFFu64 << (r * 8)) | above << (r * 8);
+            for c in 0..8 {
+                let carried = self.colour.get((r - 1) * 8 + c).copied().unwrap_or(OFF);
+                if let Some(e) = self.colour.get_mut(r * 8 + c) {
+                    *e = carried;
+                }
+            }
+        }
+        self.well &= !0xFFu64;
+        for c in 0..8 {
+            if let Some(e) = self.colour.get_mut(c) {
+                *e = OFF;
+            }
+        }
+    }
+
+    fn finish_clear(&mut self) {
+        let rows = std::mem::take(&mut self.clearing);
+        for r in 0..8usize {
+            if rows >> r & 1 == 1 {
+                self.remove_row(r);
+            }
+        }
+        self.spawn();
+    }
+
+    fn step(&mut self, n: u32) {
+        if self.phase > 0 {
+            self.phase -= 1;
+            if self.phase == 0 {
+                self.finish_clear();
+            }
+            return;
+        }
+        if !n.is_multiple_of(TETRIS_GRAVITY) {
+            return;
+        }
+        if self.fits(self.shape, self.rot, self.row + 1, self.col) {
+            self.row += 1;
+        } else {
+            self.settle();
+        }
+    }
+
+    fn paint(&self, frame: &mut Frame) {
+        // Two blinks a flash, off the same counter that times it.
+        let lit = self.phase % 8 < 4;
+        for row in 1..=8u8 {
+            for col in 1..=8u8 {
+                let i = usize::from(row - 1) * 8 + usize::from(col - 1);
+                let settled = self.well >> i & 1 == 1;
+                let going = self.clearing >> (row - 1) & 1 == 1;
+                // A row on its way out blinks white; everything else
+                // settled keeps the colour of whatever shape put it there.
+                let cell = if !settled || (going && !lit) {
+                    Cell::Off
+                } else if going {
+                    Cell::Static(WHITE)
+                } else {
+                    Cell::Static(self.colour.get(i).copied().unwrap_or(WHITE))
+                };
+                frame.set(Button::Grid { row, col }, cell);
+            }
+        }
+        if self.phase == 0 {
+            self.paint_piece(frame);
+        }
+    }
+
+    fn paint_piece(&self, frame: &mut Frame) {
+        let hue = SHAPE_HUES.get(self.shape).copied().unwrap_or(WHITE);
+        for (dr, dc) in shape_cells(self.shape, self.rot) {
+            let (r, c) = (self.row + dr, self.col + dc);
+            let (Ok(row), Ok(col)) = (u8::try_from(r + 1), u8::try_from(c + 1)) else {
+                continue;
+            };
+            if (1..=8).contains(&row) && (1..=8).contains(&col) {
+                frame.set(Button::Grid { row, col }, Cell::Static(hue));
+            }
+        }
+    }
+}
+
+/// Aggregate height plus buried holes, less a bonus per completed line.
+///
+/// Lifted out of [`Tetris::cost`] so the scoring is one readable loop
+/// rather than three nested in a method that is also doing bookkeeping.
+fn well_cost(well: u64) -> i32 {
+    let mut cost = 0;
+    for c in 0..8u32 {
+        let mut under = false;
+        for r in 0..8u32 {
+            if well >> (r * 8 + c) & 1 == 1 {
+                if !under {
+                    cost += i32::try_from(8 - r).unwrap_or(0); // height
+                    under = true;
+                }
+            } else if under {
+                cost += 8; // a hole, which is worth a whole pad of height
+            }
+        }
+    }
+    for r in 0..8u32 {
+        if well >> (r * 8) & 0xFF == 0xFF {
+            cost -= 16;
+        }
+    }
+    cost
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::surface::TOP_BUTTONS;
-
-    const PIECES: [Piece; 3] = [Piece::Plasma, Piece::Life, Piece::Uprising];
 
     fn grid(f: &Frame) -> Vec<Cell> {
         (1..=8u8)
@@ -476,7 +1033,7 @@ mod tests {
     /// report — which is the one thing `docs/21-the-arts.md` forbids.
     #[test]
     fn no_piece_ever_touches_a_reporting_light() {
-        for piece in PIECES {
+        for piece in Piece::REEL {
             let mut reel = Reel::new(piece);
             for n in 0..UPRISING_LOOP {
                 let f = reel.frame();
@@ -499,7 +1056,7 @@ mod tests {
     #[test]
     fn the_reel_wraps_back_to_no_art() {
         let mut at = None;
-        for _ in 0..PIECES.len() {
+        for _ in 0..Piece::REEL.len() {
             at = Piece::after(at);
             assert!(at.is_some());
         }
@@ -626,7 +1183,7 @@ mod tests {
             uprising(n, &mut f);
             f.get(Button::Grid { row: 1, col: 1 })
         };
-        assert_eq!(at(beat::SPAWN - 1), Cell::Pulse(GREEN), "all working");
+        assert_eq!(at(beat::SPAWN - 1), Cell::Static(GREEN), "all working");
         assert_eq!(at(beat::ASK - 1), Cell::Pulse(AMBER), "all asking");
         assert_eq!(at(beat::DOOM - 1), Cell::Static(RED), "all gone");
         assert_eq!(at(beat::DARK - 1), Cell::Off, "the beat of nothing");
@@ -659,5 +1216,153 @@ mod tests {
             reel.tick();
         }
         assert_eq!(grid(&reel.frame()), first, "the loop has a seam");
+    }
+
+    /// Every shape is four cells inside a 4×4 box, in all four rotations.
+    /// A typo in one of the twenty-eight masks would otherwise show up as
+    /// a tetromino with three cells, which looks almost right.
+    #[test]
+    fn every_tetromino_is_four_cells() {
+        for shape in 0..SHAPES.len() {
+            for rot in 0..4 {
+                let cells: Vec<(i32, i32)> = shape_cells(shape, rot).collect();
+                assert_eq!(cells.len(), 4, "shape {shape} rot {rot}");
+                assert!(
+                    cells
+                        .iter()
+                        .all(|&(r, c)| (0..4).contains(&r) && (0..4).contains(&c)),
+                    "shape {shape} rot {rot} leaves its box"
+                );
+            }
+        }
+        assert_eq!(SHAPE_HUES.len(), SHAPES.len(), "a shape with no colour");
+    }
+
+    /// Removing a row drops what was above it and touches nothing below.
+    /// Getting this backwards is the classic Tetris bug, and it is
+    /// invisible until a stack eats itself.
+    #[test]
+    fn removing_a_row_drops_only_what_is_above_it() {
+        let mut game = Tetris::seeded(SEED);
+        game.well = 0;
+        game.colour = [OFF; 64];
+        // One cell on row 2, a full row 4, one cell on row 6.
+        game.well |= 1u64 << (2 * 8 + 3);
+        game.well |= 0xFFu64 << (4 * 8);
+        game.well |= 1u64 << (6 * 8 + 1);
+        game.remove_row(4);
+        assert!(game.filled(3, 3), "the cell above fell one row");
+        assert!(!game.filled(2, 3), "and left where it was");
+        assert!(game.filled(6, 1), "the cell below did not move");
+        assert_eq!(
+            game.well >> (4 * 8) & 0xFF,
+            0,
+            "the full row is gone, not shifted"
+        );
+    }
+
+    /// It plays forever. A full row always goes, a topped-out well always
+    /// clears, and neither ever wedges — a frozen grid is the one thing
+    /// every piece here has a test against.
+    #[test]
+    fn tetris_never_wedges() {
+        let mut reel = Reel::new(Piece::Tetris);
+        let mut stuck = 0;
+        for n in 0..20_000u32 {
+            reel.tick();
+            let Sim::Tetris(game) = &reel.sim else {
+                unreachable!("a tetris reel holds a tetris board")
+            };
+            let full = (0..8u32)
+                .filter(|r| game.well >> (r * 8) & 0xFF == 0xFF)
+                .count();
+            stuck = if full > 0 { stuck + 1 } else { 0 };
+            assert!(
+                stuck < TETRIS_FLASH + TETRIS_GRAVITY + 4,
+                "a full row survived {stuck} frames at {n}"
+            );
+            assert_ne!(game.well, u64::MAX, "the well filled completely at {n}");
+        }
+    }
+
+    /// Fire burns from the floor: the bottom row is always at full heat,
+    /// and nothing anywhere is hotter than the floor that made it.
+    #[test]
+    fn fire_is_hottest_at_the_floor() {
+        let mut fire = Fire::seeded(SEED);
+        for _ in 0..200 {
+            fire.step();
+        }
+        for col in 0..8 {
+            assert_eq!(
+                fire.heat[7 * 8 + col],
+                FIRE_MAX,
+                "floor col {col} went cold"
+            );
+        }
+        assert!(
+            fire.heat.iter().all(|&h| h <= FIRE_MAX),
+            "something burned hotter than the floor"
+        );
+    }
+
+    /// Every column rains. A drop that respawned wrong would leave one of
+    /// the eight dark forever, which reads as a dead pad — the exact
+    /// failure this whole module is also a test for.
+    #[test]
+    fn every_column_rains() {
+        let mut rain = Rain::seeded(SEED);
+        let mut touched = [false; 8];
+        for _ in 0..600 {
+            rain.step();
+            for (col, seen) in touched.iter_mut().enumerate() {
+                *seen |= (0..8).any(|r| rain.heat[r * 8 + col] == RAIN_MAX);
+            }
+        }
+        assert!(
+            touched.iter().all(|&t| t),
+            "a column never rained: {touched:?}"
+        );
+    }
+
+    /// Nothing in the reel sits still. Six pieces, and the frozen-grid
+    /// check applies to all of them rather than to the three that had one
+    /// written by hand.
+    #[test]
+    fn no_piece_in_the_reel_stalls() {
+        for piece in Piece::REEL {
+            let mut reel = Reel::new(piece);
+            let mut last = grid(&reel.frame());
+            let mut changes = 0;
+            for _ in 0..400 {
+                reel.tick();
+                let now = grid(&reel.frame());
+                if now != last {
+                    changes += 1;
+                }
+                last = now;
+            }
+            assert!(
+                changes > 20,
+                "{piece:?} changed only {changes} times in 400"
+            );
+        }
+    }
+
+    /// The reel is six and walking it is six presses. A piece added to
+    /// `REEL` and forgotten in `name` would print the wrong thing in the
+    /// log, which is the only place a press is recorded.
+    #[test]
+    fn every_piece_in_the_reel_is_named_and_reachable() {
+        let mut at = None;
+        let mut walked = Vec::new();
+        for _ in 0..Piece::REEL.len() {
+            at = Piece::after(at);
+            let piece = at.expect("the reel is not exhausted yet");
+            assert!(!piece.name().is_empty());
+            walked.push(piece);
+        }
+        assert_eq!(walked, Piece::REEL.to_vec());
+        assert_eq!(Piece::after(at), None, "the reel did not wrap");
     }
 }

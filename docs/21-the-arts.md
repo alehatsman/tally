@@ -34,11 +34,14 @@ made the row a queue. The rule the top row runs on is *dark does nothing,
 lit does exactly one thing*, and this keeps it: dark while no art is
 playing, white while one is.
 
-One button, three pieces, and a press moves to the next:
+One button, six pieces, and a press moves to the next:
 
 ```text
-dark → Plasma → Life → Uprising → dark → …
+dark → Plasma → Life → Rain → Fire → Tetris → Uprising → dark → …
 ```
+
+Three that are only pretty, two classics, and the joke last, because a
+reel ends on the thing worth filming.
 
 No menu, no mode indicator beyond the button itself, and no way to get
 lost: keep pressing and you arrive back where you started.
@@ -75,7 +78,7 @@ So while art is playing:
 Everything else on the surface goes dark. The art owns the 64 pads; it
 does not own the three lights that report.
 
-## The three pieces
+## The six pieces
 
 ### Plasma
 
@@ -103,6 +106,48 @@ across a room:
   failure mode this product has. So the board keeps its last four states
   and reseeds the moment it repeats one.
 
+### Rain
+
+Eight drops, one per column, each with its own speed and its own gap, each
+leaving a tail that outlives it. The tail is the same trick Life uses —
+heat that survives the thing that made it — and it is the whole reason
+this reads as rain rather than as eight pads taking turns.
+
+A drop moves at most fifteen sixteenths of a pad per frame, so it can
+never skip one. That is not a performance choice; it is what lets the head
+light a single pad instead of having to interpolate a streak across the
+two it jumped.
+
+### Fire
+
+Doom's fire, eight pads wide. The entire algorithm is one sentence — *each
+cell is the one below it, minus a little, blown sideways a little* — and it
+has had the best looking-to-code ratio in graphics since 1993.
+
+The floor is held at full heat and there are seven rows above it, each
+losing up to two. So a flame reaches the ceiling only when the dice are
+with it, which is exactly what separates fire from a gradient.
+
+It propagates into a fresh board rather than in place. Reading from the
+buffer you are writing would carry the floor to the ceiling inside a single
+frame, and the flame would have no shape at all.
+
+### Tetris
+
+Self-placing. A piece picks its rotation and column the moment it spawns —
+by the smallest scoring function that plays recognisably, aggregate height
+plus buried holes less a bonus per line — and then falls straight into it.
+
+**It does not steer on the way down, and that is deliberate.** A piece
+sliding sideways in mid-air reads as a bug on a grid this small, and the
+thing worth watching is the stack, not the steering. What you are meant to
+see is a well filling in seven colours and then losing a row.
+
+A full row flashes white before it goes, because the clear is the only
+event in the piece and taking it away silently would waste it. A top-out
+flashes the whole well and empties it, which is the only honest ending for
+something that has to keep running.
+
 ### Uprising
 
 The joke, and the only piece that is *about* tally.
@@ -119,8 +164,11 @@ a yellow smile         🙂
 ```
 
 It is the colour language telling a story about itself, in the order the
-language was designed to be read, ending on the one palette entry the
-product never uses: **yellow**, which has sat in
+language was designed to be read — and in its current dialect: the green
+is **static**, because motion belongs to the amber now, and a joke that
+breathed green would be about a grid this product stopped drawing. It
+ends on the one palette entry the product never uses: **yellow**, which
+has sat in
 `surface::palette::YELLOW` marked *currently unused* since M0. It is the
 face, and it is the only place it goes.
 
@@ -159,6 +207,10 @@ holds send nothing at all.
 
 ## What this does not do
 
+- **There is no way out but through.** Six pieces is six presses back to
+  the grid. That is the cost of one button, and it is paid by every other
+  button also being an exit — you are never more than one press from the
+  thing you actually wanted.
 - **It does not run by itself.** No screensaver, no idle timeout, no
   art after N quiet minutes. A grid that starts animating on its own is a
   grid you have to check before you trust, and the whole product is the

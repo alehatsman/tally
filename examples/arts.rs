@@ -15,11 +15,10 @@ fn main() {
         .next()
         .and_then(|n| n.parse().ok())
         .unwrap_or(Piece::LOOP - 1);
-    let piece = match name.as_str() {
-        "plasma" => Piece::Plasma,
-        "life" => Piece::Life,
-        _ => Piece::Uprising,
-    };
+    let piece = Piece::REEL
+        .into_iter()
+        .find(|p| p.name() == name)
+        .unwrap_or(Piece::Uprising);
 
     let mut reel = Reel::new(piece);
     for _ in 0..at {
