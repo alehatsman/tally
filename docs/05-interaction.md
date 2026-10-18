@@ -156,6 +156,12 @@ Linear in age, clamped at both ends. 900 s because the observed spread puts
 p75 at 335 s and p90 at 1,076 s — the knee of the real distribution, not a
 round number chosen first.
 
+✅ **Re-measured at n=540 rather than 49** (55 hours, 2026-10-18): p50
+**117 s**, p90 **983 s**, max **18.7 hours**. The knee still lands on p90,
+so roughly a tenth of waits reach the clamp and the mapping was guessed
+well. The max is the starvation case mute exists for — a slot that sat
+amber overnight.
+
 **The range is deliberately narrow and centred near today.** The device's
 unsynced 120 bpm sits inside it. The slow end is *slower* than the grid has
 ever been and the fast end barely faster, because the failure this design
@@ -522,6 +528,16 @@ pad (r, c)  ⟶  absolute row (r - 1) × 8 + c
 
 **Tap a pad and the window lands there**: that row becomes the top of the
 eight-row window, clamped at the bottom of the space.
+
+> ⚠️ **Measured, and it is not being used for the thing it was built for.**
+> Nine presses over 55 hours. `lit` was **4** every single time and never
+> moved; **all nine destinations were rows 1–8** — inside the window they
+> started in. The map has **never once crossed an empty middle**, which is
+> the case the whole design argues from. What it is actually earning is
+> *one gesture instead of up to seven scrolls*, which is real but much
+> smaller. The honest follow-up is not a better map: it is whether a
+> sixty-four-row space is the right size at all
+> ([11](11-unbuilt.md#512-slots-for-four-used-rows)).
 
 One pad stands for eight slots, so seven-eighths of the information is
 thrown away. What survives is **the worst thing in the row**: asking →
@@ -933,8 +949,10 @@ frame 759 — and the first person to press the button never saw it, because
 nobody holds a button they have just discovered for eighteen seconds.
 Seconds are the unit the complaint was made in.
 
-**Where it lives.** `src/art/`, pure: a `Piece` and a frame counter in, a
-`Frame` out. It does not know what a session is, that anchord exists, or
+**Where it lives.** `src/art/` — **2,157 lines, about 12% of the crate**,
+which is an open question about whether nine pieces is the right number
+([11](11-unbuilt.md#the-reel-is-nine-pieces)). Pure: a `Piece` and a frame
+counter in, a `Frame` out. It does not know what a session is, that anchord exists, or
 that the pads it is painting usually mean something. One file per piece,
 plus `rng`, `colour` and `sprite` for what they share. Nothing in
 `src/render.rs` changes — the colour language has one owner and the art is

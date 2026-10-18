@@ -90,27 +90,56 @@ Two ways of reporting that run were refused, and both are the same mistake:
 
 ---
 
-## The gate
+## The gate, and what the journal already answered
 
-**A week of `attention.jsonl`, and a number out of it** — how many ambers
-sent you to a session that did not want anything.
+**55 hours, 1,162 lines, 544 rising edges, 78 navigation presses**, read on
+2026-10-18. The journal is at **2.3 days of the seven** F0 asks for. Three
+of the five questions below are closed by what is already in it, and the
+headline one turns out not to be measurable at all yet.
 
-Unchanged since M1. M6 is what made the number possible, by giving the
-signal a source that fires. **The journal holds a little over a day.** Nine
-milestones have shipped on top of a signal whose trustworthiness has never
-been measured to the standard this document set for it, and that is the
-honest statement of where the project stands.
+### The instrument does not record the gesture it is measuring
 
-Four other weeks are owed, and they are cheap because they are already being
-recorded:
+F0 asks *how many ambers sent you to a session that wanted nothing.*
+`Journal` logs a nav line for `next`, `back` and `overview`
+(`jumped_next`, `jumped_back`, `jumped_to`). **A plain pad tap logs
+nothing** — and that is the gesture the product exists for, running at a
+reported 341/day against **62** `next` presses in 55 hours.
 
-| what | read it from | what it decides |
-|---|---|---|
-| is `►` reached for, and how deep is the queue | `kind:"nav"`, `via:"next"` | if `queued` is almost always 1, the 61% that justified M8 was one unusual hour, and [#8](https://github.com/alehatsman/tally/issues/8)'s grouping argument gets its second look |
-| is the map reached for, and does `lit` move off seven | `via:"overview"` | if `lit` sits at seven for a month, the follow-up is not a better map, it is a **smaller address space** |
-| is `>` used at all | shell history against nav lines | if the shell still wins, the launch column has again been given work it does not want |
-| does the corner ever sit on Move | the daemon log | if it does not, M12 spent a double-tap on nothing and solo gets its second look |
-| how often does a view drift | `sweep:` lines | if it reads zero for a week, the acting sweep is not worth its blast radius ([06](docs/06-views.md#the-sweep-counts-and-does-not-touch)) |
+So the file records the ambers that were raised and almost none of the
+answers. **Waiting four more days finishes nothing**; one
+`journal.jumped_pad()` beside the existing three is the whole fix, and it
+has to land before the week runs rather than after
+([#43](https://github.com/alehatsman/tally/issues/43)).
+
+### And the question itself needs restating
+
+When M1 set this gate, amber meant *the detector believes it rang and went
+quiet*, so a false positive was a **detector error**. Since
+[D5](docs/10-decisions.md#d5--the-bell-that-is-never-rung) the signal is a
+hook, and `Stop` fires **every turn** — so amber now means *an agent
+finished a turn*, about **ten times an hour**.
+
+A hook-raised amber is essentially never *wrong*. What it can be is
+**correct and ignored**. The question worth seven days is therefore:
+
+> **of the ambers raised, how many did you go to, and how many aged out?**
+
+Both are computable once pad jumps are logged; `after_ms` already carries
+the second half. Precision and recall were the right instrument for a
+signal that no longer exists.
+
+### What 2.3 days already settled
+
+| question | the test it was given | the data | verdict |
+|---|---|---|---|
+| **grouping** ([#8](https://github.com/alehatsman/tally/issues/8)) | *"if `queued` is almost always 1, the 61% was one unusual hour"* | `queued==1` on **35%** of `next` presses (22/62); depth 2+ is 65%, and 7-deep happened 13 times | **Closed.** The measurement that justified the queue holds at 24× the sample. The flat grid is final |
+| **is `►` reached for** | — | **62 of 78** nav presses, 79% | the queue *is* the navigation. M8 vindicated |
+| **the overview** | *"if `lit` sits at seven, the answer is a smaller address space"* | `lit` was **4**, all nine times, and never moved. All nine destinations were rows 1–8 | the map has **never once crossed an empty middle**, its motivating case. It earns its keep as *one gesture instead of seven scrolls* and nothing more — and the follow-up is the address space ([11](docs/11-unbuilt.md#512-slots-for-four-used-rows)) |
+| **the amber's shape**, now n=540 | — | p50 **117 s**, p90 **983 s**, max **18.7 h**; 10% answered under 10 s | the tempo's 900 s knee lands on p90. That number was guessed well ([05](docs/05-interaction.md#the-tempo-says-how-long)) |
+
+Still owed, and still cheap because they are already recorded: whether `>`
+is used at all, whether the corner ever sits on Move, and how often a view
+drifts (`sweep:` lines).
 
 ---
 
@@ -131,93 +160,106 @@ F3 is the one that will be skipped if nobody writes it down.
 
 ### F0 — Measure the amber
 
-Seven days of `attention.jsonl`, uninterrupted, and the number. Alongside
-it, the five questions in [the gate](#the-gate), which are already being
-recorded and cost only the reading.
+**Blocked on a five-line change, not on time.** Log a nav line for a plain
+pad jump ([#43](https://github.com/alehatsman/tally/issues/43)), *then*
+seven days, and read it against the restated question above: how many
+ambers you went to, and how many aged out.
 
-**Exit:** a dated paragraph with the numbers in it. **If the false-amber
-rate is bad, stop and fix the signal** — [04](docs/04-signals.md) said so
-first, and nine milestones are stacked on the assumption it is fine.
+**Exit:** a dated paragraph with those two numbers in it. **If most ambers
+age out, the signal is noise and the fix is in
+[04](docs/04-signals.md#4-a-hook--it-told-us), not here** — `Stop` on every
+turn is the hook that makes the amber frequent, and dropping it is a real
+option the data has not yet earned.
 
 ### F1 — Close the jump subsystem ✅
 
 Done. [#21](https://github.com/alehatsman/tally/issues/21),
 [#20](https://github.com/alehatsman/tally/issues/20),
-[#19](https://github.com/alehatsman/tally/issues/19) and the two shipped
-halves of [#22](https://github.com/alehatsman/tally/issues/22) are in; the
-acting sweep is deliberately held on F0's shape of argument.
+[#19](https://github.com/alehatsman/tally/issues/19) and both shipped
+halves of [#22](https://github.com/alehatsman/tally/issues/22) are in. The
+third half — sending a squatter home rather than parking it — is **cut**,
+not pending ([11](docs/11-unbuilt.md#the-graveyard)).
 
-**What remains:** [#13](https://github.com/alehatsman/tally/issues/13), the
-silently deadlocked pad — document the `printf '\r' | anchor attach` recipe
-today for free; the honest fix is its own decision. And **re-run M18's gate
-on the live grid**: four ⬜ remain, and the two ❌ were caused by the
-renumbering, which is now pinned and has never been re-tested against them.
+[#13](https://github.com/alehatsman/tally/issues/13) is **documented**
+([07](docs/07-cli.md#a-detached-spawn-can-land-on-the-agents-own-first-question)),
+which was the only option available: the honest fix needs a third meaning
+on `tl.attention`, and what that bit means is
+[#23](https://github.com/alehatsman/tally/issues/23).
+
+**What remains:** re-run M18's gate on the live grid. Four ⬜ and two ❌,
+and the ❌ were caused by the renumbering, which is now pinned and has
+never been re-tested against them.
 
 ### F2 — Make the documents true
 
-Runs alongside everything.
-
-- **[#23](https://github.com/alehatsman/tally/issues/23) first, and it is
-  promoted.** Filed as *"not blocking anything"*; it now blocks the workflow
-  actually in use — agents read `tally ls` and spawn their own children off
-  it. `tl.attention` means *blocked* and *finished* with one bit, `Stop`
-  fires every turn and `Notification` rarely, so the common case is the one
-  the word is wrong about. **The amber does not change; the word does.**
-- **[#14](https://github.com/alehatsman/tally/issues/14)** — a pass over the
-  spawn-refusal text, because a claim that drifted has neighbours. Carried
-  into [07](docs/07-cli.md#it-is-exactly-a-pad-press-with-a-folder) and worth
-  re-reading against `frees_the_pad` rather than against prose.
-- **This rewrite.** Thirty-five numbered documents became eleven stating
-  current truth, plus [the record](docs/10-decisions.md). The amendment
-  banners are gone because the thing they amended is gone.
+- **[#23](https://github.com/alehatsman/tally/issues/23)** is now the
+  **keystone**, and it has acquired a second dependant. It already blocked
+  the agents-read-the-grid workflow; it now also blocks #13's real fix,
+  because *noticing a pad that consumed no input* would be a third origin
+  for a bit that already carries two. **The amber does not change; the word
+  does.**
+- **[#14](https://github.com/alehatsman/tally/issues/14)** — ✅ fixed in
+  the restructure: [07](docs/07-cli.md#it-is-exactly-a-pad-press-with-a-folder)
+  takes its predicate from `frees_the_pad` rather than from the stale
+  table.
+- **The restructure** — thirty-five numbered documents became eleven
+  stating current truth, plus [the record](docs/10-decisions.md).
 
 ### F3 — Release engineering
 
-**The largest structural gap.** No `.github/`, `version = "0.0.0"`,
-`publish = false`. `clippy.toml` and `deny.toml` exist and no automation
-reads them.
+**CI shipped** ([#35](https://github.com/alehatsman/tally/pull/35)):
+`cargo test`, `clippy -D warnings`, `fmt --check`, `cargo deny`, and the
+tmux suite runs rather than skips.
 
-- CI: `cargo test`, `clippy -D warnings`, `fmt --check`, `cargo deny`
-- **the tmux test must run in CI, not skip there.** Skip-if-absent keeps it
-  from breaking a contributor; a green run that did not run it is the exact
-  pattern this file complains about everywhere else
+What is left, and it is the half that decides product-or-personal-rig:
+
 - a version, and a decision: crates.io, or a tag plus
   `cargo install --git`. It drives one USB device on one OS, so the second
   is probably the right size
 - an install story that **includes the `settings.json` hook lines**. The
-  attention half of this product does not exist without them, and today they
-  live only in prose ([04](docs/04-signals.md#4-a-hook--it-told-us))
+  attention half of this product does not exist without them, and today
+  they live only in prose ([04](docs/04-signals.md#4-a-hook--it-told-us)).
+  This is the single largest correctness gap in shipping it to anyone
 
 ### F4 — Close scope
 
-A verdict written into each document. Not a build.
-
-| | |
+| | verdict |
 |---|---|
-| [#8](https://github.com/alehatsman/tally/issues/8) — the layout | **Narrowed to one experiment**: light row 4 amber, stand where you stand, say "four" without counting. Then the sentence. The owner's read is that the current layout is final |
-| the squad | **Closed.** Superseded by `tally ls` and an agent that spawns its own members ([10](docs/10-decisions.md#the-squad)) |
-| [the level](docs/11-unbuilt.md#the-level) | Held on F0 **by design**. Once the number exists: build, or close |
-| [the bridge](docs/11-unbuilt.md#the-bridge) / M17 | Specified, unbuilt, five probes never run, no Windows hardware in reach. **Deferred-until-hardware**, not pending |
-| the acting sweep | Held on its own week of `sweep:` lines, for the same reason as the level |
-
+| [#8](https://github.com/alehatsman/tally/issues/8) — the layout | **Closed on data.** `queued==1` is 35%, not "almost always 1". The flat grid is final and grouping does not get a second look |
+| the squad | **Closed.** Superseded by `tally ls` ([10](docs/10-decisions.md#the-squad)) |
+| [the level](docs/11-unbuilt.md#the-level) | Held on F0, and **expected to close**: the pad it guards has never been observed in 544 rises, and it cannot see the one case that bit |
+| [the bridge](docs/11-unbuilt.md#the-bridge) | **Cut to a seam and five questions**, deferred until hardware. M17 is not a pending milestone |
+| peek, teleport-URL, squatter-resolution | **Closed** ([11](docs/11-unbuilt.md#the-graveyard)) |
+| the acting sweep | Held on its own week of `sweep:` lines |
+| **three open scope questions** | the dead spec system, 512 slots for four rows, and nine art pieces — [11](docs/11-unbuilt.md#open-scope-questions), issues [#40](https://github.com/alehatsman/tally/issues/40)–[#42](https://github.com/alehatsman/tally/issues/42). Each removes something that *works*, so each is a decision about what this product is |
 ### F5 — v1.0
 
 Tag it. The README's Status section becomes *shipped, measured and closed*,
-**with the false-amber number in it** — the sentence this project has owed
-since M1, and the only one that was never a matter of effort.
+**with the two numbers in it** — how many ambers you went to, and how many
+aged out. That is the sentence this project has owed since M1, and the only
+one that was never a matter of effort.
 
 ### Sequencing
 
 ```
-F0  measure the amber   ─────────────────────────────────▶  (7 days, in the background)
-F1  the jump subsystem  ✅ except #13 and M18's re-run
-F2  the documents       #23 → #14
-F3  release eng         CI → version → install                 independent, start any time
-F4  close scope         gated on F0's numbers
+#43 log pad jumps       ◀── five lines, and F0 cannot start without it
+F0  measure the amber   ─────────────────────────────────▶  (7 days, after #42)
+F1  the jump subsystem  ✅ — M18's live re-run is all that remains
+F2  the documents       #23 is the keystone; #14 ✅
+F3  release eng         CI ✅ → version → install (with the hook lines)
+F4  close scope         three open questions, #40-#42, gated on nothing
 F5  v1.0                needs all four
 ```
 
-**The honest risk in this ordering is F3.** F1 was specified work with
-repros attached and got done because it hurt. F3 is the one that decides
-whether this is a product or a personal rig, and nothing about using it
-every day will ever make it urgent.
+**Two honest risks in this ordering.**
+
+**F3** is the one that decides whether this is a product or a personal rig,
+and nothing about using it every day will ever make it urgent. CI landing
+is the easy half; the install story carrying the `settings.json` hook lines
+is the half that makes the attention signal exist for anybody else.
+
+**F0 can report that the amber is noise**, and nine milestones are stacked
+on the assumption it is not. Ten rises an hour is a lot of light for a
+surface whose whole claim is that you can ignore it until it speaks. If the
+number says most of them age out, the fix is upstream of everything in this
+file.
