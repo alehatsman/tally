@@ -83,6 +83,18 @@ pub fn pads(drawn: &BTreeMap<Slot, Resolved>, sessions: &[Session]) -> Vec<Pad> 
 /// words and `tally ls` lists with them, so a pad that will not take a
 /// spawn is described the same way in both places.
 ///
+/// **`NeedsAnswer` is `wants you`, and the vagueness is the accurate
+/// part.** `tl.attention` is raised by two hooks and the write is
+/// hook-agnostic, so the label carries two states under one bit: *blocked*
+/// on a dialog (`Notification`) and *finished with its turn*
+/// (`Stop`). `Stop` fires every turn and `Notification` rarely, so a
+/// finished turn is the common case and "waiting for an answer" -- what
+/// this said until `ls` acquired readers that are programs -- was false
+/// most of the times it appeared (`docs/14-attention.md`,
+/// <https://github.com/alehatsman/tally/issues/23>). Whether the two
+/// should be told apart at all is that issue's question; until it is
+/// answered, this says only what the label actually means.
+///
 /// `Working` and `Quiet` are both `running`, which is what the device
 /// says too — one green for alive (`crate::render::slot`). Here it is
 /// also the only honest answer: the working/quiet split is derived from
@@ -94,7 +106,7 @@ pub fn words(state: SlotState) -> String {
     match state {
         SlotState::Empty => "nothing".to_owned(),
         SlotState::Working | SlotState::Quiet => "running".to_owned(),
-        SlotState::NeedsAnswer { .. } => "waiting for an answer".to_owned(),
+        SlotState::NeedsAnswer { .. } => "wants you".to_owned(),
         SlotState::Failed { code } => format!("failed, exit {code}"),
         SlotState::Lost { reclaimable: true } => "lost to an anchord restart".to_owned(),
         SlotState::Lost { reclaimable: false } => "lost, and may still be running".to_owned(),
@@ -177,7 +189,7 @@ pub fn text(pads: &[Pad], caller: Caller<'_>, pages: &Pages) -> String {
 
     let _key = writeln!(
         out,
-        "\n  {YOU} you   # running   ? waiting   ! failed   x lost   . free"
+        "\n  {YOU} you   # running   ? wants you   ! failed   x lost   . free"
     );
 
     if !pads.is_empty() {
@@ -351,6 +363,26 @@ mod tests {
         assert_eq!(words(SlotState::Quiet), "running");
         assert_eq!(words(SlotState::Working), "running");
         assert!(!words(SlotState::Quiet).contains("idle"));
+    }
+
+    /// The label means "blocked on a dialog" **or** "finished its turn",
+    /// and nothing downstream of the hook can tell which (`docs/14`, #23).
+    /// A word that names only the first is wrong in the common case, and
+    /// `tally ls` is read by programs that act on it.
+    #[test]
+    fn attention_does_not_claim_a_question_is_pending() {
+        let declared = words(SlotState::NeedsAnswer {
+            source: crate::signal::Source::Declared,
+        });
+        let derived = words(SlotState::NeedsAnswer {
+            source: crate::signal::Source::Derived,
+        });
+        assert_eq!(declared, "wants you");
+        assert_eq!(declared, derived, "the source is not the reader's business");
+        assert!(
+            !declared.contains("question") && !declared.contains("answer"),
+            "a finished turn is not waiting for one: {declared}"
+        );
     }
 
     /// Reclaimable and not are the same colour on the device and the same
