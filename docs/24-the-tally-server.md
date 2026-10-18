@@ -40,12 +40,22 @@ still showed `dotfiles`, `main`, `provision` and nothing else.
 nothing while two clients were attached to the default one. This is the
 whole fix: `switch-client` cannot reach a client it cannot list.
 
-✅ **A window index is stable and is the column.** `new-window -t r07:3`
-lands at 3 whatever else the row holds, and indexes do not renumber when a
-sibling is killed. Jumping `1:4:1`, `1:4:4`, `1:4:2`, `1:7:1` produced
+✅ **A window index is the column.** `new-window -t r07:3` lands at 3
+whatever else the row holds. Jumping `1:4:1`, `1:4:4`, `1:4:2`, `1:7:1` produced
 sessions `r04` and `r07`, with `r04` holding its columns at their own
 indexes regardless of arrival order. A second jump to a view already open
 made no second window.
+
+❌ **"Indexes do not renumber when a sibling is killed" was written here as
+a measured ✅ and is false in general** ([#20](https://github.com/alehatsman/tally/issues/20),
+[33](33-the-server-holds-its-indexes.md)). It held on the machine it was
+measured on because that tmux had `renumber-windows` at its default, `off`.
+A named socket is a separate *server*, not a separate *config*: tmux reads
+`~/.tmux.conf` for every server it starts, so with `set -g renumber-windows
+on` a close **does** slide the siblings down (re-measured, tmux 3.6b:
+`1 2 3 4`, kill 2, `1 2 3`). Moves do not renumber, in either
+configuration. The property is real only because tally now sets the option
+itself; it was never a fact about tmux.
 
 ✅ **A view whose command dies keeps its window, its tag and its index**,
 and the next jump respawns it in place.

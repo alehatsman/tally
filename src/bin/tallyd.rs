@@ -882,7 +882,11 @@ fn main() -> ExitCode {
     // Art advances every other wake: ~31 fps off a 16 ms tick.
     let mut art_wake = false;
     let tmux = Tmux::default();
-    if !tmux.server_running() {
+    if tmux.server_running() {
+        // A server that predates this daemon was started by someone else's
+        // config; a tab closed before the first press would renumber it.
+        tmux.hold_indexes();
+    } else {
         // Said plainly, not fatal. A missing server is the normal state at
         // login; the grid is still truthful without one, and the jump
         // starts a server when it has to.

@@ -293,6 +293,26 @@ fn relocate_window_args(pane: &str, place: Place, replace: bool) -> Vec<String> 
     args
 }
 
+/// Args making tmux leave window indexes alone when a window closes.
+///
+/// A window index is an address (`docs/24-the-tally-server.md`), and tmux's
+/// `renumber-windows` rewrites addresses: closing `r01:2` slides `r01:3`
+/// down into its place. A named socket is a separate *server* and not a
+/// separate *config*, so every server tally starts reads the user's
+/// `~/.tmux.conf` and inherits the option if they set it (`docs/33`).
+///
+/// `-g` and not `-t`: the global session options are what every session
+/// without its own falls back to, so it holds for rows that already exist
+/// and for ones made later, and for rows tally did not create.
+fn hold_indexes_args() -> Vec<String> {
+    vec![
+        "set-option".into(),
+        "-g".into(),
+        "renumber-windows".into(),
+        "off".into(),
+    ]
+}
+
 /// Args keeping a client in `session` when it stops existing.
 ///
 /// Moving a row's last window out destroys the row session, and with
@@ -852,6 +872,24 @@ impl Tmux {
             .is_ok_and(|o| o.status.success())
     }
 
+    /// Pin the one server option that would rewrite addresses under us.
+    ///
+    /// Idempotent and **repeated** rather than done once, because the
+    /// server outlives and is outlived by everything that could do it: a
+    /// restart is a fresh read of the user's config, and the daemon can
+    /// start before the server exists. Best-effort for the same reason:
+    /// with no server there is nothing to pin and nothing to renumber, and
+    /// every call that *starts* one pins it straight after.
+    ///
+    /// `move-window` never renumbers (measured, tmux 3.6b, same row and
+    /// across rows); a close does. So this is called before anything of
+    /// ours that closes a window, and after anything that may have made
+    /// the server — a tab the user closes between presses is covered by
+    /// the latter, which is the case that started this (`docs/33`).
+    pub fn hold_indexes(&self) {
+        let _held = self.run("set-option", &hold_indexes_args());
+    }
+
     fn panes(&self) -> String {
         self.stdout("list-panes", &list_panes_args())
             .unwrap_or_default()
@@ -919,11 +957,12 @@ impl Tmux {
         // Before the move, while the session still exists to be told.
         let _kept = self.run("set-option", &keep_clients_args(pane.tmux_session));
         let placeholder = if plan.create_row {
-            Some(
-                self.stdout("new-session", &placeholder_args(place))?
-                    .trim()
-                    .to_owned(),
-            )
+            let window = self
+                .stdout("new-session", &placeholder_args(place))?
+                .trim()
+                .to_owned();
+            self.hold_indexes();
+            Some(window)
         } else {
             None
         };
@@ -953,6 +992,7 @@ impl Tmux {
         place: Place,
         at: &str,
     ) -> Result<String, Error> {
+        self.hold_indexes();
         let listing = self.panes();
         if let Some(found) = view_for(&listing, session) {
             if found.dead {
@@ -1001,6 +1041,7 @@ impl Tmux {
         if !self.session_exists(&row_session(place.row)) {
             let args = new_row_session_args(place, session, &self.anchor_bin);
             let pane = self.stdout("new-session", &args)?.trim().to_owned();
+            self.hold_indexes();
             // `new-session` puts it at `base-index`; the column is where
             // it belongs. Best-effort: a view at the wrong index is read
             // in the wrong order, not lost.
@@ -1023,6 +1064,7 @@ impl Tmux {
         }
         if !self.session_exists(HOME_SESSION) {
             let _home = self.run("new-session", &new_home_session_args());
+            self.hold_indexes();
         }
         open_terminal(&self.socket);
     }
@@ -1243,6 +1285,9 @@ impl Jump for Tmux {
         let Some(found) = view_for(&listing, session) else {
             return Ok(());
         };
+        // The close is the thing that renumbers, and `purge` can run on a
+        // grid whose daemon has never been pressed.
+        self.hold_indexes();
         let _closed = self.run("kill-pane", &kill_pane_args(found.id))?;
         Ok(())
     }
@@ -1334,6 +1379,26 @@ mod tests {
         assert_eq!(args.get(t + 1).map(String::as_str), Some("r07:4"));
         let src = args.iter().position(|a| a == "-s").expect("-s");
         assert_eq!(args.get(src + 1).map(String::as_str), Some("%3"));
+    }
+
+    /// The option is server-wide: a row the user made, or one made before
+    /// this ran, falls back to it. `-t r07` would pin only the rows we
+    /// happened to name.
+    #[test]
+    fn indexes_are_held_for_the_whole_server_and_not_one_row() {
+        let args = hold_indexes_args();
+        assert_eq!(args.first().map(String::as_str), Some("set-option"));
+        assert!(args.contains(&"-g".to_owned()));
+        assert!(!args.contains(&"-t".to_owned()));
+        assert_eq!(
+            args.iter()
+                .rev()
+                .take(2)
+                .rev()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["renumber-windows", "off"]
+        );
     }
 
     /// A row is many windows now, so anything window-scoped has to be
