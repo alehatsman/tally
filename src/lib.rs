@@ -16,6 +16,7 @@ pub mod device;
 pub mod effect;
 pub mod journal;
 pub mod jump;
+pub mod listing;
 pub mod lock;
 pub mod model;
 pub mod osc;
