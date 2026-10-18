@@ -225,10 +225,28 @@ wedged until the moved session is next pressed, which repairs it.
   the argument lists put `-k` only where the plan says so and always aim
   at the **pane**, never a bare `rNN:`.
 - **End to end**, on a scratch socket (`TALLY_TMUX_SOCKET`), never
-  tally's, driving the real `Tmux` against real tmux 3.6b. **Run, passing,
-  and not committed** — it needs a fake `anchor` on `PATH` and a server
-  with `remain-on-exit`, which is a harness this repo does not have and
-  this bug does not justify. Seen:
+  tally's, driving the real `Tmux` against real tmux 3.6b.
+
+  > ⚠️ **This now exists and is `tests/relocate.rs`**
+  > ([#21](https://github.com/alehatsman/tally/issues/21)). It was written
+  > here as *"a harness this repo does not have and this bug does not
+  > justify"*, and that was true of one bug: there have since been four in
+  > this subsystem whose evidence is a tmux measurement
+  > ([27](27-the-slot-collision.md), [#15](https://github.com/alehatsman/tally/issues/15),
+  > this document's own residue, and
+  > [#20](https://github.com/alehatsman/tally/issues/20)). The cost was
+  > also lower than this paragraph assumed: `Tmux::with_anchor` was
+  > already `pub`, `TALLY_TMUX_SOCKET` already redirected the socket, and
+  > the fake `anchor` is six lines of `sh` passed in by path rather than
+  > put on `PATH`.
+  >
+  > The table below is kept as the record of the run that argued this
+  > document. **It is not the evidence any more** — the test is, it runs
+  > the same scenarios under four server configs, and the row that says
+  > *"relocate onto a live pane … both stay, no error"* is now a test with
+  > `#19` in its name that fails the day that is fixed.
+
+  What was seen, by hand, on the throwaway harness:
 
   ```
   relocate, r02 absent, r03 keeps a neighbour   S1 r03:1 → r02:1, slot 1:2:1
