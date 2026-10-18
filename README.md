@@ -163,6 +163,7 @@ spec once blocked on reading it the other way.
 | [24-the-tally-server.md](docs/24-the-tally-server.md) | tally's own tmux server: a row is a session, a column is a window |
 | [26-the-dead-pane.md](docs/26-the-dead-pane.md) | a killed view names the conversation it was running, as a command you can paste |
 | [27-the-slot-collision.md](docs/27-the-slot-collision.md) | a corpse must not hold the slot: a view is found by address as well as by id |
+| [31-the-moved-view.md](docs/31-the-moved-view.md) | a moved session takes its view with it: the pane follows the label, and the pad it left is free |
 
 Not design, and nothing below is built:
 

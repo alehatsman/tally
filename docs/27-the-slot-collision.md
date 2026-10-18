@@ -78,6 +78,9 @@ looking at; taking its window out from under you is a bigger decision than
 this bug, and it gets its own doc if it ever bites. The reclaim therefore
 tests `dead` as well as the address.
 
+> *It bit, by Move: [31](31-the-moved-view.md) relocates a moved view and
+> keeps this decision for a live pane at the destination.*
+
 ### Why not kill the window
 
 `kill-window`-then-create, or `new-window -k`, both work and both are

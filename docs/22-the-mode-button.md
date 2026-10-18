@@ -87,8 +87,8 @@ typed, `>` takes the leftmost free column, and after a day the board is a
 
 **A move is one label write.** A pad's address is `tl.slot` (`anchor.rs:30`)
 and `label()` sets it atomically in one call (`anchor.rs:520`). No process
-moves, no tmux change, no pane is touched — the agent never learns it
-happened.
+moves, no pane is touched *by the write* — the agent never learns it
+happened. The view follows, from `tallyd` ([31](31-the-moved-view.md)).
 
 ### Hold, tap the source, tap the destination
 

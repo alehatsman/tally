@@ -42,6 +42,9 @@ pub enum Done {
     /// A session changed address: one `tl.slot` write, and the agent
     /// never learns it happened.
     Moved {
+        /// The session that moved, so its view can follow
+        /// (`docs/31-the-moved-view.md`).
+        session: String,
         /// Where it was.
         from: Slot,
         /// Where it is now.
@@ -59,7 +62,7 @@ impl std::fmt::Display for Done {
             Self::Forgot(1) => write!(f, "forgot 1 row"),
             Self::Forgot(n) => write!(f, "forgot {n} rows"),
             Self::Picked(at) => write!(f, "picked up {}:{}:{}", at.page, at.row, at.col),
-            Self::Moved { from, to } => write!(
+            Self::Moved { from, to, .. } => write!(
                 f,
                 "moved {}:{}:{} -> {}:{}:{}",
                 from.page, from.row, from.col, to.page, to.row, to.col
@@ -189,8 +192,10 @@ impl Context<'_> {
     ///
     /// A pad's address is its `tl.slot` and nothing else, so moving a
     /// session is rewriting one string. No process moves, no pane is
-    /// touched, and the agent never learns it happened
-    /// (`docs/22-the-mode-button.md#move-is-the-missing-verb`).
+    /// touched *here*, and the agent never learns it happened
+    /// (`docs/22-the-mode-button.md#move-is-the-missing-verb`). The view
+    /// follows, but that is tmux's business and the caller's
+    /// (`docs/31-the-moved-view.md`).
     ///
     /// Only the **drawn** session moves. Every ended row at the old
     /// address stays there, so the row it left still knows its directory
@@ -211,7 +216,11 @@ impl Context<'_> {
         let mut set = BTreeMap::new();
         let _slot = set.insert(anchor::LABEL_SLOT.to_owned(), address);
         self.client.label(&r.session, &set, &[])?;
-        Ok(Done::Moved { from, to })
+        Ok(Done::Moved {
+            session: r.session.clone(),
+            from,
+            to,
+        })
     }
 
     /// Forget every ended row behind a pad.
