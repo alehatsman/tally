@@ -77,6 +77,48 @@ The session runs, the pad lights, and the first press is what opens it.
 is attempted, so a tmux that will not cooperate costs you a view the next
 pad press makes anyway. It prints where the session went and exits `0`.
 
+### A detached spawn can land on the agent's own first question
+
+⚠️ **Measured, and not fixed**
+([#13](https://github.com/alehatsman/tally/issues/13)). Claude Code asks
+*"Is this a project you created or one you trust?"* the first time it runs
+in a directory. A detached spawn into a **freshly cloned repo** meets that
+prompt with nothing attached to answer it:
+
+```sh
+cd ~/projects/thing && tally spawn --detach 1:1:1 -- claude "<prompt>"
+```
+
+`tally spawn` returns `0`, the pad lights, anchor says `running` — and the
+agent is sitting on a dialog, indefinitely. **From the grid it is
+indistinguishable from an agent that is thinking**, which is the worst
+shape a failure can have on a surface whose whole job is to tell you which
+session wants you. The pad looks like work.
+
+It is also exactly when you hit it: `--detach` is how you start several at
+once (`--count N` forces it above 1), and a fresh clone is when you do
+that.
+
+The workaround, and it is a workaround:
+
+```sh
+printf '\r' | anchor attach <id>
+```
+
+`anchor attach` is documented as an interactive passthrough, not a write
+channel, so this leans on behaviour anchor does not promise. It works.
+
+**Why nothing here fixes it.** The honest fix is for the pad to *notice* —
+a session that has produced output and consumed no input for N seconds is
+arguably already what `tl.attention` means. That adds a **third origin** to
+a bit that already carries two, *blocked* and *finished*, and what that bit
+should mean is the open question in
+[#23](https://github.com/alehatsman/tally/issues/23). Building on an answer
+nobody has given is how the listing came to say *waiting for an answer*
+about a finished turn ([04](04-signals.md)). The other half of the answer
+is not in this repo at all: a real `anchor send`, or `attach` promising
+what it already does.
+
 **No `--cwd` is deliberate.** A flag would re-admit the thing we are
 removing — a directory typed by hand — and the shell has a perfectly good
 one already. Scripts that want a different folder can use a subshell, or
