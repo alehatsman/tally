@@ -1,0 +1,77 @@
+# CI for tally.
+#
+# This file exists because of one sentence in `tests/relocate.rs`: the
+# suite skips when tmux is absent, and a green run that did not run is
+# the pattern `ROADMAP.md` complains about everywhere else. Somewhere has
+# to be the place it is *not* allowed to skip, and this is it.
+#
+# `clippy.toml` and `deny.toml` have been in the repo since M0 and
+# nothing has ever read them.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A second push to a PR makes the first run pointless.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      # `midir` reaches ALSA on Linux, and `tmux` is what the integration
+      # suite drives. Both are the point rather than incidental: the
+      # device half must keep compiling, and the tmux half must actually
+      # run.
+      - name: System dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libasound2-dev tmux
+          tmux -V
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      # `-D warnings` here and not in `RUSTFLAGS`: a global one is applied
+      # to dependencies too, so a warning in somebody else's crate would
+      # fail this repo's build for something nobody here can fix.
+      - name: Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Test
+        run: cargo test --all-features
+
+      # The suite is allowed to skip on a contributor's machine. It is not
+      # allowed to skip here, and this is the only thing that can tell the
+      # difference: a skip prints its banner to stderr and still exits 0,
+      # so the exit code cannot be the check.
+      - name: The tmux suite really ran
+        run: |
+          cargo test --test relocate -- --nocapture 2>&1 | tee /tmp/relocate.log
+          if grep -q "SKIPPED" /tmp/relocate.log; then
+            echo "::error::the tmux integration suite skipped in CI, which is the one place it must not"
+            exit 1
+          fi
+
+  deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
