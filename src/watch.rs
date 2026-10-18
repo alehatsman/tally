@@ -186,7 +186,8 @@ mod tests {
             session("bad-slot", "running", Some("nope")),
         ];
         w.reconcile(&sessions, &pages, 0);
-        assert!(w.watching.lock().expect("lock").is_empty());
+        let watching = w.watching.lock().expect("lock");
+        assert!(watching.is_empty(), "{watching:?}");
     }
 
     #[test]

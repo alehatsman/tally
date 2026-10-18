@@ -184,7 +184,7 @@ mod tests {
     fn a_real_bell_is_still_a_bell() {
         let got = scan(&[b"what next?\x07"]);
         assert_eq!(got.last_bell, Some(10));
-        assert!(got.titles.is_empty());
+        assert!(got.titles.is_empty(), "{:?}", got.titles);
     }
 
     #[test]
@@ -200,8 +200,10 @@ mod tests {
     #[test]
     fn a_title_split_across_chunks_is_one_title() {
         let mut s = Scanner::default();
-        assert!(s.feed(b"\x1b]0;edit tests/").titles.is_empty());
-        assert!(s.feed(b"pty.rs?").titles.is_empty());
+        let opened = s.feed(b"\x1b]0;edit tests/");
+        assert!(opened.titles.is_empty(), "{:?}", opened.titles);
+        let continued = s.feed(b"pty.rs?");
+        assert!(continued.titles.is_empty(), "{:?}", continued.titles);
         let got = s.feed(b"\x07");
         assert_eq!(got.titles, ["edit tests/pty.rs?"]);
         assert_eq!(
@@ -222,7 +224,7 @@ mod tests {
         // OSC 8 hyperlink: teleport's business, not ours. Its payload must
         // not become a title, and its terminator must not become a bell.
         let got = scan(&[b"\x1b]8;;https://claude.ai/code/session_abc\x07"]);
-        assert!(got.titles.is_empty());
+        assert!(got.titles.is_empty(), "{:?}", got.titles);
         assert_eq!(got.last_bell, None);
     }
 
@@ -231,7 +233,7 @@ mod tests {
         let mut s = Scanner::default();
         let huge = vec![b'x'; MAX_PAYLOAD_BYTES * 4];
         let got = s.feed(&[b"\x1b]0;".as_slice(), &huge].concat());
-        assert!(got.titles.is_empty());
+        assert!(got.titles.is_empty(), "{:?}", got.titles);
         // Back in ground: a later real bell is still seen.
         assert_eq!(s.feed(b"\x07").last_bell, Some(0));
     }
@@ -239,7 +241,8 @@ mod tests {
     #[test]
     fn a_malformed_param_does_not_swallow_the_stream() {
         let mut s = Scanner::default();
-        assert!(s.feed(b"\x1b]bogus").titles.is_empty());
+        let bogus = s.feed(b"\x1b]bogus");
+        assert!(bogus.titles.is_empty(), "{:?}", bogus.titles);
         assert_eq!(s.feed(b"ping\x07").last_bell, Some(4));
     }
 

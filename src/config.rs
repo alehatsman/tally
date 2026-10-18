@@ -425,7 +425,7 @@ cwd = "/tmp/b"
     fn an_absent_file_is_eight_unnamed_pages_and_nothing_to_spawn() {
         let c = Config::load(Path::new("/nonexistent/tally/slots.toml")).expect("absence is ok");
         assert_eq!(c.pages(), &Pages::default());
-        assert!(c.is_empty());
+        assert!(c.is_empty(), "{c:?}");
         assert_eq!(c.pages().index_of("3"), Some(3));
     }
 
@@ -611,6 +611,6 @@ spec = "s"
     #[test]
     fn an_unused_spec_is_allowed() {
         let c = Config::parse("[[spec]]\nname = \"idle\"\nargv = [\"x\"]\n").expect("valid");
-        assert!(c.is_empty());
+        assert!(c.is_empty(), "{c:?}");
     }
 }

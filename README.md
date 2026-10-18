@@ -1,5 +1,7 @@
 # tally
 
+[![ci](https://github.com/alehatsman/tally/actions/workflows/ci.yml/badge.svg)](https://github.com/alehatsman/tally/actions/workflows/ci.yml)
+
 A Novation Launchpad Mini [MK3] as the front panel for agent sessions.
 
 ```text
