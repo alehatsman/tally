@@ -5,7 +5,7 @@
 //! lives below all three because it used to live in `model`, which made
 //! `render` import `model` and `model` import `render` — the only cycle
 //! this crate has had, and the reason `act` reached through a 1,900-line
-//! module for a four-variant enum (`docs/29-what-the-loop-holds.md`).
+//! module for a four-variant enum (`docs/08-daemon.md`).
 //!
 //! Pure, and depending on nothing but an address, a state and an action.
 
@@ -33,7 +33,7 @@ pub enum Effect {
     /// the colour of *what happens to it*
     /// (`docs/05-interaction.md#the-held-preview`). One button with two
     /// consequences is the case that makes the difference load-bearing
-    /// (`docs/22-the-mode-button.md`).
+    /// (`docs/05-interaction.md`).
     Acts(Consequence),
     /// The pad already in your hand. Lit, and a tap on it does nothing —
     /// putting a pad back where it came from is not a move, and the
@@ -46,7 +46,7 @@ pub enum Effect {
     /// full, the question the grid answers flips from "what can I
     /// touch" to "where is there room", and occupancy is the half of
     /// that answer that has to stay readable
-    /// (`docs/22-the-mode-button.md#the-colours`).
+    /// (`docs/05-interaction.md#picking-something-up-flips-the-question-not-the-board`).
     Occupied,
     /// Something is here and this gesture does not apply to it. Dim.
     Skips,
@@ -60,7 +60,7 @@ pub enum Effect {
 /// working, quiet or asking, and `Pad::purgeable` is exited or lost.
 /// That disjointness is what lets one button carry both — every pad
 /// under the hold has exactly one outcome and exactly one colour
-/// (`docs/22-the-mode-button.md#stop-does-kill-and-purge`).
+/// (`docs/05-interaction.md#stop-does-kill-and-purge`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Consequence {
     /// The session drawn here is terminated.
@@ -97,12 +97,12 @@ pub struct Pad {
     /// is resolved by [`crate::model::Pads`] alongside everything else a pad means. A
     /// gesture that spans two taps needs somewhere to keep the first one,
     /// and the only honest place is the same struct the second tap will
-    /// be judged against (`docs/22-the-mode-button.md#hold-tap-the-source-tap-the-destination`).
+    /// be judged against (`docs/05-interaction.md#move-is-the-missing-verb`).
     pub in_hand: bool,
     /// anchord holds at least one row for this pad that it would forget.
     /// Includes rows that are **not drawn**: a clean exit keeps its
     /// `tl.slot` and its log, and its pad is dark
-    /// (`docs/03-model.md#exited-rows-accumulate-and-purge-is-the-answer`).
+    /// (`docs/02-model.md#exited-rows-accumulate-and-purge-is-the-answer`).
     pub purgeable: bool,
 }
 
@@ -119,7 +119,7 @@ impl Pad {
 
 /// What `action` would do to `pad`.
 ///
-/// One action now (`docs/18-the-launch-column.md`), and the function stays
+/// One action now (`docs/05-interaction.md`), and the function stays
 /// because the *preview* is the point: a destructive button with no label
 /// has to answer "what happens if I press this" before you press it, and
 /// it has to answer with the same predicate the press uses.
@@ -158,7 +158,7 @@ pub fn effect(action: Action, pad: Pad, hand: Option<Slot>) -> Effect {
         // Hand full: what it can land on. A pad with something alive on
         // it is not a swap — two label writes are two calls, and a
         // failure between them leaves two sessions claiming one address
-        // (`docs/22-the-mode-button.md#what-is-deliberately-not-here`).
+        // (`docs/05-interaction.md#what-the-corner-deliberately-does-not-carry`).
         // It stays occupancy-coloured rather than dim, because that is
         // the shape the empty space is read against.
         Action::Move if pad.alive() => Effect::Occupied,
@@ -212,7 +212,7 @@ mod tests {
 
     /// The whole claim of the merged button: every pad has **one**
     /// outcome, because alive and purgeable cannot both be true of the
-    /// same pad (`docs/22-the-mode-button.md`).
+    /// same pad (`docs/05-interaction.md`).
     #[test]
     fn a_pad_is_never_both_a_kill_and_a_purge() {
         for state in [
@@ -312,7 +312,7 @@ mod tests {
     /// can never share a frame. That is this: **with a pad in hand,
     /// every pad is Holds, Occupied or Dropped**, and `Skips` is
     /// unreachable. If an arm is ever added that breaks this, the dim
-    /// level starts lying (`docs/22-the-mode-button.md#the-colours`).
+    /// level starts lying (`docs/05-interaction.md#picking-something-up-flips-the-question-not-the-board`).
     #[test]
     fn a_full_hand_never_dims_for_the_other_reason() {
         let held = Slot {

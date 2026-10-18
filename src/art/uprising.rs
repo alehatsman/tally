@@ -118,7 +118,7 @@ pub(super) fn wink(since: u32) -> bool {
     matches!(since, 40..=51 | 76..=87)
 }
 
-/// The joke (`docs/21-the-arts.md`).
+/// The joke (`docs/05-interaction.md`).
 pub(super) fn paint(n: u32, f: &mut Frame) {
     // Static, because the surface stopped pulsing green: motion is the
     // amber's alone now, and a joke that showed a breathing green pad

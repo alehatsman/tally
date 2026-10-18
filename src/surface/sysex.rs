@@ -6,7 +6,7 @@ pub const HEADER: [u8; 6] = [0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D];
 pub const EOX: u8 = 0xF7;
 
 /// Enter programmer mode. **Disables the device's Setup menu** until Live
-/// mode is restored — see `docs/08-lifecycle.md`.
+/// mode is restored — see `docs/08-daemon.md`.
 pub const PROGRAMMER: [u8; 9] = [0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x0E, 0x01, 0xF7];
 /// Return to Live mode. Not optional, and not only on a clean exit.
 pub const LIVE: [u8; 9] = [0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x0E, 0x00, 0xF7];

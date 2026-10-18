@@ -3,7 +3,7 @@
 //! The grid is written top-down everywhere a human reads it — in
 //! `tl.slot` labels, in `slots.toml`, in this crate's types — and the
 //! hardware numbers its rows from the bottom. **The flip happens here and
-//! nowhere else** (`docs/02-surface.md`, `docs/03-model.md`).
+//! nowhere else** (`docs/03-surface.md`, `docs/02-model.md`).
 
 /// How many buttons the top row has.
 ///
@@ -32,7 +32,7 @@ pub enum Button {
     /// Named for where it is, not for what it does, because what it does
     /// changed: these were eight page selectors until `docs/16` made the
     /// row a queue — `▲▼` scroll, `◄` back, `►` next, `Session` holds the
-    /// overview up (`docs/20-the-overview.md`), and three carry nothing.
+    /// overview up (`docs/05-interaction.md`), and three carry nothing.
     /// `Page(5)` meaning *a dark unassigned button* was a name that
     /// lied.
     Top(u8),

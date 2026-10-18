@@ -1,4 +1,4 @@
-//! Sixty-four pads doing something that is not work (`docs/21-the-arts.md`).
+//! Sixty-four pads doing something that is not work (`docs/05-interaction.md`).
 //!
 //! Pure, like [`crate::render`] and for the same reason: a piece is a
 //! function of a frame counter and nothing else, so the whole module is
@@ -208,7 +208,7 @@ impl Reel {
     ///
     /// **Only the grid.** The top row, the right column and the logo are
     /// the caller's: the art owns the pads, not the three lights that
-    /// report (`docs/21-the-arts.md`).
+    /// report (`docs/05-interaction.md`).
     pub fn frame(&self) -> Frame {
         let mut f = Frame::dark();
         match &self.sim {
@@ -225,7 +225,7 @@ impl Reel {
 /// The button that opens an art and holds the first one: `Drums`.
 pub const ARTS_BUTTON: Button = Button::Top(6);
 /// `►`, the play triangle — and the only way back to the working grid
-/// while an art is playing (`docs/21-the-arts.md`).
+/// while an art is playing (`docs/05-interaction.md`).
 pub const LEAVE_BUTTON: Button = Button::Top(4);
 
 /// The pieces that carry no state: frame *n* is a function of *n*.
@@ -261,7 +261,7 @@ mod tests {
     /// The art owns the sixty-four pads and **nothing else**. The top row,
     /// the right column and the logo are the caller's, and a piece that
     /// reached into them would silently take over the three lights that
-    /// report — which is the one thing `docs/21-the-arts.md` forbids.
+    /// report — which is the one thing `docs/05-interaction.md` forbids.
     #[test]
     fn no_piece_ever_touches_a_reporting_light() {
         for piece in Piece::REEL {

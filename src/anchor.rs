@@ -1,7 +1,7 @@
 //! A client for anchord's control socket.
 //!
 //! anchor owns the PTYs; tally owns a grid of LEDs and an opinion about
-//! what they mean (`docs/07-seams.md`). This speaks the newline-JSON half
+//! what they mean (`docs/01-scope.md`). This speaks the newline-JSON half
 //! of the protocol — enough to reconstruct the grid every tick.
 //!
 //! Control calls are **one connection each**. A unix socket is cheap, and
@@ -38,7 +38,7 @@ pub const LABEL_ATTENTION: &str = "tl.attention";
 ///
 /// The argument to `claude --resume`, and the only id that resumes
 /// anything: anchor's id names a PTY that is gone by the time you want
-/// it (`docs/26-the-dead-pane.md`).
+/// it (`docs/06-views.md`).
 ///
 /// **Never removed.** A conversation outlives the PTY that ran it, which
 /// is the whole reason to want it, so the label stays on the dead row.
@@ -139,12 +139,12 @@ pub struct Session {
     /// Read by nothing on the grid — it exists so a hook can find the
     /// session it is running inside by walking its own process ancestry,
     /// which is the only key that survives two agents in one repo
-    /// (`src/attention.rs`, `docs/14-attention.md`).
+    /// (`src/attention.rs`, `docs/04-signals.md`).
     #[serde(default)]
     pub pid: Option<i32>,
     /// The directory it was started in. **Kept on dead rows too**, which
     /// is what lets `>` spawn into a row without a config file
-    /// (`docs/18-the-launch-column.md`).
+    /// (`docs/05-interaction.md`).
     #[serde(default)]
     pub cwd: Option<String>,
     /// `argv[0]`. Inherited by `>`; the arguments deliberately are not.
@@ -200,7 +200,7 @@ impl Session {
     ///
     /// `None` for anything that is not Claude Code, and for a Claude that
     /// has not reached its first turn — the hook that reports it is the
-    /// attention one (`docs/26-the-dead-pane.md`).
+    /// attention one (`docs/06-views.md`).
     pub fn claude(&self) -> Option<&str> {
         self.labels.get(LABEL_CLAUDE).map(String::as_str)
     }
@@ -223,7 +223,7 @@ struct AttachReply {
 /// **Not `Frame`**, which in this crate is the 81 cells going out to the
 /// Launchpad ([`crate::surface::Frame`]). This is anchor's wire framing
 /// coming the other way, and the two met in `watch.rs`, which imports
-/// both halves (`docs/29-what-the-loop-holds.md`).
+/// both halves (`docs/08-daemon.md`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Packet {
     /// PTY bytes, with the offset of the first one.
@@ -483,7 +483,7 @@ impl Client {
     ///
     /// `cols`/`rows` are left to anchor's defaults on purpose — the view
     /// window owns the size and `anchor attach` sets it
-    /// (`docs/03-model.md`).
+    /// (`docs/02-model.md`).
     ///
     /// # Errors
     /// [`Error::Refused`] with `invalid_spec` or `spawn_failed` if the

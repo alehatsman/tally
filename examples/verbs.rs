@@ -113,6 +113,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         other => return Err(format!("expected not_found, got {other:?}").into()),
     }
 
-    println!("\nall four verbs behave as docs/07-seams.md says");
+    println!("\nall four verbs behave as docs/01-scope.md says");
     Ok(())
 }

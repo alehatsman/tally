@@ -19,7 +19,7 @@ pub const PAGES: u8 = 8;
 /// Every row the address space has, stacked: eight pages of eight.
 ///
 /// The grid is an **eight-row window onto this**, scrolled a row at a time
-/// (`docs/16-the-queue.md#the-top-row`). Pages did not go away — they are
+/// (`docs/05-interaction.md#the-queue-and-the-two-buttons-that-read-it`). Pages did not go away — they are
 /// still how an address is written and what `slots.toml` declares — but
 /// they stopped being a thing you jump between, because a page boundary is
 /// not a thing you can feel and a row is.
@@ -81,7 +81,7 @@ impl Slot {
 
     /// Where this slot's view lives on tally's tmux server: the absolute
     /// row names the session, the column orders the pane
-    /// (`docs/24-the-tally-server.md`).
+    /// (`docs/06-views.md`).
     ///
     /// Here rather than in `jump`, so the dependency points this way:
     /// addresses know about tmux geometry, and the tmux module knows

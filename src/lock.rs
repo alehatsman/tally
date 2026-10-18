@@ -1,6 +1,6 @@
 //! A single-instance lock.
 //!
-//! M0 found that `docs/02-surface.md` was wrong about the MIDI port being
+//! M0 found that `docs/03-surface.md` was wrong about the MIDI port being
 //! exclusive: on macOS `CoreMIDI` multiplexes, two processes drove the device
 //! at once, and **neither was told**. So there is no `EBUSY` to catch and
 //! no error to report — two `tallyd`s would simply repaint over each other
@@ -8,7 +8,7 @@
 //!
 //! This is a mutex with a path. Nothing is read from it and nothing is
 //! written to it, so it is not the control socket
-//! `docs/08-lifecycle.md` refuses.
+//! `docs/08-daemon.md` refuses.
 
 use std::fs::File;
 use std::io;
