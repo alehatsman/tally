@@ -265,7 +265,20 @@ correct, and wrong.
 **A week of `attention.jsonl`, and a number out of it.** It is the criterion
 the first milestone shipped with, the one the hooks made possible by giving
 the signal a source that fires, and the only thing on the roadmap that no
-amount of building can close. The journal holds a little over a day.
+amount of building can close.
+
+The journal is at **2.3 days**, and reading it found something worse than
+being short: **it does not log a plain pad jump**, so the answers to the
+ambers it records are mostly absent, and the gate cannot be computed from
+it at any length ([04](04-signals.md#what-the-instrument-cannot-see-and-what-the-signal-now-means),
+[#43](https://github.com/alehatsman/tally/issues/43)).
+
+**That belongs in this file rather than only in the roadmap**, because it
+is the same failure as everything in the section above, one level up: the
+suite was green, the journal was correct, every line it wrote was true —
+and the instrument could not answer the question it was built for. **A
+measurement that records the stimulus and not the response is not a
+measurement**, and nothing about running it longer reveals that.
 
 Everything else that was ever open here is not. The first draft of this file
 ended *"nothing in the surface document has been executed against hardware"*

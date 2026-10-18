@@ -645,6 +645,24 @@ repaints entirely in the mode's colour before anything can fire. **Three
 needs a cycle, a cycle needs you to remember the order, and the next idea
 after that is a menu.**
 
+### Peek
+
+**Proposed:** *what is this pad?* — a real hole, since the surface cannot
+name a pad and some share of 341 daily jumps are identification rather than
+work. It was the one idea left that needed machinery the surface does not
+have: a sink to print into.
+
+**Closed by `tally ls`**, the same way the squad was, and it took a while
+to notice. *What is this pad* is a listing with the cwd in it, and the only
+gap left is answering it **without a terminal** — for which this device has
+exactly one mechanism, the title scroll, which [D3](#d3--the-title-scroll)
+proved unreadable at eight pads wide. **No mechanism, no feature.**
+
+Worth recording as its own entry because it is the second time a listing
+closed a gesture, which is a pattern rather than a coincidence: **the
+surface is for the one bit you need from across the room, and anything that
+needs a word needs a terminal.**
+
 ### Two narrower verbs instead of a listing
 
 **Proposed:** `tally here` to print the caller's address, and `tally spawn

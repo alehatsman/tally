@@ -1,16 +1,30 @@
 # 11 — Specified, not built
 
-Two specs are written and deliberately held. Everything in `01`–`09` is
-shipped and running; nothing in this file is.
+One spec is held on a measurement, one is deferred until hardware exists,
+and the rest of this file is the list of things that will not be built and
+why. Everything in `01`–`09` is shipped and running; nothing here is.
 
-Each is held for a stated reason rather than for lack of time, and each says
-what would unblock it.
+**Read the verdicts as verdicts.** Each item says what would revive it, and
+for most of them the honest answer is *nothing we expect to happen.*
 
 ---
 
 ## The level
 
 **A veto over a stale amber, never a source of one.**
+
+> ⚠️ **Verdict, 2026-10-18: held on F0, and expect to close.** Three facts
+> moved against it after it was written. The stuck pad it guards against
+> has **never been observed** — 544 rising edges over 55 hours of journal,
+> no report of one. It **cannot see the case that actually bit**: a session
+> on the startup trust dialog is absent from `claude agents --json`
+> entirely ([#13](https://github.com/alehatsman/tally/issues/13),
+> [07](07-cli.md#a-detached-spawn-can-land-on-the-agents-own-first-question)).
+> And it is the only proposal left that widens
+> [08](08-daemon.md#one-process-no-socket)'s one-socket rule, which it
+> admits below. **If F0 reports no stuck ambers, this closes rather than
+> ships**, and the paragraphs below become the record of why it was not
+> needed.
 
 Held on one thing: [the week of `attention.jsonl`](09-testing.md#the-honest-gap-today).
 A veto changes what gets recorded, and measuring the architecture the hooks
@@ -139,234 +153,142 @@ failure is slow, so the check can be.**
 
 ---
 
+---
+
 ## The bridge
 
 **The Launchpad on a Windows desk, the agents in WSL.**
 
-**Specified, unbuilt, and five of its facts have never been run.** It was
-written on a Mac with no Windows hardware in reach. Everything marked ⚠️
-below is a claim, not a fact, and **the first step is to answer the five
-before writing any codec** — two of them can move the design, and one can
-put a socket on the local network, which is a decision rather than a detail.
+> ⚠️ **Verdict, 2026-10-18: cut to this section, deferred until hardware.**
+> It was ~200 lines of codec, wire format, lifecycle table and probe list,
+> written on a Mac with no Windows hardware in reach, with **five of its
+> load-bearing facts never run**. Length is not confidence. Worse, it
+> proposes turning `Device` into a trait for a second implementation that
+> does not exist — which is precisely the move
+> [01](01-scope.md#how-to-reject-a-feature) forbids for a second *grid*:
+> *not until there is a second device in the room.* The rule does not stop
+> applying because the second thing is a transport.
+>
+> What is kept is the part that survives not being built: why it is needed
+> at all, where the seam is, and the questions that must be answered before
+> any of it is designed again. **The deleted detail is in git**
+> (`docs/30-the-bridge.md`, before the restructure) if the desk ever
+> becomes real.
 
-### Why a bridge at all
+**Why it is needed at all.** USB does not cross the WSL line: the stock
+WSL2 kernel is built without `CONFIG_SND_USB_AUDIO`, so `usbipd attach`
+hands over a device that never appears under `/dev/snd` and `midir`'s ALSA
+backend enumerates no port. Building a kernel is the other answer.
 
-USB does not cross that line: the stock WSL2 kernel is built without
-`CONFIG_SND_USB_AUDIO`, so `usbipd attach` hands over a device that never
-appears under `/dev/snd` and `midir`'s ALSA backend enumerates no port at
-all. Building a kernel is the other answer, and this is not it.
+**Where the seam is.** `src/device.rs`, already. `Device` finds the port,
+sends SysEx, decodes presses and restores Live mode on drop; `Link` in
+`tallyd.rs` owns one and reconnects it on the reconcile clock. **Nothing
+above `Link` knows a MIDI port exists**, so a remote device is a second
+implementation of one type and changes nothing else. One signature is in
+the way: `poll` returns `impl Iterator`, which is not object-safe.
 
-```text
-   Windows                            │  WSL2
-                                      │
-   Launchpad ──USB──▶ tallybridge ────┼──TCP──▶ tallyd ──▶ tmux ──▶ anchord
-                                      │           │
-                      powershell.exe ◀┼───────────┘  raise, by interop
-                      (raise the window)
-```
+**The one rule, if it is ever built:** when something could live on either
+side, **it lives in `tallyd`** — the bridge moves bytes and holds no model,
+no chord state, no frame diffing and no idea what a pad means. The single
+deliberate exception is the **Live-mode restore**, which must be the
+bridge's own duty, because the moment it is needed is the moment the WSL
+side can no longer reach the device.
 
-### What the bridge is not
+**The five questions, none of them answered:**
 
-It holds no model, no chord state, no frame diffing, no `Button` decoding
-and no idea what a pad means. Every sentence of [03](03-surface.md) stays on
-the WSL side, where its tests are. **The bridge moves bytes.**
+1. Does WSL2's `localhost` forwarding reach a listener bound to
+   `127.0.0.1`, or does it need `0.0.0.0`? **If `0.0.0.0` is required the
+   socket is on the local network, there is no authentication on it, and a
+   frame on it drives the grid.** That is a decision, not a detail.
+2. Does `powershell.exe` `AppActivate` actually raise the window, given
+   Windows' restrictions on foreground stealing? **The hook it would hang
+   on already exists**: `TALLY_RAISE_CMD` arrived ahead of this and not for
+   this reason — the test suite needed somewhere to send the raise, because
+   unsetting `TALLY_TERMINAL` does not disable it and every integration
+   jump was taking the screen of whoever ran `cargo test`. The shape is the
+   one a bridge would want, so there is nothing to add here, only something
+   to verify.
+3. Is WSL interop on? If `/etc/wsl.conf` disables it, the raise needs a
+   control frame instead of a shell-out.
+4. Does the device survive a hard `taskkill /F` of the bridge without
+   losing its Setup menu?
+5. Does single-byte MIDI clock at 24 PPQN cross a TCP hop without
+   stuttering the breath? (`TCP_NODELAY` on both ends is the known
+   requirement; whether it is sufficient is not known.)
 
-That is the design rule, and it decides every question below: **when
-something could live on either side, it lives in `tallyd`.** There is one
-deliberate exception, argued in [Restore](#restore-is-the-bridges-own-duty).
-
-### The seam already exists
-
-`src/device.rs` is the line. `Device` finds the port, sends SysEx, decodes
-presses and restores Live mode on drop; `Link` owns one and reconnects it on
-the reconcile clock. Nothing above `Link` knows a MIDI port exists.
-
-| | owns | where |
-|---|---|---|
-| `device::Local` | a `midir` connection | today's `Device`, behaviour unchanged |
-| `device::Remote` | a socket to the bridge | new |
-
-`Device` becomes a **trait** with the method set `Link` already calls.
-`open` stays an inherent associated function on each impl, because it
-returns `Self`.
-
-**One signature has to change.** `poll` returns `impl Iterator + '_`, which
-is not object-safe, so it becomes `fn poll(&self) -> Vec<Event>`. The single
-caller already collects into a `Vec`, so this is a move, not a cost.
-
-`Link::connect` calls a factory that reads the environment once:
-`TALLY_BRIDGE_LISTEN` set → `Remote`, unset → `Local`. **A Mac with a
-Launchpad on it never reaches the new path.**
-
-### The wire
-
-Length-prefixed binary frames. One byte of kind, four bytes of big-endian
-length, then the payload.
-
-```text
-kind  len          payload
-0x01  00 00 00 01  F8                  tallyd → bridge, to the device
-0x01  00 00 01 9C  F0 00 20 29 ...     tallyd → bridge, a full repaint
-0x02  00 00 00 03  90 0B 7F            bridge → tallyd, from the device
-0x11  00 00 00 14  {"device":"gone"}   bridge → tallyd, control
-```
-
-`len` is capped at **64 KiB**. A peer announcing more is hung up on rather
-than allocated for; the largest real frame is a repaint at a few hundred
-bytes.
-
-Kinds `0x01` and `0x02` carry raw MIDI and the bridge never inspects them.
-Kind `0x11` carries one JSON object, which is why `serde_json` — already a
-dependency — is all the codec needs. `0x10`, tallyd → bridge control, is
-reserved and currently unused.
-
-**One MIDI message per frame.** The bridge must not coalesce: `decode`
-matches on a whole message and `midir` hands its callback exactly one, so if
-two presses shared a frame because TCP delivered them together, `decode`
-would return `None` and both would vanish. **The frame boundary is the
-message boundary**, in both directions.
-
-**`TCP_NODELAY`, on both ends.** Not an optimisation. The tempo is a stream
-of single-byte `0xF8` clock pulses at 24 PPQN, and Nagle's algorithm exists
-to hold small writes back until the previous one is acknowledged. Left on,
-the clock arrives in bursts and the device's two-beat breath stutters.
-
-**`tallyd` listens; the bridge connects.** `TALLY_BRIDGE_LISTEN`, suggested
-`127.0.0.1:7373`; the bridge takes `--connect host:port`. This direction
-because WSL2 forwards Windows `localhost` to a listener inside WSL with no
-configuration: no firewall rule, no reading the host address out of
-`/etc/resolv.conf`, same behaviour under NAT and mirrored networking.
-Connecting the other way needs all three.
-
-> ⚠️ **Unverified.** Whether that forwarding reaches a listener bound to
-> `127.0.0.1` or needs `0.0.0.0` has changed across WSL releases.
-> `TALLY_BRIDGE_LISTEN` takes a full address so that is a config line and
-> not a patch. **If `0.0.0.0` turns out to be required, the socket is on the
-> local network and this document must say so in plain words** — there is no
-> authentication on it, and a frame on it drives the grid.
-
-**Presence is a message, not a guess.** Over a socket there are two
-different silences — the bridge is down, or the bridge is up and the
-Launchpad is unplugged. They want the same grid and different logs, so the
-bridge sends `{"device":…}` on connect and on every change.
-
-The identity handshake is **not** special-cased: `Remote` sends the inquiry
-down the pipe and waits for the reply exactly as the local path does, and
-the 2 s reply timeout stays — it was set generous for a ~345 ms cold round
-trip, and a loopback hop is noise beside that. The 7 s silence threshold and
-the `ping` that feeds it are unchanged and now cover the whole chain. **A
-bridge that is up but wedged looks exactly like a Launchpad that stopped
-answering, which is the correct reading of it.**
-
-### Raise does not need the bridge
-
-The first draft had a `{"verb":"raise"}` control frame, because `raise()` is
-a hardcoded macOS `open -a` and the window to raise is a Windows window.
-That was wrong, and the reason is worth keeping: **WSL runs Windows
-binaries.** Interop is on by default, so `tallyd` can invoke
-`powershell.exe` directly — the same shape as the macOS path, a best-effort
-shell-out to the one genuinely machine-specific string in the file. No
-socket handle threaded into `jump.rs`, no control verb, no coupling between
-the window manager and the MIDI pipe.
-
-| env | default | on this desk |
-|---|---|---|
-| `TALLY_RAISE_CMD` | `open -a $TALLY_TERMINAL` (macOS, as today) — **exists already** | a `powershell.exe` `AppActivate` against the window title |
-| `TALLY_TERMINAL_CMD` | `open -na …` (exists already) | `wt.exe new-tab wsl.exe …` |
-
-`TALLY_RAISE_CMD` arrived ahead of this milestone and not for this reason:
-the suite needed somewhere to send the raise, because unsetting
-`TALLY_TERMINAL` does not disable it (`terminal_app` falls back to
-Alacritty) and every integration jump was taking the screen of whoever ran
-`cargo test`. The shape is the one specified here, so the bridge inherits
-it rather than adding it.
-
-Both are **split on spaces and are not a shell**. A command needing quoting
-goes in a `.ps1` or a `.cmd` and the env var names that file. The window
-title is `tally`, because the terminal command already passes `--title
-tally` — that is the string `AppActivate` matches.
-
-> ⚠️ **Unverified, and two ways it can fail.** Windows restricts foreground
-> stealing, so `AppActivate` may refuse. Interop can be turned off in
-> `/etc/wsl.conf`, in which case `powershell.exe` is not executable from WSL
-> and the reserved `0x10` control frame becomes the fallback. **A failed
-> raise is never an error** — tmux has already switched the pane, so the
-> move has happened and only the window did not come forward.
-
-### Restore is the bridge's own duty
-
-The one place the design rule is broken, on purpose.
-
-Programmer mode disables the device's Setup menu, and every path out must
-put it back ([08](08-daemon.md#shutdown-is-not-optional)). If `tallyd` dies,
-or the socket drops, or WSL shuts down, the WSL side can no longer reach the
-device — **the moment the restore is needed is the moment it cannot be sent
-from there.**
-
-So the bridge restores Live mode itself, on client disconnect and on its own
-exit: stop scroll, a dark repaint, Live, then a mode readback, because a
-write is not an acknowledgement. Those constants are duplicated onto the
-Windows side with this paragraph as the reason. They are fixed bytes out of
-Novation's manual and they do not move.
-
-### Lifecycle
-
-| state | tallyd | bridge | grid |
-|---|---|---|---|
-| both up, device present | renders | pipes | live |
-| bridge not started | listens, logs once | — | dark |
-| bridge up, Launchpad unplugged | retries on the reconcile clock | sends `gone`, polls the port | dark |
-| socket drops | drops the device, keeps listening | restores Live, retries `--connect` | dark, Setup menu intact |
-| bridge wedged, socket open | silence threshold fires, drops it | — | dark |
-| tallyd restarts | relistens; first frame is a full repaint | reconnects | repainted from scratch |
-| bridge killed hard (`taskkill /F`) | sees EOF, drops the device | — | ⚠️ Setup menu disabled until replug |
-
-Both sides retry forever on the existing reconcile shape, and a device that
-leaves is abandoned so the way out does not warn about a restore that could
-not have worked.
-
-### What this does not change
-
-- `anchord`, every PTY and every agent stay in WSL, untouched.
-- `switch-client` stays in WSL. The bridge never learns a pane address;
-  tally's tmux server is entirely WSL-side. **The bridge is not told which
-  pane to focus** — that decision never leaves `tallyd`.
-- macOS. `Remote` is reached only when `TALLY_BRIDGE_LISTEN` is set.
-- The dependency budget. `tallybridge` is a third `[[bin]]` in this crate so
-  the codec has one definition compiled into both sides, and it adds no
-  dependency `tallyd` does not already have.
-
-### For the session that picks this up
-
-You are on the Windows box. Read in this order: this section, then
-[03](03-surface.md) for the device protocol, then
-[08](08-daemon.md#shutdown-is-not-optional) for why the restore is not
-optional, then `src/device.rs` and `Link` in `src/bin/tallyd.rs` — the only
-two places the WSL side changes shape.
-
-**Answer the five ⚠️ probes and report before writing the codec.**
-
-Environment, stated once:
-
-- Rust for Windows is the **MSVC** toolchain, built natively on Windows, not
-  cross-compiled from WSL. `midir` picks WinMM there with no feature flags.
-- `tallyd`, `anchord`, `tmux` and every agent stay inside WSL. Nothing about
-  them changes and nothing about them should be ported.
-- The repo is one crate and builds on both sides. `cargo test` in WSL covers
-  the codec and `Remote`; the Windows build covers `tallybridge`.
+**Answer those five before designing anything.** Two of them can move the
+design and one of them is a security decision.
 
 ---
 
-## Ideas with no document
+## The graveyard
 
-Kept here so they are not reinvented, each one sentence and its blocker.
+Ideas that were real, and are not coming back. Each is here so it is not
+re-proposed as new.
 
-| | |
+| | why it is closed |
 |---|---|
-| **peek** — *what is this pad?* | A real hole: the surface cannot name a pad, and some share of 341 daily jumps are identification rather than work. The only candidate that needs machinery the surface does not have — a sink to print into. Deferred, not dead; holding Stop answers part of it for free |
-| **solo** | Closed in favour of Move — *arrangement beats state*. Comes back with evidence if a week of Move shows people arranging and still being dragged away |
-| **global brightness / LED sleep** | Documented, unspent, orthogonal. The wrong axis to lean on, because the colour language is built on *bright means where you are*. A separate and smaller idea if ever specced |
-| **teleport URL as a secondary jump target** | Five lines once the session id is in hand. Not the default: clicking a pad on the desk should not raise a browser |
-| **a second device** | Only with a second device in the room. Generalising the surface layer before a second implementation exists is guessing at the shape of the abstraction |
-| **an *acting* sweep for drifted views** | [#22](https://github.com/alehatsman/tally/issues/22). The counting sweep ships ([06](06-views.md#the-sweep-counts-and-does-not-touch)); the one that repairs is held on its own number, for the same reason the level is held. Blast radius: every `tallyd` restart rearranging panes on a live grid, at the moment the daemon knows least |
-| **resolving a squatter to its own address** | Same issue. Needs the page table inside `jump`, which points a dependency the wrong way. Parking gets the pad working without it |
+| **peek** — *what is this pad?* | **Closed by `tally ls`**, the same way the squad was, and nobody noticed for a while. *What is this pad* is a listing with the cwd in it. The only gap left is answering it **without a terminal**, and the only mechanism this device has for that is the title scroll, which [D3](10-decisions.md#d3--the-title-scroll) proved unreadable at eight pads wide. **No mechanism, no feature** |
+| **teleport URL as a jump target** | Five lines once the session id is in hand, for a use case that has not come up in eighteen milestones. The desk has a grid; the phone has teleport; they need no integration because they are both anchor clients |
+| **resolving a squatter to its own address** | The user-visible wedge is already gone: a squatter is **parked** above the column range, so no pad can name it, and the lazy path brings it home ([06](06-views.md#drift-that-nothing-was-looking-for)). Sending it home eagerly needs the page table inside `jump`, which points a dependency the wrong way, for no symptom anyone would see |
+| **solo** | Closed in favour of Move — *arrangement beats state*. Returns only if a week of Move shows people arranging and still being dragged away |
+| **a cycling verb key**, **a focused colour**, **output-clearing as a floor**, **`tally here` / `spawn next`**, **the squad** | All closed with their arguments in [10](10-decisions.md#closed-proposals) |
+
+## Still genuinely open
+
+| | status |
+|---|---|
+| **the acting sweep** | Held on its own number. The counting sweep ships; the one that repairs waits for a week of `sweep:` lines, because **a sweep that repaired silently would answer the question by erasing it**. Blast radius if built: every `tallyd` restart rearranging panes on a live grid, at the moment the daemon knows least ([#22](https://github.com/alehatsman/tally/issues/22)) |
+| **global brightness / LED sleep** | Documented, unspent, orthogonal. The wrong axis to lean on, because the colour language is built on *bright means where you are*. A separate and smaller idea if ever specced ([03](03-surface.md#other-messages-worth-knowing)) |
+| **a second device** | Only with a second device in the room |
+
+## Open scope questions
+
+**Three cuts the evidence suggests and nobody has decided.** They are
+larger than the graveyard above because each removes something that
+*works*, and that is a decision about what this product is rather than a
+cleanup.
+
+### The spec system is unreachable
+
+`~/.config/tally/` is **empty**. `tallyd` loads *8 pages, 0 slots*. So
+`[[slot]]`, `[[spec]]`, the `tl.spec` label and **spawn-from-a-dark-pad**
+are all code nothing can reach — and `Config::by_spec_name`'s own doc
+comment still says *"Respawn reads `tl.spec`"*, for a gesture deleted in
+[D8](10-decisions.md#d8--slotstoml-as-the-spawn-path).
+
+Keeping `[[page]]` and deleting the other two tables would remove a label,
+a code path, a `create` argument and a table from
+[02](02-model.md#specs-live-in-a-file).
+
+**Why it is not just a cleanup:** *"spawn — press an unbound slot, get a
+session"* is one of [01](01-scope.md)'s six bullets. Cutting it edits the
+scope, and the two spawn paths that are actually used — `tally spawn` and
+`>` — are both *outside* that bullet as written.
+[#40](https://github.com/alehatsman/tally/issues/40).
+
+### 512 slots for four used rows
+
+`lit` — the count of non-empty rows — sat at **4**, every one of the nine
+times the overview was opened across 55 hours, and never moved. Seven rows
+of sixty-four have *ever* held a session.
+
+The 64-row space is sized by the hardware, not by any observed need, and it
+is what pays for three features: `▲▼` scrolling, hold-`▲` home, and the
+overview. **A sixteen-row space needs none of the three.** One cut removing
+three features.
+
+**The cost is a migration:** addresses live in `tl.slot` labels and in
+muscle memory, and [02](02-model.md#the-address-pinned) pins the format
+deliberately. [#41](https://github.com/alehatsman/tally/issues/41).
+
+### The reel is nine pieces
+
+`src/art/` is **2,157 lines, about 12% of the crate**, for a mode behind a
+button that did nothing. Its two jobs are *demo* and *all-64-pads pixel
+test*, and three pieces already do both — Plasma exercises every pad every
+frame, Claude is the photograph, Uprising is the joke.
+
+Cutting the other six saves ~1,000 lines of zero-coupling leaf code and
+costs nothing operationally. It is taste rather than architecture, which is
+why it is last. [#42](https://github.com/alehatsman/tally/issues/42).
