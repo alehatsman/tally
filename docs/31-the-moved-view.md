@@ -243,5 +243,91 @@ wedged until the moved session is next pressed, which repairs it.
   The live-occupant row shows the edge the table above admits: the moved
   view is re-labelled where it stands (`r04:1`, tag `1:2:3`) and so is
   again a pane no address claims.
-- **Not run:** against the owner's live `tallyd`. Applying a daemon is not
-  part of this change.
+- **Not run when this was written:** against the owner's live `tallyd`.
+  It has since been; see below.
+
+## Measured on the live grid
+
+2026-10-18, the owner's `tallyd` at `f0b4046` (`~/.local/bin/.tallyd.commit`;
+the process started 17:49:27, a minute after the binary was written). Line
+numbers are of `~/.local/state/tally/tallyd.log` as it stood that day; the
+log has no timestamps and is not rotated by us, so the *text* is the
+citation and the numbers are a convenience.
+
+```
+19472  Launchpad connected                  the last restart in the log (matched to
+                                       the 17:49:27 process by being the last;
+                                       there are no timestamps to say so)
+19542  Move 1:2:1 moved 1:3:1 -> 1:2:1      cross-row
+19555  Move 1:3:1 moved 1:3:2 -> 1:3:1      within-row
+19587  Move 1:3:4 moved 1:3:3 -> 1:3:4      within-row
+```
+
+**Seen.** Three moves after the restart, **no `index N in use` caused by a
+move**. (There were two that were not; see below.) After them
+the three moved sessions' views sit at the window their label names
+(`r02:1`, `r03:1`, `r03:4`, by `list-panes`). That is the bug's own
+symptom, gone, for the two shapes that ran: a move within a row and a move
+to another row. A spawn onto a vacated pad was **not** tried by this
+check.
+
+**Not seen, and the numbers that would flatter this:**
+
+- **"77 → 0" is not the result.** 77 is `grep -c "in use"` over the whole
+  log, and most of it is [27](27-the-slot-collision.md)'s corpses, fixed
+  before this existed. The last one is at line 19221, which is *before the
+  previous restart* (19277), so the quiet that follows it is not
+  evidence about this change either. The comparison that means something
+  is the three moves above, and before the fix one move in 19183 was
+  followed by three collisions at 19188-19196.
+- **The placeholder branch did not run.** The cross-row move went to `r02`,
+  which tmux had held since before the restart
+  (`list-sessions`: `r02` created at 1792336048). It is the destination-row
+  **exists** shape. The path this document calls the riskiest, a missing
+  row, a placeholder session, `move-window -k`, a `kill-window` on the
+  placeholder, has run only on a scratch socket.
+- **Corpse reclaim at a destination was not exercised on purpose.** `r02:1`
+  may have held the corpse of the session Stopped at line 19373, or it may
+  not: nothing recorded which, and the window it would have held is gone.
+- **The blocked-relocation case ran, uninvited, and lost.** See next.
+
+**What the run found that this document did not predict.** Within the hour
+one view was at the wrong window with the right label: pane `%31`, tag
+`1:1:3`, at `r01:2`. Not a Move: the corpse at `r01:2` was closed (who did it
+is not identified; `tally purge` is the only code that closes a view), and
+the owner's `~/.tmux.conf`
+sets `renumber-windows on`, which this document and
+[24](24-the-tally-server.md) both assume away (*"indexes do not renumber
+when a sibling is killed"*). The siblings shifted down, so the lazy path
+met the one row of the `relocate` table that is left broken, **a live pane
+at the destination**: `1:1:3` was pressed while `1:1:4`'s view held index 3,
+was refused, and was re-tagged where it stood. A press of `1:1:4`
+afterwards moved *it* out of the way, and 3 was free again. The same two
+presses in the other order succeed. That is the edge case the table above
+admits, observed rather than constructed, and with a cause (a config option)
+the spec did not know to look for.
+
+**And it cost a press, twice.** Pad `1:1:2` held a live session with no
+view (a detached spawn opens none), and `r01:2` was held by `%31`. Pressing
+`1:1:2` therefore found no view by id, no corpse by address, and ran
+`new-window -t r01:2`:
+
+```
+19630  tmux new-window: create window failed: index 2 in use     jump 1:1:2
+19632  tmux new-window: create window failed: index 2 in use     jump 1:1:2
+```
+
+Both are after all three moves, and both are #17's symptom from a cause
+that is not a Move. The owner then pressed `1:1:3`, and with 3 free `%31`
+moved there; the next press of `1:1:2` opened its view at `r01:2` (`%36`).
+So the repair this document specifies worked, by the route it specifies
+(*the moved session is pressed*), and the wedge it admits was real until
+then. Read from the log and `list-panes` afterwards; the presses were the
+owner's. **The gate closed for the thing #17 fixed, on a grid that was still
+colliding for another reason in the same hour.**
+Tracked: [#19](https://github.com/alehatsman/tally/issues/19) the blocked
+case, [#20](https://github.com/alehatsman/tally/issues/20) the renumbering,
+[#22](https://github.com/alehatsman/tally/issues/22) finding drift that is
+already there, [#21](https://github.com/alehatsman/tally/issues/21) the
+end-to-end harness, which would have seen the renumbering and which a
+fixture listing cannot.
