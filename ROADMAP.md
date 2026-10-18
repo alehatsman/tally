@@ -916,6 +916,75 @@ Exit:
 
 ---
 
+## M18 — A moved session takes its view with it
+
+Move rewrote a label and left the pane where it was, so the agent stayed
+at its old address and the pad it vacated failed with
+`create window failed: index 1 in use`. One cause, two symptoms
+([docs/31](docs/31-the-moved-view.md), [#15](https://github.com/alehatsman/tally/issues/15)):
+the address is a tmux window and Move only ever wrote the name.
+
+Scope: `tallyd` follows a move with `relocate`, and `view_pane` runs the
+same check lazily by id, so a move made while `tallyd` was down heals on
+the next press. `put_down` still writes exactly one label.
+
+Exit — the first three were run on the **live grid** on 2026-10-18; the
+fix had until then only ever seen a scratch socket:
+- ✅ a move within a row leaves the view at the window its label names
+  (`1:3:2 → 1:3:1`, `1:3:3 → 1:3:4`)
+- ✅ a move to another row that already exists (`1:3:1 → 1:2:1`)
+- ✅ no `index N in use` **caused by** any of those three moves
+- ⬜ a move to a row that does **not** exist — the placeholder-session
+  branch, the riskiest thing in the change, because tmux cannot adopt a
+  pane into a session it creates. The cross-row move above went to a row
+  tmux already held, so this has still only run on a scratch socket
+- ⬜ a move onto a corpse, on purpose; whether the one above met one is not
+  recorded
+- ⬜ a spawn onto a pad a move vacated, on the live grid
+- ❌ a press of a pad whose window a drifted view holds: `index 2 in use`
+  twice, then healed by pressing the view that was out of place. Not a
+  Move, and the same wedge
+  ([#20](https://github.com/alehatsman/tally/issues/20))
+- ❌ a move onto a **live** pane — [#19](https://github.com/alehatsman/tally/issues/19).
+  Not tried; it happened anyway, and the view was re-tagged where it
+  stood. The spec had admitted this case and left it
+
+> **The gate ran, and the most useful thing it found was not in the
+> spec.** The owner's `~/.tmux.conf` sets `renumber-windows on`, and tally's
+> server is a separate *server* but not a separate *config*. Closing one
+> window in a row shifted its siblings down, so a view was at the wrong
+> index with no Move involved, and the lazy relocation met the one branch
+> the spec leaves broken. [docs/24](docs/24-the-tally-server.md) records
+> *"indexes do not renumber when a sibling is killed"* as a measured ✅; it
+> was measured on a default tmux and written down as a property
+> ([#20](https://github.com/alehatsman/tally/issues/20)). Every unit
+> test was green throughout, because a fixture listing is typed by a
+> human and cannot be wrong about what tmux does
+> ([#21](https://github.com/alehatsman/tally/issues/21)).
+
+> **A count over a whole log is not a measurement of a change.** *"77
+> collisions, then none"* is the sentence that wants writing, and it is
+> wrong twice: 77 is every `in use` the daemon ever logged, mostly the
+> corpse case [docs/27](docs/27-the-slot-collision.md) fixed earlier; and
+> the last of them is before the *previous* restart, so the quiet that
+> follows says nothing about this build. What the run supports is
+> narrower: three moves, none followed by a collision, against a before
+> where one move in the log was followed by three. And two collisions that
+> no move caused, on the same grid, within the hour. The other shape of the same mistake is
+> *"all panes aligned"*, which was true at one moment and false within the
+> hour for a reason no move caused.
+
+> **What is open is on the tracker, not in a PR description.** The
+> blocked case ([#19](https://github.com/alehatsman/tally/issues/19)), the
+> renumbering ([#20](https://github.com/alehatsman/tally/issues/20)), the
+> harness that was never committed
+> ([#21](https://github.com/alehatsman/tally/issues/21)) and drift nothing
+> looks for ([#22](https://github.com/alehatsman/tally/issues/22)) were
+> all named in #17 and filed nowhere, which is the failure this file's
+> [What is next](#what-is-next) describes, one level down.
+
+---
+
 ## What is next
 
 Nothing here is a build item. Everything that was one is done, and what is
