@@ -271,8 +271,15 @@ the window manager and the MIDI pipe.
 
 | env | default | on this desk |
 |---|---|---|
-| `TALLY_RAISE_CMD` | `open -a $TALLY_TERMINAL` (macOS, as today) | a `powershell.exe` `AppActivate` against the window title |
+| `TALLY_RAISE_CMD` | `open -a $TALLY_TERMINAL` (macOS, as today) — **exists already** | a `powershell.exe` `AppActivate` against the window title |
 | `TALLY_TERMINAL_CMD` | `open -na …` (exists already) | `wt.exe new-tab wsl.exe …` |
+
+`TALLY_RAISE_CMD` arrived ahead of this milestone and not for this reason:
+the suite needed somewhere to send the raise, because unsetting
+`TALLY_TERMINAL` does not disable it (`terminal_app` falls back to
+Alacritty) and every integration jump was taking the screen of whoever ran
+`cargo test`. The shape is the one specified here, so the bridge inherits
+it rather than adding it.
 
 Both are **split on spaces and are not a shell**. A command needing quoting
 goes in a `.ps1` or a `.cmd` and the env var names that file. The window

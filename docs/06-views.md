@@ -151,6 +151,17 @@ the window, and the next jump finds a client. Overridable as one string,
 Alacritty's own config is a managed file: anything this needs from it is
 declared in `~/dotfiles` and applied with provision, never hand-edited.
 
+**Raising the window is the other half, and it has its own override.**
+After the switch, `raise()` runs `open -a $TALLY_TERMINAL` so the terminal
+comes out from behind a browser; `TALLY_RAISE_CMD` replaces that command
+whole, and the test harness sets it to `true`. It has to be a separate
+switch: **unsetting `TALLY_TERMINAL` does not turn the raise off**, because
+`terminal_app()` falls back to `"Alacritty"` when it is unset. The harness
+assumed otherwise for as long as that fallback existed, and every jump in
+the integration suite raised a real window on the desk running it —
+diagnosed by catching `open -a Alacritty` parented to the test binary while
+its owner was in a browser.
+
 ### tally pins `renumber-windows off`
 
 The address of a view is a row **session** plus a window **index**, and tmux
