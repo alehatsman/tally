@@ -123,7 +123,7 @@ at the address already          → nothing. tmux refuses it anyway ("same index
 destination window holds…
   nothing                       → move-window
   a dead pane                   → move-window -k
-  a live pane                   → nothing. 27's decision stands
+  a live pane                   → ⚠️ swap-window, since 34. Was: nothing
 destination session missing     → new-session -d (placeholder), move-window -k,
                                   kill the placeholder by id
 always, before the move         → set-option -t <source> detach-on-destroy off
@@ -151,12 +151,24 @@ conversation id is still in anchord.
 the corpse is the only window of its row, killing it destroys the row
 session and the move then fails. Measured above.
 
-**Why a live pane at the destination is left alone.** The same reason as
-27: a live `anchor attach` is something somebody may be reading. It can
+⛔ **Why a live pane at the destination is left alone.** The same reason
+as 27: a live `anchor attach` is something somebody may be reading. It can
 only be there if an earlier relocation was skipped or failed. The view
 stays where it is, reachable by id, and nothing is created or destroyed.
 A swap of two live squatters (`swap-window`) would resolve it and is a
 bigger decision than this bug; **not done**.
+
+> ⚠️ **Reversed by [34](34-the-swap.md)
+> ([#19](https://github.com/alehatsman/tally/issues/19)).** The two views
+> swap, and `27`'s actual rule — *nothing live is closed* — is kept by a
+> swap better than it was kept by a refusal, because the refusal was
+> followed by a tag that lied.
+>
+> The sentence above that stopped being true is *"it can only be there if
+> an earlier relocation was skipped or failed"*. It could also be there
+> because tmux renumbered the whole row under us
+> ([#20](https://github.com/alehatsman/tally/issues/20)), which turned a
+> rare self-inflicted state into a generator.
 
 **Why `detach-on-destroy off` on the source.** Moving a row's last window
 out destroys the row session — tmux does it, nothing here kills anything —
@@ -198,7 +210,7 @@ wedged until the moved session is next pressed, which repairs it.
 | moved across rows, destination row exists | `move-window`; source destroyed if it was the last window |
 | moved across rows, destination row absent | placeholder, then as above |
 | destination holds a corpse | replaced (`-k`) |
-| destination holds a live pane | left; the moved view is re-labelled where it stands, as today |
+| destination holds a live pane | ⚠️ **since [34](34-the-swap.md)**: the two trade places. The moved view lands at its address; the occupant takes the window it vacated. Was: left, and re-labelled where it stood |
 | view is itself dead (detached) | still moved — a corpse keeps its place in the grid; the next press respawns it in place |
 | a client is on the moved view | follows it; the source is set not to detach it |
 | two moves, one after the other | each is its own relocate; a chain `A→B`, `B→C` is two single moves |
@@ -211,9 +223,11 @@ wedged until the moved session is next pressed, which repairs it.
   chords.
 - `Done::Moved` gains a field; its `Display` is unchanged.
 - `Jump` gains one method. `Tmux` is its only implementor.
-- **Not done:** `swap-window` for two live squatters; finding a drifted
-  squatter by its own tag; a startup sweep that relocates every view to
-  its label. Each is a bigger decision than this bug.
+- **Not done:** ~~`swap-window` for two live squatters~~ — done, in
+  [34](34-the-swap.md); finding a drifted squatter by its own tag; a
+  startup sweep that relocates every view to its label
+  ([#22](https://github.com/alehatsman/tally/issues/22)). Each is a
+  bigger decision than this bug.
 
 ## Validation
 
