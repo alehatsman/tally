@@ -32,6 +32,7 @@ file.
 ## `tally spawn`
 
 ```text
+tally ls        [--json]
 tally spawn     [--detach] [--count N] <addr> [-- command [args…]]
 tally fork      [--detach] [--count N] <src> <dst> [-- command [args…]]
 tally purge     <addr>
@@ -299,9 +300,41 @@ agents.
 - **No text into a running session.** There is no `--goal`, no broadcast
   and no send. tally is an observer and never holds the control lease
   ([01](01-scope.md)); a goal reaches an agent as `argv` or not at all.
-- **No other subcommands** beyond the one below. `anchor ls` already lists,
-  `$EDITOR` already edits. Each subcommand here exists because nothing else
-  could do it.
+- **No other subcommands** beyond the one below and `ls`. `$EDITOR` already
+  edits. Each subcommand here exists because nothing else could do it.
+
+  > This bullet used to say *"`anchor ls` already lists"*, and that was
+  > true of sessions and never of the grid: `anchor ls` knows nothing
+  > about pages, `tl.slot`, or which session is the one asking. An agent
+  > on a pad spent six tool calls finding that out, which is the bar this
+  > bullet sets and `tally ls` clears
+  > ([32](32-the-grid-in-text.md)).
+
+## `tally ls`
+
+The grid as text, with the caller's own pad marked — the one subcommand
+that writes nothing and takes no address. It exists because the agents
+this CLI is for **cannot see the device**, and locating themselves by
+hand cost six tool calls.
+
+```text
+$ tally ls
+       1  2  3  4  5  6  7  8
+  1:1  #  #  #  @  .  .  .  .
+  1:3  !  .  .  .  .  .  .  .
+
+  @ you   # running   ? waiting   ! failed   x lost   . free
+```
+
+One glyph per colour the device uses, so the text and the hardware
+cannot drift. It finds the caller with the same process walk and the
+same function `attention` uses, and **not being under anchor is not an
+error** — the grid prints, without a `@`.
+
+It does **not** pick pads: it shows, and you type the address, so the
+rule above is untouched. The whole argument, the states it can and
+cannot see, and the two primitives rejected in its favour are in
+[32](32-the-grid-in-text.md).
 
 ## `tally attention on|off`
 
