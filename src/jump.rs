@@ -125,6 +125,18 @@ pub trait Jump {
         where_: Place,
     ) -> Result<(), Error>;
 
+    /// Which of these views are not in the window their address names.
+    ///
+    /// `want` is every session that holds a pad, with the [`Place`] its
+    /// view belongs in and the address string to report it by — both
+    /// passed rather than derived, because turning an address into a
+    /// `Place` needs the page table and this module does not have one
+    /// (`docs/35-the-drift.md`).
+    ///
+    /// **Reports; moves nothing.** A session with no view is not drift,
+    /// and is not reported.
+    fn audit(&self, want: &[(String, String, Place)]) -> Vec<Drift>;
+
     /// Move the view for `session`, if it has one, to the window `where_`
     /// names, and re-label it `at`. **Nothing is switched.**
     ///
@@ -214,6 +226,15 @@ pub struct Place {
     pub col: u8,
 }
 
+/// The first window index a squatter is parked at
+/// (`docs/35-the-drift.md`).
+///
+/// **Above the addressable column range**, which is 1-8, so no pad can
+/// ever name it. A view parked here cannot wedge anything, is still
+/// reachable by id, and is brought home by the lazy path the next time
+/// its own pad is pressed.
+const PARK: u8 = 90;
+
 /// The session name for an absolute row: `r07`.
 ///
 /// Zero-padded to two digits because the only place you read these is a
@@ -256,8 +277,8 @@ fn new_row_session_args(place: Place, session: &str, anchor_bin: &str) -> Vec<St
 ///
 /// `-d` because creating a view must not move anybody: the switch is a
 /// separate, deliberate step.
-fn new_window_args(place: Place, session: &str, anchor_bin: &str) -> Vec<String> {
-    vec![
+fn new_window_args(place: Place, session: &str, anchor_bin: &str, replace: bool) -> Vec<String> {
+    let mut args: Vec<String> = vec![
         "new-window".into(),
         "-d".into(),
         "-t".into(),
@@ -266,7 +287,14 @@ fn new_window_args(place: Place, session: &str, anchor_bin: &str) -> Vec<String>
         "-F".into(),
         "#{pane_id}".into(),
         format!("{anchor_bin} attach {session}"),
-    ]
+    ];
+    if replace {
+        // A corpse holds the index. `-k` takes it over in one step, the
+        // same reason `relocate_window_args` passes it
+        // (`docs/35-the-drift.md`).
+        args.insert(1, "-k".into());
+    }
+    args
 }
 
 /// Args moving a freshly-made row session's only window to its column.
@@ -744,6 +772,64 @@ enum Relocation {
     Swap,
 }
 
+/// The pane sitting in the window `place` names, if any.
+///
+/// Dead or alive — unlike [`dead_view_at`], which asks *"is there a
+/// corpse claiming this address"* and so cannot see a corpse claiming a
+/// different one (`docs/35-the-drift.md`).
+fn occupant_at(listing: &str, place: Place) -> Option<Row<'_>> {
+    let want_session = row_session(place.row);
+    let want_index = place.col.to_string();
+    listing
+        .lines()
+        .filter_map(row)
+        .find(|r| r.pane.tmux_session == want_session && r.pane.index == want_index)
+}
+
+/// The first window index at or above [`PARK`] that `place`'s row is not
+/// using.
+///
+/// A pure function of the listing, so where a squatter lands is testable
+/// without a server. `u16` because parking is the one place an index is
+/// deliberately not a column and has no reason to stop at 8.
+fn park_index(listing: &str, place: Place) -> u16 {
+    let want_session = row_session(place.row);
+    let taken: Vec<u16> = listing
+        .lines()
+        .filter_map(row)
+        .filter(|r| r.pane.tmux_session == want_session)
+        .filter_map(|r| r.pane.index.parse().ok())
+        .collect();
+    let mut index = u16::from(PARK);
+    while taken.contains(&index) {
+        index = index.saturating_add(1);
+    }
+    index
+}
+
+/// Args parking a squatter's window out of the address space.
+fn park_args(pane: &str, place: Place, index: u16) -> Vec<String> {
+    vec![
+        "move-window".into(),
+        "-s".into(),
+        pane.into(),
+        "-t".into(),
+        format!("{}:{index}", row_session(place.row)),
+    ]
+}
+
+/// A view that is not in the window its address names
+/// (`docs/35-the-drift.md`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Drift {
+    /// The anchor session whose view it is.
+    pub session: String,
+    /// The address it claims, as the caller gave it.
+    pub claims: String,
+    /// Where it actually sits, as tmux names it: `r01:2`.
+    pub sits_at: String,
+}
+
 /// Whether a pane is known to be in the window the address names.
 ///
 /// **An address is a claim, and a claim that is not true is the bug**
@@ -1142,8 +1228,55 @@ impl Tmux {
             let _moved = self.run("move-window", &move_window_args(&pane, place));
             return Ok(pane);
         }
-        let args = new_window_args(place, session, &self.anchor_bin);
+        // Nothing may hold this index that is not entitled to it
+        // (`docs/35-the-drift.md`). By here the caller has already failed
+        // to find a view by id and a corpse claiming *this* address, so
+        // anything still sitting at the column is in the way.
+        let replace = self.clear_the_index(place);
+        let args = new_window_args(place, session, &self.anchor_bin, replace);
         Ok(self.stdout("new-window", &args)?.trim().to_owned())
+    }
+
+    /// Make the window `place` names available, and say whether the
+    /// creation still has to replace what is there.
+    ///
+    /// Returns `true` when the index holds a **corpse** — `new-window -k`
+    /// takes it over in one step, which is `27`'s reclaim generalised to a
+    /// corpse claiming some *other* address, the case `dead_view_at`
+    /// cannot see.
+    ///
+    /// A **live** view is parked instead: it is somebody's to close, not
+    /// ours (`27`), and it does not have to go home to stop being in the
+    /// way (`docs/35-the-drift.md`). An untagged pane is left alone — it
+    /// is not a view and this is not the gesture that moves it; the
+    /// creation then fails as it always did.
+    ///
+    /// Best-effort throughout: every outcome here is either the window
+    /// being free or `new-window` reporting `index N in use`, which is
+    /// what it did before any of this.
+    fn clear_the_index(&self, place: Place) -> bool {
+        let listing = self.panes();
+        let Some(held) = occupant_at(&listing, place) else {
+            return false;
+        };
+        if held.pane.dead {
+            return true;
+        }
+        if held.session.is_empty() {
+            // Not a view. Nothing here knows what it is for.
+            return false;
+        }
+        let index = park_index(&listing, place);
+        let parked = self.run("move-window", &park_args(held.pane.id, place, index));
+        if parked.is_err() {
+            eprintln!(
+                "tally: {} squats on {}:{} and would not move",
+                held.pane.id,
+                row_session(place.row),
+                place.col
+            );
+        }
+        false
     }
 
     /// Make sure there is something for a terminal to attach to, and that
@@ -1319,6 +1452,24 @@ impl Jump for Tmux {
         Ok(())
     }
 
+    fn audit(&self, want: &[(String, String, Place)]) -> Vec<Drift> {
+        let listing = self.panes();
+        want.iter()
+            .filter_map(|(session, at, place)| {
+                let pane = view_for(&listing, session)?;
+                // The same pure function the move path plans with, so the
+                // sweep and the repair can never disagree about what out
+                // of place means.
+                relocation(&listing, pane, *place)?;
+                Some(Drift {
+                    session: session.clone(),
+                    claims: at.clone(),
+                    sits_at: format!("{}:{}", pane.tmux_session, pane.index),
+                })
+            })
+            .collect()
+    }
+
     fn relocate(&self, session: &str, at: &str, where_: Place) -> Result<(), Error> {
         let listing = self.panes();
         let Some(found) = view_for(&listing, session) else {
@@ -1441,7 +1592,7 @@ mod tests {
     /// deliberate step.
     #[test]
     fn opening_a_view_in_a_row_does_not_steal_focus() {
-        let args = new_window_args(PLACE, SESSION, "anchor");
+        let args = new_window_args(PLACE, SESSION, "anchor", false);
         assert!(args.contains(&"-d".to_owned()));
         assert!(
             args.last()
@@ -1456,12 +1607,12 @@ mod tests {
     /// (`docs/24-the-tally-server.md`).
     #[test]
     fn a_column_is_the_window_index() {
-        let args = new_window_args(Place { row: 7, col: 3 }, SESSION, "anchor");
+        let args = new_window_args(Place { row: 7, col: 3 }, SESSION, "anchor", false);
         let t = args.iter().position(|a| a == "-t").expect("-t");
         assert_eq!(args.get(t + 1).map(String::as_str), Some("r07:3"));
 
         // Column 8 and column 1 address the same row, never each other.
-        let eight = new_window_args(Place { row: 7, col: 8 }, SESSION, "anchor");
+        let eight = new_window_args(Place { row: 7, col: 8 }, SESSION, "anchor", false);
         let t = eight.iter().position(|a| a == "-t").expect("-t");
         assert_eq!(eight.get(t + 1).map(String::as_str), Some("r07:8"));
     }
@@ -1517,7 +1668,7 @@ mod tests {
     fn creating_a_view_prints_a_pane_not_a_window() {
         for args in [
             new_row_session_args(PLACE, SESSION, "anchor"),
-            new_window_args(PLACE, SESSION, "anchor"),
+            new_window_args(PLACE, SESSION, "anchor", false),
         ] {
             let f = args.iter().position(|a| a == "-F").expect("-F");
             assert_eq!(args.get(f + 1).map(String::as_str), Some("#{pane_id}"));
@@ -1530,7 +1681,7 @@ mod tests {
     #[test]
     fn no_command_relies_on_a_current_session_or_client() {
         assert!(switch_args("/dev/ttys000", "%7").contains(&"-c".to_owned()));
-        assert!(new_window_args(PLACE, SESSION, "anchor").contains(&"-t".to_owned()));
+        assert!(new_window_args(PLACE, SESSION, "anchor", false).contains(&"-t".to_owned()));
         assert!(new_row_session_args(PLACE, SESSION, "anchor").contains(&"-s".to_owned()));
         for args in [
             set_option_args("%7", SESSION),
@@ -1740,6 +1891,59 @@ mod tests {
         assert_eq!(args[source + 1], "%7", "the source is the pane: {args:?}");
         let target = args.iter().position(|a| a == "-t").expect("-t");
         assert_eq!(args[target + 1], "r02:1", "{args:?}");
+    }
+
+    /// `dead_view_at` asks *"is there a corpse claiming this address"*,
+    /// so a corpse claiming a **different** one is invisible to it and
+    /// wedged the pad forever (`docs/35-the-drift.md`). This one asks
+    /// about the window instead, which is the question that was missing.
+    #[test]
+    fn the_occupant_is_found_by_its_window_whatever_it_claims() {
+        let listing = "%8|@8|1|01DEAD|1:9:9|r02|1\n";
+        let held = occupant_at(listing, MOVED_TO).expect("occupied");
+        assert_eq!(held.pane.id, "%8");
+        assert!(held.pane.dead);
+        assert_eq!(held.slot, "1:9:9", "it claims somewhere else entirely");
+        assert!(
+            dead_view_at(listing, "1:2:1").is_none(),
+            "and the address lookup cannot see it, which was the bug"
+        );
+    }
+
+    /// Nothing there is not an occupant.
+    #[test]
+    fn an_empty_index_has_no_occupant() {
+        let listing = "%8|@8|0|01LIVE|1:2:2|r02|2\n";
+        assert!(occupant_at(listing, MOVED_TO).is_none());
+    }
+
+    /// Parking is above the column range on purpose: no pad can name
+    /// index 90, so a parked view cannot wedge anything.
+    #[test]
+    fn a_squatter_is_parked_out_of_the_address_space() {
+        let listing = "%8|@8|0|01LIVE|1:9:9|r02|1\n";
+        let index = park_index(listing, MOVED_TO);
+        assert!(index >= u16::from(PARK), "{index} must be unaddressable");
+        assert!(index > 8, "a column is 1-8 and this must not be one");
+    }
+
+    /// Two squatters in one row do not land on each other.
+    #[test]
+    fn parking_skips_a_space_already_taken() {
+        let listing = format!("%8|@8|0|01LIVE|1:9:9|r02|1\n%9|@9|0|01OTHER|1:9:8|r02|{PARK}\n");
+        assert_eq!(park_index(&listing, MOVED_TO), u16::from(PARK) + 1);
+    }
+
+    /// `-k` on a creation is the corpse case and nothing else, for the
+    /// same reason it is on a move: it is a flag somebody can pass by
+    /// accident.
+    #[test]
+    fn a_new_window_only_replaces_when_it_was_asked_to() {
+        let plain = new_window_args(PLACE, SESSION, "anchor", false);
+        assert!(!plain.contains(&"-k".to_owned()), "{plain:?}");
+        let replacing = new_window_args(PLACE, SESSION, "anchor", true);
+        assert!(replacing.contains(&"-k".to_owned()), "{replacing:?}");
+        assert_eq!(replacing[0], "new-window");
     }
 
     /// `-k` is a flag somebody can pass by accident, so it is only there

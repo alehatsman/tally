@@ -309,6 +309,115 @@ fn pressing_a_drifted_view_relocates_it_by_id() {
     });
 }
 
+// ── #22: drift nothing was looking for ────────────────────────────────────
+
+/// A corpse claiming **another** address used to wedge the pad forever.
+///
+/// `dead_view_at` finds a corpse by the address it claims, so one
+/// claiming a different address was never matched and never replaced —
+/// `27`'s blind spot, generalised in `docs/35`.
+#[test]
+fn a_corpse_claiming_another_address_does_not_wedge_the_pad() {
+    each_config("corpse claiming elsewhere", |s| {
+        // S2 belongs at 1:1:5, is drifted onto 1:1:2's window, and dies
+        // there. Its tag still says 1:1:5.
+        press(s, "S2", 1, 5);
+        let corpse = s.view("S2").id;
+        let _drifted = s.sh(&["move-window", "-s", &corpse, "-t", "r01:2"]);
+        let _respawned = s.sh(&["respawn-pane", "-k", "-t", &corpse, "true"]);
+        s.wait_until_dead(&corpse);
+        assert_eq!(
+            s.view("S2").slot,
+            "1:1:5",
+            "claims elsewhere — {}",
+            s.dump()
+        );
+
+        // A new session on the pad the corpse is sitting on.
+        press(s, "S9", 1, 2);
+
+        assert!(s.view("S9").at("r01", 2), "S9 takes r01:2 — {}", s.dump());
+        assert!(
+            !s.panes().iter().any(|p| p.id == corpse),
+            "the corpse was replaced — {}",
+            s.dump()
+        );
+    });
+}
+
+/// A **live** squatter is parked out of the address space rather than
+/// closed or sent home: it does not have to go home to stop being in the
+/// way, and `jump` cannot work out where home is anyway
+/// (`docs/35-the-drift.md`).
+#[test]
+fn a_live_squatter_is_parked_and_the_pad_works() {
+    each_config("park a live squatter", |s| {
+        press(s, "S2", 1, 5);
+        let squatter = s.view("S2").id;
+        let _drifted = s.sh(&["move-window", "-s", &squatter, "-t", "r01:2"]);
+
+        press(s, "S9", 1, 2);
+
+        assert!(s.view("S9").at("r01", 2), "S9 takes r01:2 — {}", s.dump());
+        let parked = s.view("S2");
+        assert_eq!(parked.id, squatter, "the same pane — {}", s.dump());
+        assert!(!parked.dead, "nothing was closed — {}", s.dump());
+        let index: u16 = parked.index.parse().expect("an index");
+        assert!(
+            index > 8,
+            "parked out of the column range, got {index} — {}",
+            s.dump()
+        );
+    });
+}
+
+/// Parked is still drifted, and drift is still repaired by a press.
+#[test]
+fn a_parked_view_comes_home_when_its_own_pad_is_pressed() {
+    each_config("parked then pressed", |s| {
+        press(s, "S2", 1, 5);
+        let squatter = s.view("S2").id;
+        let _drifted = s.sh(&["move-window", "-s", &squatter, "-t", "r01:2"]);
+        press(s, "S9", 1, 2);
+
+        press(s, "S2", 1, 5);
+
+        assert!(s.view("S2").at("r01", 5), "S2 is home — {}", s.dump());
+        assert!(s.view("S9").at("r01", 2), "S9 stayed — {}", s.dump());
+    });
+}
+
+/// The sweep reports and moves nothing (`docs/35`, half two).
+#[test]
+fn the_audit_reports_drift_and_changes_nothing() {
+    each_config("audit", |s| {
+        press(s, "S1", 1, 1);
+        press(s, "S2", 1, 5);
+        let drifted_pane = s.view("S2").id;
+        let _drifted = s.sh(&["move-window", "-s", &drifted_pane, "-t", "r01:7"]);
+
+        let before = s.panes();
+        let want = vec![
+            ("S1".to_owned(), addr(1, 1), at(1, 1)),
+            ("S2".to_owned(), addr(1, 5), at(1, 5)),
+            // A session with no view at all is not drift.
+            ("ghost".to_owned(), addr(1, 8), at(1, 8)),
+        ];
+        let drift = s.tmux().audit(&want);
+
+        assert_eq!(drift.len(), 1, "only S2 is out of place: {drift:?}");
+        assert_eq!(drift[0].session, "S2");
+        assert_eq!(drift[0].claims, "1:1:5");
+        assert_eq!(drift[0].sits_at, "r01:7");
+        assert_eq!(
+            before,
+            s.panes(),
+            "the audit moved something — {}",
+            s.dump()
+        );
+    });
+}
+
 // ── #20, which is the reason the matrix exists ─────────────────────────────
 
 /// The generator, at the tmux level, with tally kept out of it.
