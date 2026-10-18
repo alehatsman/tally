@@ -4,7 +4,7 @@
 /// say what its first generation is. It lived in `life` until the pieces
 /// were given files of their own, which is when it became visible that
 /// all four stateful boards seed from it and only one of them was named
-/// after it (`docs/29-what-the-loop-holds.md`).
+/// after it (`docs/08-daemon.md`).
 pub(super) const SEED: u32 = 0x7a11;
 
 /// Xorshift. Not cryptography and not uniform to a statistician — it

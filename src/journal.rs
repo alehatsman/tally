@@ -14,7 +14,7 @@
 //! so a restart forgot it and the next tick wrote a second rising edge for
 //! a slot that had never stopped asking — three rises against one fall in
 //! the file as shipped, with `after_ms` measured from the wrong one
-//! (`docs/14-attention.md`). The instrument has to be right more than it
+//! (`docs/04-signals.md`). The instrument has to be right more than it
 //! has to be write-only.
 
 use std::collections::BTreeMap;
@@ -35,7 +35,7 @@ use crate::slot::{Pages, Slot};
 /// helpers as a parameter — which meant the rule that a write error
 /// retires the sink was implemented twice, and the second copy was one
 /// `flush` away from losing the transitions the journal exists to count
-/// (`docs/29-what-the-loop-holds.md`).
+/// (`docs/08-daemon.md`).
 #[derive(Debug, Default)]
 pub struct Journal {
     /// slot -> (session id, when it started asking)
@@ -288,7 +288,7 @@ impl Journal {
     /// Every slot that is asking, with the session and the moment it
     /// started.
     ///
-    /// **This is the queue** (`docs/16-the-queue.md`). It needed no new
+    /// **This is the queue** (`docs/05-interaction.md`). It needed no new
     /// state because the map already holds the *original* timestamp across
     /// a restart — which was the fix for #7 and turns out to be the
     /// ordering the top row sorts by.
@@ -317,7 +317,7 @@ impl Journal {
 ///
 /// Navigation is written down because whether the queue works is a
 /// question about what you actually press, and no other record answers it
-/// (`docs/16-the-queue.md#the-instrument`).
+/// (`docs/04-signals.md#the-instrument`).
 ///
 /// # Errors
 /// Whatever the sink returns.
@@ -366,7 +366,7 @@ pub fn nav_back(out: &mut impl Write, now: i64, ok: bool) -> io::Result<()> {
 ///
 /// `lit` is the instrument the design is a bet on. If it sits at seven
 /// for a month, the honest follow-up is not a better map but a smaller
-/// address space (`docs/20-the-overview.md`).
+/// address space (`docs/05-interaction.md`).
 ///
 /// # Errors
 /// Whatever the sink returns.
@@ -737,7 +737,7 @@ mod tests {
     }
 
     /// Off the grid is ignored, not clamped — the same rule a `tl.slot`
-    /// label follows (`docs/03-model.md#limits`).
+    /// label follows (`docs/02-model.md#limits`).
     #[test]
     fn an_address_off_the_grid_is_ignored() {
         let pages = Pages::default();
@@ -941,7 +941,7 @@ mod tests {
 
     /// The sink's one rule, and the reason it is a type: a write that
     /// fails retires it and the daemon carries on
-    /// (`docs/29-what-the-loop-holds.md`).
+    /// (`docs/08-daemon.md`).
     ///
     /// The failure is made with a **read-only** handle, which is the
     /// cheapest honest way to get `write` to return an error without a

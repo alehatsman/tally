@@ -4,7 +4,7 @@
 //! which page you are looking at, producing 81 lit cells. Nothing is
 //! cached, nothing is incremental. That is what makes `tallyd` disposable —
 //! it holds no state that cannot be rebuilt from a `list` and a config file
-//! (`docs/08-lifecycle.md`).
+//! (`docs/08-daemon.md`).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -28,7 +28,7 @@ pub struct View<'a> {
     /// **Rows, not pages.** `▲▼` move this by one, so the grid slides
     /// rather than cutting — a page boundary is not a thing you can feel
     /// and a row is. Pages still name addresses; they stopped being a
-    /// thing you jump between (`docs/16-the-queue.md#the-top-row`).
+    /// thing you jump between (`docs/05-interaction.md#the-queue-and-the-two-buttons-that-read-it`).
     pub offset: u8,
     /// Did the last `list` succeed? An unreachable anchord lights the logo
     /// and **leaves the grid alone**, because those sessions were there a
@@ -57,11 +57,11 @@ pub struct View<'a> {
     /// Only ever `Some` while [`Self::held`] is [`Action::Move`]: letting
     /// go empties the hand, because a pick-up you did not put down must
     /// leave the board exactly as it was
-    /// (`docs/22-the-mode-button.md#hold-tap-the-source-tap-the-destination`).
+    /// (`docs/05-interaction.md#move-is-the-missing-verb`).
     pub hand: Option<Slot>,
     /// `Session` is held, so the grid is the whole 64-row address space
     /// rather than the eight-row window onto it
-    /// (`docs/20-the-overview.md`). Outranks [`Self::held`], which is
+    /// (`docs/05-interaction.md`). Outranks [`Self::held`], which is
     /// `None` for the same press.
     pub overview: bool,
     /// Every action button physically down — which is **not** the same as
@@ -71,13 +71,13 @@ pub struct View<'a> {
     pub pressed: &'a BTreeSet<Action>,
     /// Is an art playing? It lights `Drums` white, and nothing else here
     /// knows about it: the daemon paints the 64 pads itself while this is
-    /// true (`docs/21-the-arts.md`).
+    /// true (`docs/05-interaction.md`).
     pub art: bool,
     /// Which verb `CC19` is carrying
     /// (`crate::chord::Chords::mode`). **The colour of that corner is
     /// the only thing that says which mode you are in**, which is what
     /// makes a latched mode honest — so it is read here rather than
-    /// assumed (`docs/22-the-mode-button.md#changing-the-mode`).
+    /// assumed (`docs/05-interaction.md#changing-the-mode`).
     pub mode: Action,
 }
 
@@ -102,7 +102,7 @@ pub struct Resolved {
     ///
     /// Carried here so the view can be tagged with it on a jump, which is
     /// what puts it on the dead line
-    /// (`docs/26-the-dead-pane.md`). Nothing on the grid renders
+    /// (`docs/06-views.md`). Nothing on the grid renders
     /// it: a pad is an address, and a UUID is not something you can see
     /// in a colour.
     pub claude: Option<String>,
@@ -177,7 +177,7 @@ pub fn resolve(
 /// and its log but renders as nothing, so a pad can be dark and still have
 /// a dozen rows behind it. Those are exactly what the purge chord is for,
 /// and the only way to see them is to hold it
-/// (`docs/03-model.md#exited-rows-accumulate-and-purge-is-the-answer`).
+/// (`docs/02-model.md#exited-rows-accumulate-and-purge-is-the-answer`).
 ///
 /// Newest first, because that is the order anchord lists in and the order
 /// you would delete them by hand.
@@ -207,7 +207,7 @@ pub fn purgeable(sessions: &[Session], pages: &Pages) -> BTreeMap<Slot, Vec<Stri
 /// it has, dead ones included, so a row that has ever held a session can
 /// hold another one without anything being declared in advance. That is
 /// what `slots.toml` was trying to be and could not
-/// (`docs/18-the-launch-column.md`).
+/// (`docs/05-interaction.md`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RowLaunch {
     /// The leftmost free pad in that row.
@@ -263,7 +263,7 @@ pub fn row_launch(
 /// Three fields and no address: `row_launch` picks the destination
 /// because `>` is a one-press gesture with nowhere else to put it, and
 /// `tally fork` is told both ends by the person typing it
-/// (`docs/11-cli.md`).
+/// (`docs/07-cli.md`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Inherit {
     /// `argv[0]`, from the newest session that pad has ever held.
@@ -545,7 +545,7 @@ pub fn frame_from(pads: &Pads<'_>, view: &View<'_>) -> Frame {
         }
     }
 
-    // The top row: `▲ ▼ ◄ ► · · · ·` (`docs/16-the-queue.md`). Every
+    // The top row: `▲ ▼ ◄ ► · · · ·` (`docs/05-interaction.md`). Every
     // button here is self-describing — dark does nothing, lit does exactly
     // one thing — so there is no state to remember and no mode to be in.
     frame.set(Button::Top(1), render::arrow(view.offset > 0));
@@ -564,7 +564,7 @@ pub fn frame_from(pads: &Pads<'_>, view: &View<'_>) -> Frame {
     }
 
     // The right column: seven `>` launchers and the kill modifier at the
-    // bottom (`docs/18-the-launch-column.md`). The launchers go dark
+    // bottom (`docs/05-interaction.md`). The launchers go dark
     // under the overview because the rows they name are not the rows on
     // the grid, and a button that would fire into a row the eye is not
     // looking at must not look live.
@@ -580,7 +580,7 @@ pub fn frame_from(pads: &Pads<'_>, view: &View<'_>) -> Frame {
         // names: both verbs live on `CC19`, and a double-tap flips the
         // mode on the release, so a press can go down under one verb and
         // come up under another. `pressed` holds whichever verb was live
-        // when it went down (`docs/22-the-mode-button.md`).
+        // when it went down (`docs/05-interaction.md`).
         render::action(Some(view.mode), !view.pressed.is_empty()),
     );
 
@@ -1056,7 +1056,7 @@ mod tests {
     /// It is a regression test: `frame_from` passed [`Action::Stop`] as
     /// a literal, so the renderer knew about turquoise and the surface
     /// never showed it — the latched mode was invisible, which is the
-    /// one property `docs/22-the-mode-button.md#changing-the-mode` says
+    /// one property `docs/05-interaction.md#changing-the-mode` says
     /// it must never have.
     #[test]
     fn the_corner_wears_the_mode() {
@@ -1078,7 +1078,7 @@ mod tests {
     /// completes on the release, so the verb in `pressed` can be the one
     /// that was live when the press went down rather than the one the
     /// mode names now — matching by verb is what stranded a hold and
-    /// froze the grid once (`docs/22-the-mode-button.md`).
+    /// froze the grid once (`docs/05-interaction.md`).
     #[test]
     fn the_corner_is_white_while_held_in_either_mode() {
         let pages = Pages::default();
@@ -1254,7 +1254,7 @@ mod tests {
         );
         // The top row no longer says which page you are on, or which
         // page holds work. `▲` is dark because page 1 is the first, `▼`
-        // is dim because there is somewhere to go (`docs/16-the-queue.md`).
+        // is dim because there is somewhere to go (`docs/05-interaction.md`).
         assert_eq!(f.get(Button::Top(1)), Cell::Off, "no page above page 1");
         assert_eq!(
             f.get(Button::Top(2)),
@@ -1431,7 +1431,7 @@ mod tests {
 
         // The logo still reports it. The top row no longer says *which*
         // page — `►` crosses pages, so you do not navigate to attention
-        // any more (`docs/16-the-queue.md`).
+        // any more (`docs/05-interaction.md`).
         assert_eq!(f.get(Button::Logo), Cell::Pulse(AMBER), "logo must say so");
     }
 
@@ -1492,7 +1492,7 @@ mod tests {
     }
 
     /// The frame says an art is playing, and says it on the button you
-    /// pressed to start one (`docs/21-the-arts.md`).
+    /// pressed to start one (`docs/05-interaction.md`).
     #[test]
     fn an_art_lights_the_button_that_started_it() {
         let pages = Pages::default();

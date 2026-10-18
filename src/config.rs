@@ -1,7 +1,7 @@
 //! `~/.config/tally/slots.toml` — which pads spawn what.
 //!
 //! Three tables, each answering a different question
-//! (`docs/03-model.md`): `[[page]]` is *where the top row points*,
+//! (`docs/02-model.md`): `[[page]]` is *where the top row points*,
 //! `[[spec]]` is *what to run*, `[[slot]]` is *what is where*.
 //!
 //! **Everything is optional and a missing file is not an error.** No
