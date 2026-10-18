@@ -192,10 +192,19 @@ impl Server {
         // Both are read when a `Tmux` is built or a jump is run, and both
         // are process-global, which is what `GATE` is protecting.
         std::env::set_var("TALLY_TMUX_SOCKET", &socket);
-        // Without this a headless `jump` would run `open -a Alacritty` on
-        // the machine running the suite. `TALLY_TERMINAL` is left unset so
-        // that `raise()` has no app to raise and does nothing at all.
+        // Both halves of the window-manager end of `jump` are sent to
+        // `true`, because both of them otherwise act on the desk running
+        // the suite: `TALLY_TERMINAL_CMD` for the window that gets opened,
+        // `TALLY_RAISE_CMD` for the app that gets brought forward.
+        //
+        // The second one is **not** covered by unsetting `TALLY_TERMINAL`,
+        // which is what this used to claim: `terminal_app()` falls back to
+        // Alacritty when it is unset, so every jump in this file raised a
+        // real window on a real screen, seconds apart, for as long as the
+        // suite ran. Found by catching `open -a Alacritty` in the act,
+        // parented to this binary.
         std::env::set_var("TALLY_TERMINAL_CMD", "true");
+        std::env::set_var("TALLY_RAISE_CMD", "true");
         std::env::remove_var("TALLY_TERMINAL");
 
         Self {

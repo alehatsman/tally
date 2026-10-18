@@ -1363,13 +1363,37 @@ fn terminal_app() -> Option<String> {
         .or_else(|| Some("Alacritty".to_owned()))
 }
 
+/// The command that brings the terminal forward.
+///
+/// Split out from the running of it for the reason every other command in
+/// this module is: the arguments are the part worth testing.
+///
+/// Overridable as `TALLY_RAISE_CMD`, the twin of `TALLY_TERMINAL_CMD`,
+/// and the suite sets it. It has to: leaving `TALLY_TERMINAL` unset does
+/// **not** leave [`raise`] with nothing to raise — [`terminal_app`] falls
+/// back to Alacritty — so without an override every headless jump in the
+/// tests takes the screen of whoever is running them. The override is
+/// split on spaces, which is enough for a path and some flags and
+/// deliberately not a shell.
+fn raise_command(app: &str, override_cmd: Option<&str>) -> (String, Vec<String>) {
+    let Some(cmd) = override_cmd.map(str::trim).filter(|c| !c.is_empty()) else {
+        return ("open".to_owned(), vec!["-a".to_owned(), app.to_owned()]);
+    };
+    let mut parts = cmd.split(' ').filter(|p| !p.is_empty());
+    let bin = parts.next().unwrap_or("true").to_owned();
+    (bin, parts.map(ToOwned::to_owned).collect())
+}
+
 /// Bring the terminal emulator forward. Best-effort and deliberately not
 /// an error: tmux has already been switched, so the move has happened even
 /// if the window manager will not cooperate.
 fn raise() {
-    if let Some(app) = terminal_app() {
-        let _raised = Command::new("open").args(["-a", &app]).output();
-    }
+    let Some(app) = terminal_app() else {
+        return;
+    };
+    let over = std::env::var("TALLY_RAISE_CMD").ok();
+    let (bin, args) = raise_command(&app, over.as_deref());
+    let _raised = Command::new(bin).args(args).output();
 }
 
 /// The command that opens the window looking at tally's server.
@@ -1544,6 +1568,10 @@ impl Jump for Tmux {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Held by any test that touches the **process** environment, which
+    /// the rest of this binary's tests are running in parallel with.
+    static ENV: Mutex<()> = Mutex::new(());
 
     const SESSION: &str = "01M52GEKED8ZEJPMT2KCJ35ZWT";
     /// The slot the pad lives on, as `page:row:col`.
@@ -2230,6 +2258,58 @@ mod tests {
         );
         // An override that is only whitespace is not an override.
         assert_eq!(terminal_command("tally", "Alacritty", Some("  ")).0, "open");
+    }
+
+    /// With no override this really does take the screen, which is the
+    /// point of it on a desk and the bug off one.
+    #[test]
+    fn a_raise_with_no_override_focuses_the_app() {
+        assert_eq!(
+            raise_command("Alacritty", None),
+            (
+                "open".to_owned(),
+                vec!["-a".to_owned(), "Alacritty".to_owned()]
+            )
+        );
+        // Whitespace is not an override, exactly as for the window.
+        assert_eq!(raise_command("Alacritty", Some(" ")).0, "open");
+    }
+
+    /// The suite's escape hatch, and the reason this function exists:
+    /// `TALLY_RAISE_CMD=true` has to leave nothing that can reach a
+    /// window manager.
+    #[test]
+    fn a_raise_override_replaces_the_whole_command() {
+        assert_eq!(
+            raise_command("Alacritty", Some("true")),
+            ("true".to_owned(), vec![])
+        );
+        // The app name is gone, not appended: an override that still
+        // carried `-a Alacritty` would raise the window anyway.
+        let (bin, args) = raise_command("Alacritty", Some("echo raised"));
+        assert_eq!(bin, "echo");
+        assert_eq!(args, ["raised"]);
+    }
+
+    /// The trap this whole fix is about, pinned: **unset is not off.**
+    /// `tests/harness` believed otherwise and raised a window on the
+    /// running machine for every jump in the suite.
+    #[test]
+    fn an_unset_terminal_still_names_an_app() {
+        let _gate = ENV
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let restore = std::env::var_os("TALLY_TERMINAL");
+        std::env::remove_var("TALLY_TERMINAL");
+        let app = terminal_app();
+        if let Some(v) = restore {
+            std::env::set_var("TALLY_TERMINAL", v);
+        }
+        assert_eq!(
+            app.as_deref(),
+            Some("Alacritty"),
+            "unsetting the app does not disable the raise -- TALLY_RAISE_CMD does"
+        );
     }
 
     // ── origin: the half `◄` is built on ───────────────────────────────
