@@ -4,7 +4,7 @@
 //! `anchor label $ANCHOR_SESSION tl.attention=1`. That variable is set by
 //! nothing — it appears nowhere in anchor's source and is not in a live
 //! session's environment — so the recipe expanded to an empty argument and
-//! never worked (`docs/14-attention.md`).
+//! never worked (`docs/04-signals.md`).
 //!
 //! The session has to be *found*, and the only key that survives two agents
 //! running in one repo — the normal case on this grid — is the process

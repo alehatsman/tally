@@ -4,7 +4,7 @@
 //! Programmer mode **disables the device's Setup menu**, so a process that
 //! exits without sending Live mode leaves the user with a Launchpad that
 //! has lost a feature and no obvious way to get it back short of a power
-//! cycle (`docs/08-lifecycle.md`). Everything here is arranged so that the
+//! cycle (`docs/08-daemon.md`). Everything here is arranged so that the
 //! restore happens on every path out: normal return, error, panic unwind,
 //! and a signal that the main loop turns into a normal return.
 
@@ -295,7 +295,7 @@ impl Device {
 
     /// One MIDI clock pulse. Twenty-four of these make a quarter note,
     /// and the device's two-beat pulse ramp follows them
-    /// (`docs/17-the-tempo.md`).
+    /// (`docs/05-interaction.md`).
     ///
     /// ✅ Confirmed on hardware that the Mini MK3 honours clock on this
     /// port — `LPMiniMK3 MIDI`, not the DAW port — which was the one

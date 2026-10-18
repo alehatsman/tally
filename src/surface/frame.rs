@@ -9,7 +9,7 @@ use super::sysex::{EOX, HEADER};
 ///
 /// Flashing and pulsing run on the **device's** clock, so a host that wants
 /// a blinking pad sets it once and stops thinking about it — no timer, no
-/// repaint loop, no drift (`docs/02-surface.md`).
+/// repaint loop, no drift (`docs/03-surface.md`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Cell {
     /// Unlit.
