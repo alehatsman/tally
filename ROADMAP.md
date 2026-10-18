@@ -941,8 +941,15 @@ fix had until then only ever seen a scratch socket:
 - ⬜ a move onto a corpse, on purpose; whether the one above met one is not
   recorded
 - ⬜ a spawn onto a pad a move vacated, on the live grid
+- ✅ the lazy by-id relocation, on a view out of place: pressing `1:1:3`
+  moved `%31` from `r01:2` home to `r01:3`, and no collision followed.
+  **Inferred, not seen** — the relocation is not logged, so this is
+  `list-panes` before and after
 - ❌ a press of a pad whose window a drifted view holds: `index 2 in use`
-  twice, then healed by pressing the view that was out of place. Not a
+  twice, then healed by pressing the view that was out of place — **a
+  different pad's address**. It did not heal itself: pressing only the
+  blocked pad fails every time, and nothing looks for the drift from
+  there ([#22](https://github.com/alehatsman/tally/issues/22)). Not a
   Move, and the same wedge
   ([#20](https://github.com/alehatsman/tally/issues/20))
 - ❌ a move onto a **live** pane — [#19](https://github.com/alehatsman/tally/issues/19).

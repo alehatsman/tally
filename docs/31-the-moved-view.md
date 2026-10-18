@@ -273,13 +273,15 @@ check.
 
 **Not seen, and the numbers that would flatter this:**
 
-- **"77 → 0" is not the result.** 77 is `grep -c "in use"` over the whole
-  log, and most of it is [27](27-the-slot-collision.md)'s corpses, fixed
+- **"77 → 0" is not the result.** 77 was `grep -c "in use"` over the whole
+  log when first counted; it is 79 now, the two being 19630/19632 below,
+  which is the point: the figure moves while the log grows. Most of it is [27](27-the-slot-collision.md)'s corpses, fixed
   before this existed. The last one is at line 19221, which is *before the
   previous restart* (19277), so the quiet that follows it is not
   evidence about this change either. The comparison that means something
-  is the three moves above, and before the fix one move in 19183 was
-  followed by three collisions at 19188-19196.
+  is the three moves above, and before the fix one move (19189,
+  `1:4:1 -> 1:3:1`) was followed by three collisions at 19191, 19193 and
+  19196. (Line 19183 is an earlier, unrelated move.)
 - **The placeholder branch did not run.** The cross-row move went to `r02`,
   which tmux had held since before the restart
   (`list-sessions`: `r02` created at 1792336048). It is the destination-row
@@ -322,7 +324,16 @@ that is not a Move. The owner then pressed `1:1:3`, and with 3 free `%31`
 moved there; the next press of `1:1:2` opened its view at `r01:2` (`%36`).
 So the repair this document specifies worked, by the route it specifies
 (*the moved session is pressed*), and the wedge it admits was real until
-then. Read from the log and `list-panes` afterwards; the presses were the
+then. **This is the lazy by-id relocation, run on the live grid for the
+first time, and it is inferred rather than seen:** the relocation writes
+nothing to the log, so the evidence is `list-panes` before and after (`%31`
+at `r01:2` tagged `1:1:3`, then at `r01:3`) and no collision afterwards.
+Between those two presses of `1:1:2` the owner also pressed `1:1:4` and
+`1:1:3` again. **It did not heal itself:** the drift cleared because someone
+pressed `1:1:3`, the *other* pad's address. Pressing only `1:1:2`, as was
+done twice, finds nothing and fails the same way each time; a user who did
+that would have concluded the pad was broken for good
+([#22](https://github.com/alehatsman/tally/issues/22)). Read from the log and `list-panes` afterwards; the presses were the
 owner's. **The gate closed for the thing #17 fixed, on a grid that was still
 colliding for another reason in the same hour.**
 Tracked: [#19](https://github.com/alehatsman/tally/issues/19) the blocked
