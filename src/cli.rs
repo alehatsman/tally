@@ -58,6 +58,11 @@ Your shell is not handed over. The view opens on tally's own tmux
 server and this command returns; --detach opens no view at all, and the
 pad still lights.
 
+A detached spawn into a directory the agent has never seen can stop on
+the agent's own trust prompt with nothing attached to answer it. The pad
+lights and looks busy. Unstick it with:
+    printf '\\r' | anchor attach <id>
+
 The directory is always the one you are standing in, which is the whole
 point; there is no --cwd. Two-part addresses are row:col on the first
 page. Row 1 is the top, column 1 is the left.

@@ -91,6 +91,46 @@ view is attempted, so a tmux that will not cooperate costs you a view the
 next pad press makes anyway. It prints where the session went and exits
 `0`.
 
+### A detached spawn can land on the agent's own first question
+
+⚠️ **Measured, and not fixed here**
+([#13](https://github.com/alehatsman/tally/issues/13)). Claude Code asks
+*"Is this a project you created or one you trust?"* the first time it is
+run in a directory. A detached spawn into a **freshly cloned repo** hits
+that prompt with nothing attached to answer it:
+
+```sh
+cd ~/projects/thing && tally spawn --detach 1:1:1 -- claude "<prompt>"
+```
+
+`tally spawn` returns `0`, the pad lights, anchor says `running` — and
+the agent is sitting on a dialog, forever. **From the grid it is
+indistinguishable from an agent that is thinking**, which is the worst
+shape a failure can have here: the pad looks like work is happening.
+
+It is also exactly when you hit it. `--detach` is the natural way to
+start several agents at once (`--count N` forces it above 1), and a fresh
+clone is exactly when you do that.
+
+The workaround, and it is a workaround:
+
+```sh
+printf '\r' | anchor attach <id>
+```
+
+`anchor attach` is documented as an interactive passthrough, not a write
+channel, so this leans on behaviour anchor does not promise. It works.
+
+**Why nothing in tally fixes it yet.** The honest fix is for the pad to
+*notice* — a session that has produced output and consumed no input for
+N seconds is arguably already what `tl.attention` means. That is a change
+to what the amber reports, and what the amber reports is the open
+question in [#23](https://github.com/alehatsman/tally/issues/23): one bit
+currently carries *blocked* and *finished*, and adding a third
+origin before that is settled would be building on an answer nobody has
+given. The alternative lives in anchor rather than here — a real `anchor
+send`, or `attach` promising what it already does.
+
 **No `--cwd` is deliberate.** A flag would re-admit the thing we are
 removing — a directory typed by hand — and the shell has a perfectly good
 one already. Scripts that want a different folder can use a subshell, or
@@ -154,7 +194,9 @@ That gives the behaviour you would guess from looking at the device:
 |---|---|
 | dark | spawns |
 | green, amber | refuses — something is alive there |
-| red, dark red | refuses — something wants reading |
+| red (failed) | ⚠️ **spawns.** A failed pad is not an occupied one |
+| dark red, lost to an anchord restart | ⚠️ **spawns.** The row is gone; nothing is holding it |
+| dark red, lost and maybe still running | refuses — the process may be out there |
 | dark, with exited rows behind it | spawns, and the old rows stay for `anchor logs` |
 
 The fourth row is the interesting one and it is not a special case:
@@ -164,9 +206,37 @@ pad is dark and pressing it spawns a second session. The CLI does the same,
 by asking the same function. **One predicate, read by a finger and by a
 shell** — if they ever disagree, the grid is lying about what a press does.
 
-A failed or lost pad refusing is the deliberate half: red has one job, which
-is *go and look*, and spawning over it would erase the only sign. Purge it
-from the grid, then spawn.
+The predicate is `SlotState::frees_the_pad` and it is exactly three
+states — `Empty`, `Failed { .. }`, and `Lost { reclaimable: true }`
+(`src/signal.rs`). **Only an unreclaimable `lost` refuses**, and it
+refuses for a reason that is about the process rather than about the
+colour: anchord cannot say whether it is still running, so taking the pad
+could mean two agents in one repo.
+
+> ⛔ **This section used to say the opposite**, and the correction is kept
+> rather than edited away because it is the more useful record.
+>
+> It said: *"A failed or lost pad refusing is the deliberate half: red has
+> one job, which is go and look, and spawning over it would erase the only
+> sign. Purge it from the grid, then spawn."*
+>
+> **Two things wrong with it.** A failed pad has been claimable since
+> [#9](https://github.com/alehatsman/tally/issues/9) — the whole point of
+> that issue was that after an anchord restart every pad was held by a row
+> that no longer existed, and clearing them by hand was five label edits.
+> And `purge` **is not on the grid**: it is a CLI verb, `tally purge
+> <addr>`, and there is no press that performs it. The sentence described
+> a refusal that does not happen and sent the reader to an affordance that
+> does not exist ([#14](https://github.com/alehatsman/tally/issues/14)).
+>
+> The argument it was making is still half right and now lives in the
+> colour rather than in a refusal: **red has one job, which is *go and
+> look***. Nothing stops you spawning over it, and if the pad is red you
+> probably want `anchor logs` first — that is a judgement, not a rule the
+> program enforces. The thing it would have been protecting is already
+> protected: a failed session's rows stay in anchor for `anchor logs`
+> until `tally purge` forgets them, so spawning over red erases a colour,
+> never a record.
 
 **The check is advisory, and knowing why matters.** It is a list, a
 decision, then a create (`src/bin/tally.rs`), with nothing holding the
@@ -323,7 +393,7 @@ $ tally ls
   1:1  #  #  #  @  .  .  .  .
   1:3  !  .  .  .  .  .  .  .
 
-  @ you   # running   ? waiting   ! failed   x lost   . free
+  @ you   # running   ? wants you   ! failed   x lost   . free
 ```
 
 One glyph per colour the device uses, so the text and the hardware
