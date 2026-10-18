@@ -109,10 +109,20 @@ declared addresses, costing nothing, stable because you chose it.
 | **column = project, row = lane** | symmetric and worse: the right column is adjacent to *rows*, so `>` stops meaning anything |
 | **solo** — silence the other thirty-one | invisible global state needing self-clearing rules and a filter threaded through the queue, the tempo and the logo, to answer *"these are the ones I care about right now."* Move answers that physically, by putting them on row 1. **Arrangement beats state** |
 
-Tracked as [#8](https://github.com/alehatsman/tally/issues/8). The number
-that would reopen grouping is `queued` in the nav journal: if it is almost
-always 1, then the 61% above was one unusual hour and there *is* usually a
-single amber pad. Every `next` press so far has reported `queued: 1`.
+✅ **Closed on data, 2026-10-18** ([#8](https://github.com/alehatsman/tally/issues/8)).
+The number that would have reopened grouping is `queued` in the nav
+journal: *if it is almost always 1, the 61% above was one unusual hour and
+there is usually a single amber pad.* Over 55 hours and 62 `next` presses,
+**`queued==1` is 35%** — depth 2 or more is 65%, and seven-deep happened
+thirteen times. The one-hour measurement holds at twenty-four times the
+sample. **The flat grid is final**, and grouping does not get a second
+look.
+
+> **What that hour could not have told you, and this one does:** the
+> *shape* of the queue is lumpy rather than shallow. Thirteen presses at
+> depth seven is one sustained pile-up, not a steady two. An arrangement
+> scheme would have had to be right about where seven simultaneous asks
+> live, which is a harder question than the one it was proposed to answer.
 
 ## Where the binding lives
 
@@ -282,7 +292,10 @@ you just finished, to tidy a list you were not looking at.
 
 ## Limits
 
-- 8 pages × 64 = 512 slots. No pagination beyond that, ever.
+- 8 pages × 64 = 512 slots. No pagination beyond that, ever. **Four rows
+  are in use**, and `lit` has never moved off four — which is an open
+  question about the size of the space rather than about this limit
+  ([11](11-unbuilt.md#512-slots-for-four-used-rows)).
 - One session per slot. A slot with two is a slot you cannot read.
 - Label values follow anchor's limits — keys match `[a-z0-9_.-]{1,64}`,
   values ≤ 256 bytes, ≤ 32 per session. Every `tl.` key is well inside all
