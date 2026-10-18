@@ -180,23 +180,30 @@ about which gesture asked.
 
 **Size is not ours.** `create` takes `cols`/`rows` and we send anchor's
 defaults, because `anchor attach` resizes the session to the terminal it is
-attaching to before any output arrives (`anchor/src/bin/anchor.rs:343-349`)
-and the view window is that terminal ([07](07-seams.md#anchor): we never
-call `resize`). The one visible consequence: output produced between the
-spawn and your first jump was wrapped at 80 columns. That is the replay of
-a few seconds of startup banner, and the alternative is tally guessing at
-the size of a window that does not exist yet.
+attaching to before any output arrives (`attach` in
+`anchor/src/bin/anchor.rs`) and the view window is that terminal
+([07](07-seams.md#anchor): we never call `resize`). The one visible
+consequence: output produced between the spawn and your first jump was
+wrapped at 80 columns. That is the replay of a few seconds of startup
+banner, and the alternative is tally guessing at the size of a window that
+does not exist yet.
 
-**"The view window owns the size" is only true at attach time**, and that
-is anchor's gap rather than ours. `anchor attach` resizes once, before the
-replay, and installs no `SIGWINCH` handler — so resizing the pane
-afterwards never reaches the PTY and the agent keeps rendering at the size
-it had when you attached (anchor#15; `window_size` is documented for a
-caller that was never written, `anchor/src/tty.rs:170`). Until that is
-fixed the workaround is to close the view window and press the pad again:
-the next jump recreates it, which re-runs the one-shot resize at the new
-size. Tally still does not call `resize` — a surface that resized a
-session under whoever holds the lease is the inverse of the problem.
+**The view window owns the size, and keeps owning it.** Drag the pane and
+tmux sends `SIGWINCH` to what is running in it; `anchor attach` is
+watching for that and writes a `resize` frame on its own attached
+connection with the size the terminal has now (`tty::watch_resizes` and
+`tty::take_resize` in anchor). The PTY follows the window, and the agent
+re-renders at the width it is actually being read at. Tally still does not
+call `resize` — a surface that resized a session under whoever holds the
+lease is the inverse of the problem.
+
+⚠️ **This used to be anchor's one documented gap**, and the workaround
+here was to close the view window and press the pad again so the next jump
+recreated it at the new size (anchor#15, fixed in anchor#21). The
+workaround still works and is now only a workaround for an `anchor` binary
+older than that fix — the symptom is an agent rendering at the size the
+pane had when you jumped to it, which is the one thing a resize is
+supposed to change.
 
 ## Pages
 
