@@ -319,6 +319,15 @@ fn perform(ctx: &Context<'_>, gesture: Gesture, at: Slot, pages: &Pages, tmux: &
                 }
                 Ok(done @ Done::Moved { .. }) => {
                     eprintln!("tallyd: {action:?} {}:{row}:{col} {done}", at.page);
+                    if let Done::Moved { session, to, .. } = &done {
+                        // The label is written; the pane follows it. Not
+                        // part of the move: a failure is a line here and
+                        // the next press of the pad repairs it.
+                        let label = to.label(pages).unwrap_or_default();
+                        if let Err(e) = tmux.relocate(session, &label, to.place()) {
+                            eprintln!("tallyd: relocate {session}: {e}");
+                        }
+                    }
                     Hand::Emptied
                 }
                 Ok(done) => {

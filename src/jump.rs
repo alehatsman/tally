@@ -125,6 +125,17 @@ pub trait Jump {
         where_: Place,
     ) -> Result<(), Error>;
 
+    /// Move the view for `session`, if it has one, to the window `where_`
+    /// names, and re-label it `at`. **Nothing is switched.**
+    ///
+    /// `Ok(())` when there is no view: a session that was never pressed
+    /// has no pane to move, and that is not an error
+    /// (`docs/31-the-moved-view.md`).
+    ///
+    /// # Errors
+    /// Whatever stopped it.
+    fn relocate(&self, session: &str, at: &str, where_: Place) -> Result<(), Error>;
+
     /// Put each client back where it was standing before it jumped.
     ///
     /// `Ok(false)` when there was nowhere to go. That is not an error: a
@@ -170,16 +181,21 @@ pub trait Jump {
 /// `page:row:col` address can contain this, so position holds.
 const FIELD: char = '|';
 
-/// Args listing every pane, its window, whether it is dead, and the two
-/// things tally writes on it: the session it views and the address it
-/// occupies.
+/// Args listing every pane, its window, whether it is dead, the two
+/// things tally writes on it — the session it views and the address it
+/// claims — and where it **is**: tmux session and window index
+/// (`docs/31-the-moved-view.md`). The claim and the place are different
+/// questions, and a moved view is exactly where they disagree.
+///
+/// The last two are never empty, so [`FIELD`]'s position rule is as it
+/// was.
 fn list_panes_args() -> Vec<String> {
     vec![
         "list-panes".into(),
         "-a".into(),
         "-F".into(),
         format!(
-            "#{{pane_id}}{FIELD}#{{window_id}}{FIELD}#{{pane_dead}}{FIELD}#{{{PANE_OPTION}}}{FIELD}#{{{SLOT_OPTION}}}"
+            "#{{pane_id}}{FIELD}#{{window_id}}{FIELD}#{{pane_dead}}{FIELD}#{{{PANE_OPTION}}}{FIELD}#{{{SLOT_OPTION}}}{FIELD}#{{session_name}}{FIELD}#{{window_index}}"
         ),
     ]
 }
@@ -266,6 +282,55 @@ fn move_window_args(pane: &str, place: Place) -> Vec<String> {
         "-t".into(),
         format!("{}:{}", row_session(place.row), place.col),
     ]
+}
+
+/// [`move_window_args`], replacing whatever holds the index when asked.
+fn relocate_window_args(pane: &str, place: Place, replace: bool) -> Vec<String> {
+    let mut args = move_window_args(pane, place);
+    if replace {
+        args.insert(1, "-k".into());
+    }
+    args
+}
+
+/// Args keeping a client in `session` when it stops existing.
+///
+/// Moving a row's last window out destroys the row session, and with
+/// tmux's default a client in it is **detached** — so `jump` would list
+/// no clients and open a second terminal
+/// (`docs/31-the-moved-view.md`). Per session, not `-g`: only the one
+/// about to be left.
+fn keep_clients_args(session: &str) -> Vec<String> {
+    vec![
+        "set-option".into(),
+        "-t".into(),
+        session.into(),
+        "detach-on-destroy".into(),
+        "off".into(),
+    ]
+}
+
+/// Args making the row session a moved view is going to, printing its
+/// first window's id.
+///
+/// `move-window` needs the target session to exist and tmux has no verb
+/// that adopts a pane into one it creates, so this is the stray shell
+/// [`new_row_session_args`] exists to avoid — for the length of one move.
+fn placeholder_args(place: Place) -> Vec<String> {
+    vec![
+        "new-session".into(),
+        "-d".into(),
+        "-s".into(),
+        row_session(place.row),
+        "-P".into(),
+        "-F".into(),
+        "#{window_id}".into(),
+    ]
+}
+
+/// Args closing a window by id.
+fn kill_window_args(window: &str) -> Vec<String> {
+    vec!["kill-window".into(), "-t".into(), window.into()]
 }
 
 /// Args stopping tmux renaming a view's window after whatever is running
@@ -537,6 +602,10 @@ struct Pane<'a> {
     /// detaching from `anchor attach` also ends the attach, and the pad is
     /// what answers which (`docs/15-views.md`).
     dead: bool,
+    /// The tmux session it is in now: `r03`.
+    tmux_session: &'a str,
+    /// The window index it is at now. The column, when nothing has moved.
+    index: &'a str,
 }
 
 /// One line of the pane listing: a pane, and the two tags on it.
@@ -557,11 +626,15 @@ fn row(line: &str) -> Option<Row<'_>> {
     let dead = f.next()?;
     let session = f.next()?;
     let slot = f.next()?;
+    let tmux_session = f.next()?;
+    let index = f.next()?;
     Some(Row {
         pane: Pane {
             id: pane,
             window,
             dead: dead == "1",
+            tmux_session,
+            index,
         },
         session,
         slot,
@@ -603,6 +676,56 @@ fn dead_view_at<'a>(listing: &'a str, at: &str) -> Option<Pane<'a>> {
         .filter_map(row)
         .find(|r| r.slot == at && r.pane.dead)
         .map(|r| r.pane)
+}
+
+/// What it takes to put a view's pane in the window `place` names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Relocation {
+    /// Pass `-k`: whatever is at the destination is a corpse, or is the
+    /// placeholder [`placeholder_args`] made.
+    replace: bool,
+    /// The row session is not there to move into.
+    create_row: bool,
+}
+
+/// How to get `pane` to `place`, or `None` when it should stay.
+///
+/// Stays when it is already there, and when the destination holds a
+/// **live** pane: a running `anchor attach` is something you are
+/// looking at, and this is not the gesture that closes it
+/// (`docs/31-the-moved-view.md`, `docs/27-the-slot-collision.md`). `-k`
+/// is only ever asked for here, after the occupant has been seen dead.
+///
+/// A pure function of the listing, so the whole table is testable
+/// without a server.
+fn relocation(listing: &str, pane: Pane<'_>, place: Place) -> Option<Relocation> {
+    let want_session = row_session(place.row);
+    let want_index = place.col.to_string();
+    if pane.tmux_session == want_session && pane.index == want_index {
+        return None;
+    }
+    let mut row_exists = false;
+    let mut occupant = None;
+    for r in listing.lines().filter_map(row) {
+        if r.pane.tmux_session != want_session {
+            continue;
+        }
+        row_exists = true;
+        if r.pane.index == want_index {
+            occupant = Some(r.pane);
+        }
+    }
+    match occupant {
+        Some(held) if !held.dead => None,
+        Some(_) => Some(Relocation {
+            replace: true,
+            create_row: false,
+        }),
+        None => Some(Relocation {
+            replace: !row_exists,
+            create_row: !row_exists,
+        }),
+    }
 }
 
 /// Every attached client and the pane it is looking at.
@@ -785,10 +908,41 @@ impl Tmux {
         Ok(())
     }
 
+    /// Put `pane` in the window `place` names, if it is not already there.
+    ///
+    /// Best-effort for the caller to decide: this reports, it does not
+    /// retry (`docs/31-the-moved-view.md`).
+    fn move_view(&self, listing: &str, pane: Pane<'_>, place: Place) -> Result<(), Error> {
+        let Some(plan) = relocation(listing, pane, place) else {
+            return Ok(());
+        };
+        // Before the move, while the session still exists to be told.
+        let _kept = self.run("set-option", &keep_clients_args(pane.tmux_session));
+        let placeholder = if plan.create_row {
+            Some(
+                self.stdout("new-session", &placeholder_args(place))?
+                    .trim()
+                    .to_owned(),
+            )
+        } else {
+            None
+        };
+        let moved = self.run(
+            "move-window",
+            &relocate_window_args(pane.id, place, plan.replace),
+        );
+        // `-k` may already have replaced it, so there may be nothing to kill.
+        if let Some(window) = placeholder {
+            let _gone = self.run("kill-window", &kill_window_args(&window));
+        }
+        moved.map(|_| ())
+    }
+
     /// The pane viewing `session`, creating or reviving it if it is gone.
     ///
     /// Four cases: by **id** — alive, use it; dead, respawn **in place**
-    /// (`docs/15-views.md`). Then by **address** — a dead view of some
+    /// (`docs/15-views.md`) — and in the window its address names, which
+    /// a Move may have changed (`docs/31-the-moved-view.md`). Then by **address** — a dead view of some
     /// other session holding this slot's window is reclaimed
     /// (`docs/27-the-slot-collision.md`). Otherwise make one in the row
     /// session this slot belongs to (`docs/24-the-tally-server.md`).
@@ -805,6 +959,10 @@ impl Tmux {
                 let args = respawn_pane_args(found.id, session, &self.anchor_bin);
                 let _revived = self.run("respawn-pane", &args)?;
             }
+            // Where the pad *is*, not where the pane was left. For the eye
+            // and for the pad it vacated, so best-effort like the tag below
+            // it: the view is reachable by id either way.
+            let _moved = self.move_view(&listing, found, place);
             self.tag(found.id, session, claude, place, at)?;
             // After the pane owns the tag, never before: an inherited tag
             // is the only thing identifying a legacy view, and clearing it
@@ -1025,6 +1183,17 @@ impl Jump for Tmux {
         Ok(())
     }
 
+    fn relocate(&self, session: &str, at: &str, where_: Place) -> Result<(), Error> {
+        let listing = self.panes();
+        let Some(found) = view_for(&listing, session) else {
+            return Ok(());
+        };
+        self.move_view(&listing, found, where_)?;
+        // `None`: no hook has spoken since the move, so what the tag holds
+        // is left alone.
+        self.tag(found.id, session, None, where_, at)
+    }
+
     fn back(&self) -> Result<bool, Error> {
         let taken: Vec<(String, String)> = {
             let Ok(mut origin) = self.origin.lock() else {
@@ -1089,17 +1258,17 @@ mod tests {
     /// The same slot as geometry: absolute row 4, column 4.
     const PLACE: Place = Place { row: 4, col: 4 };
 
-    /// `#{pane_id}|#{window_id}|#{pane_dead}|#{@tally_session}|#{@tally_slot}`
+    /// `#{pane_id}|#{window_id}|#{pane_dead}|#{@tally_session}|#{@tally_slot}|#{session_name}|#{window_index}`
     ///
     /// `%4` is the corpse this file is about: dead, holding slot `AT`,
     /// tagged with a session that is not [`SESSION`]. `%5` is a live pane
     /// at another address, and `%1` is one of yours — neither tag set.
     const LISTING: &str = "\
-%1|@1|0||\n\
-%2|@2|0|other-session|1:4:1\n\
-%3|@2|0|01M52GEKED8ZEJPMT2KCJ35ZWT|1:4:2\n\
-%4|@3|1|01M52MXB4WQTA79K5FTHMXZ8YN|1:4:4\n\
-%5|@3|0||\n";
+%1|@1|0|||tally|1\n\
+%2|@2|0|other-session|1:4:1|r04|1\n\
+%3|@2|0|01M52GEKED8ZEJPMT2KCJ35ZWT|1:4:2|r04|2\n\
+%4|@3|1|01M52MXB4WQTA79K5FTHMXZ8YN|1:4:4|r04|4\n\
+%5|@3|0|||r04|4\n";
 
     #[test]
     fn a_view_is_created_in_the_row_session_for_its_row() {
@@ -1227,7 +1396,7 @@ mod tests {
     /// server — which is every pane you work in.
     #[test]
     fn an_untagged_pane_is_not_a_candidate() {
-        assert_eq!(view_for("%9|@9|0||\n", SESSION), None);
+        assert_eq!(view_for("%9|@9|0|||tally|1\n", SESSION), None);
         assert_eq!(view_for(LISTING, ""), None, "an empty tag matches nothing");
     }
 
@@ -1236,7 +1405,7 @@ mod tests {
     /// the fields after it (`docs/27-the-slot-collision.md`).
     #[test]
     fn an_empty_tag_does_not_shift_the_fields() {
-        let r = row("%9|@9|1||").expect("parses");
+        let r = row("%9|@9|1|||tally|1").expect("parses");
         assert_eq!(r.pane.id, "%9");
         assert_eq!(r.pane.window, "@9");
         assert!(r.pane.dead, "the field after two empties is still read");
@@ -1280,7 +1449,7 @@ mod tests {
     /// somebody is reading, and a spawn is not the gesture that closes it.
     #[test]
     fn a_live_view_at_the_address_is_left_alone() {
-        let live = "%7|@7|0|other-session|1:4:4\n";
+        let live = "%7|@7|0|other-session|1:4:4|r04|4\n";
         assert_eq!(dead_view_at(live, AT), None);
     }
 
@@ -1288,9 +1457,142 @@ mod tests {
     /// session id is not a session id.
     #[test]
     fn an_untagged_pane_holds_no_address() {
-        assert_eq!(dead_view_at("%9|@9|1||\n", ""), None);
+        assert_eq!(dead_view_at("%9|@9|1|||tally|1\n", ""), None);
         assert_eq!(dead_view_at(LISTING, ""), None);
         assert_eq!(dead_view_at(LISTING, "9:9:9"), None, "nothing at that slot");
+    }
+
+    /// The view for [`SESSION`] after a Move to row 2, column 1: tagged
+    /// with its new address, **still in `r03:1`** — the state the owner's
+    /// log is made of (`docs/31-the-moved-view.md`).
+    const SQUATTER: &str = "%7|@7|0|01M52GEKED8ZEJPMT2KCJ35ZWT|1:2:1|r03|1\n";
+    const MOVED_TO: Place = Place { row: 2, col: 1 };
+
+    fn squatter(listing: &str) -> Pane<'_> {
+        view_for(listing, SESSION).expect("the moved view")
+    }
+
+    /// The claim and the place are different questions. A listing that
+    /// carried only the claim could not see a moved view at all.
+    #[test]
+    fn the_listing_says_where_a_pane_is() {
+        let fmt = list_panes_args().last().expect("format").clone();
+        assert!(fmt.contains("#{session_name}"), "{fmt}");
+        assert!(fmt.contains("#{window_index}"), "{fmt}");
+        let p = squatter(SQUATTER);
+        assert_eq!((p.tmux_session, p.index), ("r03", "1"));
+    }
+
+    /// Where it already is, there is nothing to do — and tmux would
+    /// refuse it (`same index`) if asked.
+    #[test]
+    fn a_view_at_its_address_stays() {
+        let here = "%7|@7|0|01M52GEKED8ZEJPMT2KCJ35ZWT|1:3:1|r03|1\n";
+        assert_eq!(
+            relocation(here, squatter(here), Place { row: 3, col: 1 }),
+            None
+        );
+    }
+
+    /// The bug, with an empty destination in a row that exists.
+    #[test]
+    fn a_moved_view_goes_to_the_window_its_address_names() {
+        let listing = format!("{SQUATTER}%8|@8|0|other|1:2:2|r02|2\n");
+        assert_eq!(
+            relocation(&listing, squatter(&listing), MOVED_TO),
+            Some(Relocation {
+                replace: false,
+                create_row: false
+            })
+        );
+    }
+
+    /// The owner's log, line 19183: the pad it moved to was Stopped a
+    /// moment before, so its corpse holds the index. A relocation that
+    /// failed on that would turn a working jump into a broken one.
+    #[test]
+    fn a_corpse_at_the_destination_is_replaced() {
+        let listing = format!("{SQUATTER}%8|@8|1|01DEAD|1:2:1|r02|1\n");
+        assert_eq!(
+            relocation(&listing, squatter(&listing), MOVED_TO),
+            Some(Relocation {
+                replace: true,
+                create_row: false
+            })
+        );
+    }
+
+    /// Decided in 27 and kept: a live view is somebody's to close. Never
+    /// `-k` over it.
+    #[test]
+    fn a_live_view_at_the_destination_is_never_replaced() {
+        let listing = format!("{SQUATTER}%8|@8|0|01LIVE|1:9:9|r02|1\n");
+        assert_eq!(relocation(&listing, squatter(&listing), MOVED_TO), None);
+    }
+
+    /// `move-window` cannot create the session it is moving into.
+    #[test]
+    fn a_missing_row_is_made_and_its_placeholder_may_be_replaced() {
+        assert_eq!(
+            relocation(SQUATTER, squatter(SQUATTER), MOVED_TO),
+            Some(Relocation {
+                replace: true,
+                create_row: true
+            })
+        );
+    }
+
+    /// Within a row the index is all that differs.
+    #[test]
+    fn a_move_within_a_row_is_a_move_of_the_index() {
+        let listing = "%7|@7|0|01M52GEKED8ZEJPMT2KCJ35ZWT|1:3:4|r03|1\n";
+        assert_eq!(
+            relocation(listing, squatter(listing), Place { row: 3, col: 4 }),
+            Some(Relocation {
+                replace: false,
+                create_row: false
+            })
+        );
+    }
+
+    /// `-k` is a flag somebody can pass by accident, so it is only there
+    /// when the plan asked, and always before the pane it is aimed with.
+    #[test]
+    fn replacing_is_asked_for_and_never_assumed() {
+        let plain = relocate_window_args("%7", MOVED_TO, false);
+        assert!(!plain.contains(&"-k".to_owned()));
+        assert_eq!(plain, move_window_args("%7", MOVED_TO));
+        let hard = relocate_window_args("%7", MOVED_TO, true);
+        assert_eq!(hard.get(1).map(String::as_str), Some("-k"));
+        let s = hard.iter().position(|a| a == "-s").expect("-s");
+        assert_eq!(hard.get(s + 1).map(String::as_str), Some("%7"));
+        let t = hard.iter().position(|a| a == "-t").expect("-t");
+        assert_eq!(hard.get(t + 1).map(String::as_str), Some("r02:1"));
+    }
+
+    /// Server-wide would change how every row behaves for a move that
+    /// concerns one.
+    #[test]
+    fn a_client_is_kept_by_the_session_not_the_server() {
+        let args = keep_clients_args("r03");
+        assert!(!args.contains(&"-g".to_owned()));
+        assert_eq!(args.get(2).map(String::as_str), Some("r03"));
+        assert_eq!(args.last().map(String::as_str), Some("off"));
+    }
+
+    /// The placeholder is killed by the id it printed, because a window
+    /// index is not a thing it can be sure of.
+    #[test]
+    fn the_placeholder_is_named_by_window_id() {
+        let args = placeholder_args(MOVED_TO);
+        let f = args.iter().position(|a| a == "-F").expect("-F");
+        assert_eq!(args.get(f + 1).map(String::as_str), Some("#{window_id}"));
+        let n = args.iter().position(|a| a == "-s").expect("-s");
+        assert_eq!(args.get(n + 1).map(String::as_str), Some("r02"));
+        assert_eq!(
+            kill_window_args("@4").last().map(String::as_str),
+            Some("@4")
+        );
     }
 
     /// The field that can be empty goes last, so nothing after it shifts
