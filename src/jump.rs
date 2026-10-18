@@ -293,6 +293,30 @@ fn relocate_window_args(pane: &str, place: Place, replace: bool) -> Vec<String> 
     args
 }
 
+/// Args trading two live views' windows (`docs/34-the-swap.md`).
+///
+/// Aimed at the **pane**, like every other address this module writes:
+/// tmux resolves a pane id to the window holding it, which is what keeps
+/// an index out of the source half of the command.
+///
+/// `-d` because a relocation must not move anybody: the active window is
+/// unchanged, and the switch is a separate, deliberate step.
+///
+/// Measured, tmux 3.6b: a pane id as `-s` works, the two windows may be
+/// in different sessions, and a destination index holding **no** window
+/// is refused (`can't find window: N`) — which is the one branch this is
+/// never the plan for.
+fn swap_window_args(pane: &str, place: Place) -> Vec<String> {
+    vec![
+        "swap-window".into(),
+        "-d".into(),
+        "-s".into(),
+        pane.into(),
+        "-t".into(),
+        format!("{}:{}", row_session(place.row), place.col),
+    ]
+}
+
 /// Args making tmux leave window indexes alone when a window closes.
 ///
 /// A window index is an address (`docs/24-the-tally-server.md`), and tmux's
@@ -700,21 +724,54 @@ fn dead_view_at<'a>(listing: &'a str, at: &str) -> Option<Pane<'a>> {
 
 /// What it takes to put a view's pane in the window `place` names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Relocation {
-    /// Pass `-k`: whatever is at the destination is a corpse, or is the
-    /// placeholder [`placeholder_args`] made.
-    replace: bool,
-    /// The row session is not there to move into.
-    create_row: bool,
+enum Relocation {
+    /// Take the window over: it is empty, holds a corpse, or does not
+    /// exist yet.
+    Move {
+        /// Pass `-k`: whatever is at the destination is a corpse, or is
+        /// the placeholder [`placeholder_args`] made.
+        replace: bool,
+        /// The row session is not there to move into.
+        create_row: bool,
+    },
+    /// The destination holds a **live** view, so the two trade places
+    /// (`docs/34-the-swap.md`).
+    ///
+    /// Nothing is created and nothing is destroyed, which is what keeps
+    /// [27](../docs/27-the-slot-collision.md)'s rule — a live
+    /// `anchor attach` is something somebody may be reading — intact
+    /// while still freeing the address.
+    Swap,
+}
+
+/// Whether a pane is known to be in the window the address names.
+///
+/// **An address is a claim, and a claim that is not true is the bug**
+/// `docs/31` spent itself on: `dead_view_at` finds a view by its
+/// `@tally_slot`, so a pane wearing an address its window does not hold
+/// is a pane the next spawn at that address will not find and cannot
+/// replace (`docs/34-the-swap.md`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Holds {
+    /// It is where the address says. Write the tag.
+    TheAddress,
+    /// A relocation was refused or failed. Leave whatever it last held.
+    SomewhereElse,
 }
 
 /// How to get `pane` to `place`, or `None` when it should stay.
 ///
-/// Stays when it is already there, and when the destination holds a
-/// **live** pane: a running `anchor attach` is something you are
-/// looking at, and this is not the gesture that closes it
-/// (`docs/31-the-moved-view.md`, `docs/27-the-slot-collision.md`). `-k`
-/// is only ever asked for here, after the occupant has been seen dead.
+/// Stays only when it is **already there**.
+///
+/// ⚠️ A live pane at the destination used to mean *stay* too, and that
+/// was the hole `docs/31` shipped knowingly: the caller then tagged the
+/// pane where it stood, so the address and the window disagreed and the
+/// pad nobody could press stayed unpressable
+/// ([#19](https://github.com/alehatsman/tally/issues/19)). It is a
+/// [`Relocation::Swap`] now (`docs/34-the-swap.md`). Nothing is closed,
+/// which is the part of `27`'s decision that was always the good one.
+///
+/// `-k` is only ever asked for after the occupant has been seen dead.
 ///
 /// A pure function of the listing, so the whole table is testable
 /// without a server.
@@ -736,12 +793,12 @@ fn relocation(listing: &str, pane: Pane<'_>, place: Place) -> Option<Relocation>
         }
     }
     match occupant {
-        Some(held) if !held.dead => None,
-        Some(_) => Some(Relocation {
+        Some(held) if !held.dead => Some(Relocation::Swap),
+        Some(_) => Some(Relocation::Move {
             replace: true,
             create_row: false,
         }),
-        None => Some(Relocation {
+        None => Some(Relocation::Move {
             replace: !row_exists,
             create_row: !row_exists,
         }),
@@ -918,6 +975,7 @@ impl Tmux {
         claude: Option<&str>,
         place: Place,
         at: &str,
+        holds: Holds,
     ) -> Result<(), Error> {
         // The tag first: the dead-line format reads `@tally_session`, and
         // a pane that has not got one yet would die saying nothing.
@@ -931,10 +989,25 @@ impl Tmux {
         }
         let _roe = self.run("set-option", &remain_on_exit_args(pane))?;
         let _fmt = self.run("set-option", &dead_pane_format_args(pane))?;
-        // The address and the title are for the eye. A failure here is a
-        // view that reads badly, not a view that cannot be found, so it
-        // does not take the jump down with it.
-        let _slot = self.run("set-option", &set_slot_args(pane, at));
+        // The address, only when the pane is actually there. A pane that
+        // could not be moved keeps whatever it last legitimately held, so
+        // the drift stays visible to `list-panes` and to anything that
+        // later looks for it, rather than being papered over
+        // (`docs/34-the-swap.md`). It is still reachable either way:
+        // `view_for` matches on the session id, which is always written.
+        match holds {
+            Holds::TheAddress => {
+                // A failure here is a view that reads badly, not a view
+                // that cannot be found, so it does not take the jump down
+                // with it.
+                let _slot = self.run("set-option", &set_slot_args(pane, at));
+            }
+            Holds::SomewhereElse => {
+                eprintln!("tally: {pane} is not at {at}; slot tag left alone");
+            }
+        }
+        // The title is for the eye and says where it belongs, which is
+        // worth saying even when it is not there yet.
         let _title = self.run("select-pane", &pane_title_args(pane, place, at, session));
         // Per window, because a row is many windows now. Both are for the
         // eye, so both are best-effort for the same reason the title is.
@@ -954,9 +1027,21 @@ impl Tmux {
         let Some(plan) = relocation(listing, pane, place) else {
             return Ok(());
         };
+        let Relocation::Move {
+            replace,
+            create_row,
+        } = plan
+        else {
+            // A swap destroys no session, so there is nothing to tell not
+            // to detach, and nothing to create or kill afterwards. One
+            // call (`docs/34-the-swap.md`).
+            return self
+                .run("swap-window", &swap_window_args(pane.id, place))
+                .map(|_| ());
+        };
         // Before the move, while the session still exists to be told.
         let _kept = self.run("set-option", &keep_clients_args(pane.tmux_session));
-        let placeholder = if plan.create_row {
+        let placeholder = if create_row {
             let window = self
                 .stdout("new-session", &placeholder_args(place))?
                 .trim()
@@ -968,7 +1053,7 @@ impl Tmux {
         };
         let moved = self.run(
             "move-window",
-            &relocate_window_args(pane.id, place, plan.replace),
+            &relocate_window_args(pane.id, place, replace),
         );
         // `-k` may already have replaced it, so there may be nothing to kill.
         if let Some(window) = placeholder {
@@ -1002,8 +1087,15 @@ impl Tmux {
             // Where the pad *is*, not where the pane was left. For the eye
             // and for the pad it vacated, so best-effort like the tag below
             // it: the view is reachable by id either way.
-            let _moved = self.move_view(&listing, found, place);
-            self.tag(found.id, session, claude, place, at)?;
+            //
+            // The result is **read**, not discarded: a relocation that
+            // failed must not be followed by a tag claiming it worked
+            // (`docs/34-the-swap.md`).
+            let holds = match self.move_view(&listing, found, place) {
+                Ok(()) => Holds::TheAddress,
+                Err(_) => Holds::SomewhereElse,
+            };
+            self.tag(found.id, session, claude, place, at, holds)?;
             // After the pane owns the tag, never before: an inherited tag
             // is the only thing identifying a legacy view, and clearing it
             // first would lose the session mid-sequence.
@@ -1019,12 +1111,14 @@ impl Tmux {
         if let Some(stale) = dead_view_at(&listing, at) {
             let args = respawn_pane_args(stale.id, session, &self.anchor_bin);
             let _reclaimed = self.run("respawn-pane", &args)?;
-            self.tag(stale.id, session, claude, place, at)?;
+            // Found *by* the address, so it is at it by construction.
+            self.tag(stale.id, session, claude, place, at, Holds::TheAddress)?;
             let _legacy = self.run("set-option", &clear_window_option_args(stale.window));
             return Ok(stale.id.to_owned());
         }
         let pane = self.make_view(session, place)?;
-        self.tag(&pane, session, claude, place, at)?;
+        // Made at the address, or `make_view` would have failed.
+        self.tag(&pane, session, claude, place, at, Holds::TheAddress)?;
         Ok(pane)
     }
 
@@ -1230,10 +1324,13 @@ impl Jump for Tmux {
         let Some(found) = view_for(&listing, session) else {
             return Ok(());
         };
+        // `?`, so a refusal or a failure never reaches the tag at all:
+        // the only way past this line is a pane that is where `where_`
+        // says (`docs/34-the-swap.md`).
         self.move_view(&listing, found, where_)?;
         // `None`: no hook has spoken since the move, so what the tag holds
         // is left alone.
-        self.tag(found.id, session, None, where_, at)
+        self.tag(found.id, session, None, where_, at, Holds::TheAddress)
     }
 
     fn back(&self) -> Result<bool, Error> {
@@ -1565,7 +1662,7 @@ mod tests {
         let listing = format!("{SQUATTER}%8|@8|0|other|1:2:2|r02|2\n");
         assert_eq!(
             relocation(&listing, squatter(&listing), MOVED_TO),
-            Some(Relocation {
+            Some(Relocation::Move {
                 replace: false,
                 create_row: false
             })
@@ -1580,7 +1677,7 @@ mod tests {
         let listing = format!("{SQUATTER}%8|@8|1|01DEAD|1:2:1|r02|1\n");
         assert_eq!(
             relocation(&listing, squatter(&listing), MOVED_TO),
-            Some(Relocation {
+            Some(Relocation::Move {
                 replace: true,
                 create_row: false
             })
@@ -1588,11 +1685,21 @@ mod tests {
     }
 
     /// Decided in 27 and kept: a live view is somebody's to close. Never
-    /// `-k` over it.
+    /// `-k` over it — it is a **swap** instead, so the address is freed
+    /// without anything being closed (`docs/34-the-swap.md`).
+    ///
+    /// ⚠️ This returned `None` until #19. A refusal here was followed by
+    /// a tag written anyway, which is how a pane came to wear an address
+    /// its window did not hold.
     #[test]
-    fn a_live_view_at_the_destination_is_never_replaced() {
+    fn a_live_view_at_the_destination_is_swapped_with_never_replaced() {
         let listing = format!("{SQUATTER}%8|@8|0|01LIVE|1:9:9|r02|1\n");
-        assert_eq!(relocation(&listing, squatter(&listing), MOVED_TO), None);
+        let plan = relocation(&listing, squatter(&listing), MOVED_TO);
+        assert_eq!(plan, Some(Relocation::Swap));
+        assert!(
+            !matches!(plan, Some(Relocation::Move { replace: true, .. })),
+            "a live view is never killed to make room"
+        );
     }
 
     /// `move-window` cannot create the session it is moving into.
@@ -1600,7 +1707,7 @@ mod tests {
     fn a_missing_row_is_made_and_its_placeholder_may_be_replaced() {
         assert_eq!(
             relocation(SQUATTER, squatter(SQUATTER), MOVED_TO),
-            Some(Relocation {
+            Some(Relocation::Move {
                 replace: true,
                 create_row: true
             })
@@ -1613,11 +1720,26 @@ mod tests {
         let listing = "%7|@7|0|01M52GEKED8ZEJPMT2KCJ35ZWT|1:3:4|r03|1\n";
         assert_eq!(
             relocation(listing, squatter(listing), Place { row: 3, col: 4 }),
-            Some(Relocation {
+            Some(Relocation::Move {
                 replace: false,
                 create_row: false
             })
         );
+    }
+
+    /// Aimed at the pane, never at a bare `rNN:`, and `-d` so that a
+    /// relocation moves nobody. Measured against tmux 3.6b in
+    /// `docs/34-the-swap.md`; this pins the arguments that measurement
+    /// was made with.
+    #[test]
+    fn a_swap_names_the_pane_and_does_not_follow_it() {
+        let args = swap_window_args("%7", MOVED_TO);
+        assert_eq!(args[0], "swap-window");
+        assert!(args.contains(&"-d".to_owned()), "{args:?}");
+        let source = args.iter().position(|a| a == "-s").expect("-s");
+        assert_eq!(args[source + 1], "%7", "the source is the pane: {args:?}");
+        let target = args.iter().position(|a| a == "-t").expect("-t");
+        assert_eq!(args[target + 1], "r02:1", "{args:?}");
     }
 
     /// `-k` is a flag somebody can pass by accident, so it is only there
