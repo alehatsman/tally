@@ -27,8 +27,8 @@ in.
 
 ## Status
 
-**Shipped and driving a real desk.** Seventeen milestones and a Launchpad
-Mini MK3 on the desk. The hardware protocol in
+**Shipped and driving a real desk.** Eighteen milestones and a Launchpad
+Mini MK3 on the desk, in daily use. The hardware protocol in
 [docs/02-surface.md](docs/02-surface.md) was read out of Novation's manual
 and verified against the device ([M0](ROADMAP.md#m0--prove-the-manual));
 the grid, the jump, the chords, `tally spawn`, the queue, the tempo, the
@@ -43,9 +43,10 @@ which USB will not do without a kernel build.
 [M17](ROADMAP.md#m17--the-bridge) is the answer and is **specified, not
 built**: it was written on a Mac with no Windows hardware in reach, so it
 opens with five probes rather than a codec. Everything else open here is
-the half only use can close, and
-[What is next](ROADMAP.md#what-is-next) is the one section to read before
-building anything else.
+the half only use can close:
+[What is next](ROADMAP.md#what-is-next) says what is owed, and
+[the finish line](ROADMAP.md#the-finish-line) puts it in an order and says
+what v1.0 is allowed to mean.
 
 **The thing worth reading is what a day of use found.** The amber — the
 signal this whole product is a bet on — never fired once against the agent
@@ -171,7 +172,7 @@ Not design, and nothing below is built:
 | doc | what |
 |---|---|
 | [23-gesture-brainstorm.md](docs/23-gesture-brainstorm.md) | **brainstorm** — fork, sync, and spawn-four: three asks, and the two buttons left to pay for them |
-| [25-the-squad.md](docs/25-the-squad.md) | **spec, and the one that needs a product decision first** — `User` + `>` puts four agents in a row; the leftmost is the master and you talk only to it. It does not fit `01`'s six bullets, it spends the last free button, and it has seven open questions |
+| [25-the-squad.md](docs/25-the-squad.md) | ⛔ **closed, and kept as the record** — `User` + `>` would have put four agents in a row with a master you talk to. `tally ls` ([32](docs/32-the-grid-in-text.md)) got the same payoff for no button: an agent reads the grid and spawns its own members |
 | [28-the-level-and-the-edge.md](docs/28-the-level-and-the-edge.md) | **spec** — a hook is an edge, `claude agents --json` is a level, and the level may only veto |
 | [29-what-the-loop-holds.md](docs/29-what-the-loop-holds.md) | the daemon's state has names, the journal owns its sink, and `effect` is the vocabulary below `model` and `render` |
 | [30-the-bridge.md](docs/30-the-bridge.md) | **spec, unbuilt, and five of its facts have never been run** — the Launchpad on a Windows desk and the agents in WSL: `tallybridge` owns the device, `tallyd` owns everything else, the wire between them is raw MIDI, and the build order is [M17](ROADMAP.md#m17--the-bridge) |
