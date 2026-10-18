@@ -816,6 +816,46 @@ fn navigate(
     }
 }
 
+/// Count the views that are not in the window their address names, and
+/// say so. **Nothing is moved** (`docs/35-the-drift.md`).
+///
+/// Once, after anchord first answers rather than at process start: with
+/// no session list there is nothing to audit, and a sweep over nothing
+/// would report a reassuring zero.
+///
+/// Here and not in `jump` because the comparison needs `Slot::place()`,
+/// and that needs the page table — `jump` knows about tmux and nothing
+/// else (`src/slot.rs`).
+fn sweep(tmux: &Tmux, sessions: &[tally::anchor::Session], pages: &Pages) {
+    let want: Vec<(String, String, tally::jump::Place)> = sessions
+        .iter()
+        // Every session that claims a pad, exited ones included: a corpse
+        // sitting at the wrong index wedges that pad exactly as a live
+        // view does, which is the case `docs/35`'s first half fixes. It
+        // is drift, and it counts.
+        .filter_map(|s| {
+            let at = s.slot_label()?;
+            let slot = slot::parse(at, pages)?;
+            Some((s.id.clone(), at.to_owned(), slot.place()))
+        })
+        .collect();
+    if want.is_empty() {
+        return;
+    }
+    let drifted = tmux.audit(&want);
+    for d in &drifted {
+        eprintln!(
+            "tallyd: sweep: {} claims {}, sits at {}",
+            d.session, d.claims, d.sits_at
+        );
+    }
+    eprintln!(
+        "tallyd: sweep: {} of {} views are not where their address says",
+        drifted.len(),
+        want.len()
+    );
+}
+
 fn main() -> ExitCode {
     install_handlers();
 
@@ -892,6 +932,8 @@ fn main() -> ExitCode {
         // starts a server when it has to.
         eprintln!("tallyd: tally's tmux server is not up yet; a jump will start one");
     }
+    // The drift sweep runs after anchord first answers, not here.
+    let mut swept = false;
     // What was on the grid last tick, so a press knows what it hit.
     let mut grid: std::collections::BTreeMap<Slot, model::Resolved> =
         std::collections::BTreeMap::new();
@@ -1021,6 +1063,11 @@ fn main() -> ExitCode {
                     watchers.retain_known(&list);
                     sessions = list;
                     reachable = true;
+                    // Once, and only once there is something to audit.
+                    if !swept {
+                        swept = true;
+                        sweep(&tmux, &sessions, &pages);
+                    }
                 }
                 Err(e) => {
                     if reachable {
