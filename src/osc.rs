@@ -1,7 +1,7 @@
 //! An incremental scanner for the OSC sequences PTY output carries, ported
 //! from `teleport/daemon/src/session/osc.rs` with the OSC 8 half removed —
 //! a Claude resume id is teleport's business, and writing its prefix is
-//! something `docs/07-seams.md` forbids.
+//! something `docs/01-scope.md` forbids.
 //!
 //! **This is not here for the title.** It is here because `BEL` (`0x07`) is
 //! an OSC *string terminator*, so `ESC ] 0 ; some title BEL` contains a BEL

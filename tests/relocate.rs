@@ -2,7 +2,7 @@
 //!
 //! The unit tests in `src/jump.rs` pin what tally **decides**:
 //! `relocation()` as a pure function of a listing, and the argument lists
-//! it produces. Everything `docs/31-the-moved-view.md` argues from is a
+//! it produces. Everything `docs/06-views.md` argues from is a
 //! fact about what tmux **does** — that `move-window -k` onto a corpse is
 //! atomic, that moving a row's last window destroys the session, where a
 //! placeholder lands, what a close does to the indexes beside it. A
@@ -348,7 +348,7 @@ fn a_corpse_claiming_another_address_does_not_wedge_the_pad() {
 /// A **live** squatter is parked out of the address space rather than
 /// closed or sent home: it does not have to go home to stop being in the
 /// way, and `jump` cannot work out where home is anyway
-/// (`docs/35-the-drift.md`).
+/// (`docs/06-views.md`).
 #[test]
 fn a_live_squatter_is_parked_and_the_pad_works() {
     each_config("park a live squatter", |s| {

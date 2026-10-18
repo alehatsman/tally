@@ -3,12 +3,12 @@
 //! `slots.toml` answers "what does this pad run"; this answers "claim a pad
 //! for what I am doing *here*". The directory is the whole reason it
 //! exists: it is the one fact a config file cannot know in advance and a
-//! shell always knows (`docs/11-cli.md`).
+//! shell always knows (`docs/07-cli.md`).
 //!
 //! It talks to **anchord**, never to tallyd. The grid is downstream of
 //! anchor's state, so a label written here shows up on the device within
 //! one reconcile and nothing needs a socket
-//! (`docs/08-lifecycle.md#one-process-no-socket`).
+//! (`docs/08-daemon.md#one-process-no-socket`).
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -67,7 +67,7 @@ fn main() -> ExitCode {
 /// device has rendered sixty-four pads since M0 and never rendered one as
 /// a character, and an agent on a pad cannot see colour: locating itself
 /// by hand cost six tool calls before this existed
-/// (`docs/32-the-grid-in-text.md`).
+/// (`docs/07-cli.md`).
 ///
 /// Unlike every other subcommand, **not being under anchor is not a
 /// failure**. The grid is a thing you can look at from outside, and most
@@ -88,7 +88,7 @@ fn ls(json: bool, pages: &Pages) -> ExitCode {
     // The same resolve `spawn` checks against and the frame is drawn
     // from, run with no watchers -- so a live session arrives as `Quiet`
     // here and never as `Working`, which is why `listing::words` says
-    // neither (`docs/32-the-grid-in-text.md`).
+    // neither (`docs/07-cli.md`).
     let drawn = model::resolve(&sessions, &BTreeMap::new(), pages, tally::now_ms());
     let pads = listing::pads(&drawn, &sessions);
 
@@ -124,7 +124,7 @@ fn ls(json: bool, pages: &Pages) -> ExitCode {
 /// jumps against zero purges — and because `anchor` has no `purge`
 /// subcommand to defer to (anchor#14). Deleting the gesture without
 /// replacing it would leave rows accumulating with no remedy anywhere
-/// (`docs/18-the-launch-column.md`).
+/// (`docs/05-interaction.md`).
 fn purge(at: Slot, pages: &Pages) -> ExitCode {
     let Some(address) = at.label(pages) else {
         eprintln!("tally: that address has no page name");
@@ -155,7 +155,7 @@ fn purge(at: Slot, pages: &Pages) -> ExitCode {
             }
         }
         // Purge clears the pad, so it clears the view
-        // (`docs/15-views.md`). Best-effort: a missing tmux is not a
+        // (`docs/06-views.md`). Best-effort: a missing tmux is not a
         // reason to leave anchord holding the rows.
         let _closed = Tmux::default().close(id);
     }
@@ -167,7 +167,7 @@ fn purge(at: Slot, pages: &Pages) -> ExitCode {
 ///
 /// The starvation hatch for `►` and the tempo: a prompt you are never
 /// going to answer otherwise sits at the head of the queue forever and
-/// drives the breathing up with it (`docs/16-the-queue.md`).
+/// drives the breathing up with it (`docs/05-interaction.md`).
 fn mute(at: Slot, on: bool, pages: &Pages) -> ExitCode {
     let Some(address) = at.label(pages) else {
         eprintln!("tally: that address has no page name");
@@ -211,7 +211,7 @@ fn mute(at: Slot, on: bool, pages: &Pages) -> ExitCode {
 /// `Stop`, and equal to the `session_id` in the JSON on stdin. The
 /// variable rather than the JSON because this process runs on every turn
 /// of every agent on the machine, and one `env::var` is cheaper than a
-/// stdin slurp and a parse (`docs/26-the-dead-pane.md`).
+/// stdin slurp and a parse (`docs/06-views.md`).
 const CLAUDE_SESSION_ENV: &str = "CLAUDE_CODE_SESSION_ID";
 
 /// The conversation this hook is a turn of, if the caller is Claude Code
@@ -256,14 +256,14 @@ fn conversation_write(reported: Option<&str>, recorded: Option<&str>) -> Option<
 /// function is finding the session — a `ps -A` walk and an anchord
 /// `list` — and a second hook would pay it again, per turn, for a value
 /// that changes approximately never
-/// (`docs/26-the-dead-pane.md`).
+/// (`docs/06-views.md`).
 fn attention(on: bool) -> ExitCode {
     let client = Client::new(Client::default_path());
     let sessions = match client.list() {
         Ok(sessions) => sessions,
         // A real failure, and the one case that says anything. With anchord
         // down we cannot tell "not under anchor" from "could not look", so
-        // we report rather than guess — see `docs/11-cli.md` for why the
+        // we report rather than guess — see `docs/07-cli.md` for why the
         // hook line ends in `|| true` regardless.
         Err(e) => {
             eprintln!("tally: {e}");
@@ -345,7 +345,7 @@ fn spawn(claim: &Claim, pages: &Pages) -> ExitCode {
 /// `spawn` with one fact substituted — the directory comes from a pad
 /// rather than from `$PWD` — which is why the whole of it below is
 /// resolving that one fact and then calling the same function
-/// (`docs/11-cli.md#tally-fork-src-dst`).
+/// (`docs/07-cli.md#tally-fork-src-dst`).
 fn fork(fork: &Fork, pages: &Pages) -> ExitCode {
     let Some(source) = fork.from.label(pages) else {
         eprintln!("tally: that address has no page name");
@@ -414,7 +414,7 @@ fn targets(claim: &Claim, pages: &Pages) -> Option<Vec<(Slot, String)>> {
 /// **The check runs over all of them before the first create**, which is
 /// the rule `--count` is worth having: a half-spawned fleet is a cleanup
 /// job, and finding out on the third one is worse than retyping
-/// (`docs/11-cli.md#the-rules`).
+/// (`docs/07-cli.md#--count-n`).
 fn claim_pads(
     client: &Client,
     sessions: &[tally::anchor::Session],
@@ -476,7 +476,7 @@ fn claim_pads(
         let _slot = labels.insert(tally::anchor::LABEL_SLOT.to_owned(), address.clone());
         // No `tl.spec`: a spec label is a name looked up in `slots.toml`, and
         // one that nothing declares would be a label that lies. The cost is a
-        // dead respawn chord on this pad (`docs/11-cli.md`).
+        // dead respawn chord on this pad (`docs/07-cli.md`).
         match client.create(&Spawn {
             command: &source.command,
             args: &claim.args,
@@ -511,7 +511,7 @@ fn claim_pads(
 /// **Your shell is not touched.** `tally spawn` used to replace it with
 /// the attach, which made the pane you ran it from the view — and a pane
 /// on your personal tmux server cannot be a view on tally's, which is
-/// where every view lives now (`docs/24-the-tally-server.md`). The folder
+/// where every view lives now (`docs/06-views.md`). The folder
 /// still comes from where you are standing, which was always the half
 /// worth having.
 ///
@@ -531,7 +531,7 @@ mod tests {
 
     /// The ordinary turn: the label says what the hook says, so the hook
     /// is a read and nothing else. This runs on every turn of every agent
-    /// on the machine (`docs/26-the-dead-pane.md`).
+    /// on the machine (`docs/06-views.md`).
     #[test]
     fn a_conversation_that_has_not_changed_is_not_written_again() {
         assert_eq!(conversation_write(Some("c15"), Some("c15")), None);

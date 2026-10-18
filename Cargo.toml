@@ -19,14 +19,14 @@ name = "tallyd"
 path = "src/bin/tallyd.rs"
 
 # The CLI half of spawning: a shell knows the directory, and `slots.toml`
-# cannot (docs/11-cli.md). No argument-parsing dependency for two
+# cannot (docs/07-cli.md). No argument-parsing dependency for two
 # positional words and a `--`.
 [[bin]]
 name = "tally"
 path = "src/bin/tally.rs"
 
-# The dependency budget is argued in docs/02-surface.md and
-# docs/08-lifecycle.md; nothing is added before the milestone that needs it
+# The dependency budget is argued in docs/03-surface.md and
+# docs/08-daemon.md; nothing is added before the milestone that needs it
 # (ROADMAP.md). `toml` arrives with M3, which is the first milestone with a
 # config file: a hand-rolled subset parser would accept valid TOML it had
 # not implemented and report it as a syntax error, in a file edited by hand.
