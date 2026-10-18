@@ -15,6 +15,10 @@ product lives or dies by. The launcher was the easy half.
 > are met stopped holding at M10: everything since has shipped with open
 > criteria, and one of them has been open since M1. That section says
 > which, and what closes them.
+>
+> **[The finish line](#the-finish-line) says in what order**, and what
+> v1.0 is allowed to mean. It is the only part of this file that is a plan
+> rather than a record.
 
 ---
 
@@ -995,7 +999,8 @@ fix had until then only ever seen a scratch socket:
 ## What is next
 
 Nothing here is a build item. Everything that was one is done, and what is
-left is the half only use can close.
+left is the half only use can close. [The finish line](#the-finish-line)
+takes what follows and puts it in an order.
 
 **The gate, unchanged since [M1](#m1--the-grid-tells-the-truth):** a week
 of `attention.jsonl`, and a number out of it — how many ambers sent you to
@@ -1035,6 +1040,130 @@ exit criteria are met* — has not held since M9. M10 through M16 all shipped
 with ⬜ in them. That was affordable while the ⬜ were perceptual gates a
 day of use would close anyway. It stops being affordable at the one gate
 that has been open since M1.
+
+---
+
+## The finish line
+
+**What is above this line is a record. This is the only part that is a
+plan.** [What is next](#what-is-next) says what is owed; this says in what
+order it gets paid and what "finished" is allowed to mean.
+
+Finished is **v1.0**, and it is four statements, none of which is "every
+written spec is built":
+
+1. the amber has a **measured number**, the one open since [M1](#m1--the-grid-tells-the-truth)
+2. a jump never wedges, and a test in this repo can see tmux
+3. a stranger can clone, build, install and run it
+4. the tracker holds **no undecided design**
+
+The phases are not milestones. F0 runs in the background of all of them,
+F1 is the critical path, F3 is independent and is the one that will be
+skipped if nobody writes it down.
+
+### F0 — Measure the amber
+
+The gate, unchanged since M1 and restated here only to give it a place in
+a sequence. Seven days of `attention.jsonl`, uninterrupted, and the
+number: **how many ambers sent you to a session that wanted nothing.**
+
+Alongside it, the four questions in [What is next](#what-is-next)'s table,
+which are already being recorded and cost only the reading.
+
+Exit: a dated paragraph with five numbers in it. **If the false-amber rate
+is bad, stop and fix the signal** — [14](docs/14-attention.md) said so
+first, and nine milestones are stacked on the assumption it is fine.
+
+### F1 — Close the jump subsystem
+
+The only place the product breaks in ordinary use. Four issues, all with
+repros, and the order matters because each step is the instrument for the
+next.
+
+| | | |
+|---|---|---|
+| 1 | [#21](https://github.com/alehatsman/tally/issues/21) | `tests/relocate.rs`: scratch `-L` socket, explicit `-f`, **both configs** — default and `renumber-windows on`. First, because the other three cannot be verified without it. The issue already has the shape, and `Tmux::with_anchor` is already `pub` |
+| 2 | [#19](https://github.com/alehatsman/tally/issues/19) | decide the live-occupant branch. Whatever the verdict: **stop `tag()`-ing a pane with an address its window does not hold**, and log the refusal. Cheap, and it is what makes #22 observable |
+| 3 | [#22](https://github.com/alehatsman/tally/issues/22) | detection — resolve-the-squatter-by-tag at `make_view`, and/or the startup sweep. The sweep is the only one of the two that yields a drift *rate* |
+| 4 | [#13](https://github.com/alehatsman/tally/issues/13) | the silently deadlocked pad. Option 1 — document the `printf '\r' \| anchor attach` recipe — ships today for free; option 4 is the honest fix |
+| 5 | — | **re-run [M18](#m18--a-moved-session-takes-its-view-with-it)'s gate on the live grid.** Four ⬜ and two ❌ remain, and the ❌ were caused by [#20](https://github.com/alehatsman/tally/issues/20), which is now fixed and has never been re-tested against them |
+
+Exit: M18 carries no ⬜ and no ❌, and `cargo test` exercises real tmux
+under both configs.
+
+### F2 — Make the documents true
+
+Cheap, and runs alongside F1.
+
+- **[#23](https://github.com/alehatsman/tally/issues/23) first, and it has
+  been promoted.** It was filed as *"not blocking anything"*. It now blocks
+  the workflow the owner actually runs: agents read `tally ls` and spawn
+  their own children off it, which is the habit that
+  [closed the squad](docs/25-the-squad.md). `tl.attention` means *blocked*
+  and *finished* with one bit, `Stop` fires every turn and `Notification`
+  rarely, so the common case is the one the word is wrong about. The amber
+  does not change; the word does.
+- **`tally ls` output is an interface now.** Programs parse it. It needs a
+  statement in [32](docs/32-the-grid-in-text.md) about what is promised and
+  what may move, or every column rename is a silent break.
+- **[#14](https://github.com/alehatsman/tally/issues/14)** — `11-cli.md`
+  still says a failed pad refuses a spawn and points at a grid affordance
+  for `purge` that does not exist. The issue asks for a pass over the
+  surrounding text rather than the one line, because a claim that drifted
+  has neighbours.
+- **This file and the README** — both still say *seventeen milestones*, and
+  the README still lists the squad as a live spec.
+
+### F3 — Release engineering
+
+**The largest structural gap, and nothing in the repo does any of it.** No
+`.github/`, no `tests/` directory, `version = "0.0.0"`, `publish = false`.
+`clippy.toml` and `deny.toml` exist and no automation reads them.
+
+- CI: `cargo test`, `clippy -D warnings`, `fmt --check`, `cargo deny`
+- **F1's tmux test must run in CI, not skip there.** Skip-if-absent keeps
+  it from breaking a contributor; a green run that did not run it is the
+  exact pattern this file complains about everywhere else
+- a version, and a decision: crates.io, or a tag plus
+  `cargo install --git`. It drives one USB device on one OS, so the second
+  is probably the right size
+- an install story that **includes the `settings.json` hook lines**
+  ([M6](#m6--the-amber-exists)). The attention half of this product does
+  not exist without them, and today they live only in prose
+
+### F4 — Close scope
+
+A verdict written into each document. Not a build.
+
+| | |
+|---|---|
+| [#8](https://github.com/alehatsman/tally/issues/8) — the layout | **Narrowed to one experiment.** The 776 lines it tracks are gone: `12-layout-proposal` and `13-layout-review` were merged into [12](docs/12-the-layout.md) in `bad678c`. The owner's read is that the current layout is final. What remains to run is `13` §10 — *light row 4 amber, stand where you stand, say "four" without counting* — and then the sentence |
+| [25](docs/25-the-squad.md) — the squad | **Closed.** Superseded by `tally ls` and an agent that spawns its own members. No button spent, no ledger, seven open questions moot |
+| [28](docs/28-the-level-and-the-edge.md) — the level | Held on F0 **by design**: a veto changes what gets recorded, and measuring the architecture [14](docs/14-attention.md) specified is worth more than measuring it already patched. Once the number exists: build, or close |
+| [30](docs/30-the-bridge.md) / [M17](#m17--the-bridge) — the bridge | Specified, unbuilt, five probes never run, and no Windows hardware in reach. **Mark it deferred-until-hardware** rather than leaving it reading as a pending milestone |
+| [23](docs/23-gesture-brainstorm.md) — the brainstorm | Say plainly that it is a graveyard, or fold the survivors into #8's verdict |
+
+### F5 — v1.0
+
+Tag it. The README's Status section becomes *shipped, measured and closed*,
+**with the false-amber number in it** — which is the sentence this project
+has owed since M1 and the only one that was never a matter of effort.
+
+### Sequencing
+
+```
+F0  measure the amber   ─────────────────────────────────▶  (7 days, in the background)
+F1  the jump subsystem  #21 → #19 → #22 → #13 → M18 re-run     critical path
+F2  the documents       #23 → ls-is-an-interface → #14 → README
+F3  release eng         CI → version → install                 independent, start any time
+F4  close scope         gated on F0's numbers
+F5  v1.0                needs all four
+```
+
+**The honest risk in this ordering is F3.** F1 is specified work with
+repros attached and will get done because it hurts. F3 is the one that
+decides whether this is a product or a personal rig, and nothing about
+using it every day will ever make it urgent.
 
 ---
 

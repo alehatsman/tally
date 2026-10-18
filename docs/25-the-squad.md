@@ -1,7 +1,48 @@
 # 25 — The squad is a file, the row is its face
 
-**Status: spec, not built.** Nothing in `01`–`24` changes if this is never
-implemented.
+**Status: ⛔ closed, superseded by [32](32-the-grid-in-text.md).** Never
+built, and now it will not be. The rest of this document is kept as the
+record of what was asked for and what answered it instead.
+
+## What closed it
+
+The ask was *put four agents in a row and let me talk to one of them.* What
+shipped was **`tally ls`**, and the owner's working habit on top of it:
+
+> an agent reads the grid as text, sees which pads are free, and calls
+> `tally spawn` itself.
+
+That is the payoff — several agents working in a row, started without a
+hand on each one — and it arrives with **no new button, no ledger file, no
+master, and no protocol**. The seven open questions below are all questions
+about machinery this does not have. They are moot rather than answered.
+
+Two of this document's own arguments are what make the substitution fair,
+and both were written here before `32` existed:
+
+- **The squad's unit of work was already a file**, not a session —
+  [*done is a result file that exists*](#one-writer-full-stop). A caller
+  that spawns its own members and `stat`s their deliverables is running the
+  same model with the ledger in its head.
+- **`User` held could not be drawn** (question 5): seven candidate rows, a
+  four-pad consequence each. The doc said outright that if the preview
+  cannot be drawn in one glance, *the chord is wrong and the shell keeps
+  the verb*. The shell kept the verb.
+
+And it settles the cost this document could not pay. It
+**does not fit [01](01-scope.md)'s six bullets** and it **spends the last
+free button**; `32` spends neither, because a listing is not a gesture.
+
+What survives, and is now the live concern: a program reads the grid, which
+is a reader [14](14-attention.md) was not written for
+([#23](https://github.com/alehatsman/tally/issues/23)), and `tally ls`
+output is an interface someone parses
+([32](32-the-grid-in-text.md)).
+
+---
+
+**Status, as it stood when this was written: spec, not built.** Nothing in
+`01`–`24` changes if this is never implemented.
 
 [24](24-the-tally-server.md) gave tally its own tmux server and settled the
 layout: **a row is a session, a column is a window.** This document spends
