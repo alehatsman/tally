@@ -19,9 +19,10 @@ use tally::attention::Ancestry;
 use tally::cli::{self, Claim, Fork, Request, USAGE};
 use tally::config::Config;
 use tally::jump::{Jump, Tmux};
+use tally::listing::{self, Caller};
 use tally::model;
 use tally::signal::SlotState;
-use tally::slot::{Pages, Slot};
+use tally::slot::{self, Pages, Slot};
 
 /// Bad typing. Conventional, and distinguishable by a script from a spawn
 /// that was asked for correctly and failed anyway.
@@ -46,6 +47,7 @@ fn main() -> ExitCode {
             print!("{USAGE}");
             ExitCode::SUCCESS
         }
+        Ok(Request::Ls(json)) => ls(json, pages),
         Ok(Request::Spawn(claim)) => spawn(&claim, pages),
         Ok(Request::Fork(f)) => fork(&f, pages),
         Ok(Request::Attention(on)) => attention(on),
@@ -57,6 +59,63 @@ fn main() -> ExitCode {
             ExitCode::from(USAGE_ERROR)
         }
     }
+}
+
+/// Print the grid, marking the pad this process is standing on.
+///
+/// **The one subcommand that writes nothing.** It is here because the
+/// device has rendered sixty-four pads since M0 and never rendered one as
+/// a character, and an agent on a pad cannot see colour: locating itself
+/// by hand cost six tool calls before this existed
+/// (`docs/32-the-grid-in-text.md`).
+///
+/// Unlike every other subcommand, **not being under anchor is not a
+/// failure**. The grid is a thing you can look at from outside, and most
+/// shells on this machine are outside; what is missing is the `@`, not
+/// the answer.
+fn ls(json: bool, pages: &Pages) -> ExitCode {
+    let client = Client::new(Client::default_path());
+    let sessions = match client.list() {
+        Ok(sessions) => sessions,
+        // The one real failure. With anchord down there is no grid to
+        // show, and an empty one would read as "nothing is running".
+        Err(e) => {
+            eprintln!("tally: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    // The same resolve `spawn` checks against and the frame is drawn
+    // from, run with no watchers -- so a live session arrives as `Quiet`
+    // here and never as `Working`, which is why `listing::words` says
+    // neither (`docs/32-the-grid-in-text.md`).
+    let drawn = model::resolve(&sessions, &BTreeMap::new(), pages, tally::now_ms());
+    let pads = listing::pads(&drawn, &sessions);
+
+    // The same walk `attention` runs, and the same function: agents nest
+    // so the innermost owner wins, and a dead row keeps its pid in
+    // anchor's history while the OS reuses it. There is no second process
+    // walk in this binary and there must not be.
+    let ancestry = Ancestry::read();
+    let me = std::process::id().cast_signed();
+    let caller = match tally::attention::owning_session(&sessions, me, &ancestry) {
+        None => Caller::Outside,
+        Some(session) => match session.slot_label().and_then(|l| slot::parse(l, pages)) {
+            Some(at) => Caller::At(at),
+            // Running, and holding no pad: released with
+            // `anchor label <id> tl.slot-`, or never claimed, or carrying
+            // a label this grid cannot read. A real state, and the id is
+            // what puts it back on the grid.
+            None => Caller::Unplaced(&session.id),
+        },
+    };
+
+    if json {
+        println!("{}", listing::json(&pads, caller, pages));
+    } else {
+        print!("{}", listing::text(&pads, caller, pages));
+    }
+    ExitCode::SUCCESS
 }
 
 /// Forget every ended row behind a pad, and close its view.
@@ -383,7 +442,7 @@ fn claim_pads(
                 eprintln!(
                     "tally: {address} is held by {} ({})",
                     held.session,
-                    describe(held.state)
+                    listing::words(held.state)
                 );
                 // The message used to name the holder and not the move, and
                 // the documented move -- purge first -- is not reachable from
@@ -405,7 +464,7 @@ fn claim_pads(
     for (address, session, state) in reclaiming {
         eprintln!(
             "tally: {address} was held by {session} ({}); reclaiming it",
-            describe(state)
+            listing::words(state)
         );
     }
 
@@ -463,20 +522,6 @@ fn place_or_report(id: &str, address: &str, at: Slot) {
     if let Err(e) = tally::jump::place(id, address, at.place()) {
         eprintln!("tally: could not open a view for it: {e}");
         eprintln!("tally: press its pad to open it");
-    }
-}
-
-/// What to call a state in a sentence. The pad says it in colour; this
-/// has to say it in words, and "Failed { code: 1 }" is not words.
-fn describe(state: SlotState) -> String {
-    match state {
-        SlotState::Empty => "nothing".to_owned(),
-        SlotState::Working => "running".to_owned(),
-        SlotState::Quiet => "running, idle".to_owned(),
-        SlotState::NeedsAnswer { .. } => "waiting for an answer".to_owned(),
-        SlotState::Failed { code } => format!("failed, exit {code}"),
-        SlotState::Lost { reclaimable: true } => "lost to an anchord restart".to_owned(),
-        SlotState::Lost { reclaimable: false } => "lost, and may still be running".to_owned(),
     }
 }
 

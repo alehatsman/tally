@@ -16,13 +16,36 @@ pub const DEFAULT_COMMAND: &str = "claude";
 
 /// The one-screen help, printed for `help` and for every usage error.
 pub const USAGE: &str = "\
-usage: tally spawn [--detach] [--count N] <addr> [-- command [args...]]
+usage: tally ls    [--json]
+       tally spawn [--detach] [--count N] <addr> [-- command [args...]]
        tally fork  [--detach] [--count N] <src> <dst> [-- command [args...]]
        tally purge     <addr>
        tally mute      <addr> [--off]
        tally attention <on | off>
 
 An <addr> is row:col, or page:row:col.
+
+ls      Print the grid, and mark the pad you are on.
+
+  tally ls                             the grid as text
+  tally ls --json                      the same, for a script
+
+       1  2  3  4  5  6  7  8
+  1:1  #  #  #  @  .  .  .  .
+  1:3  !  .  .  .  .  .  .  .
+
+  @ you   # running   ? waiting   ! failed   x lost   . free
+
+A row label and a column heading joined is the address: row 1:1, column
+5, is 1:1:5. Under the picture is a line per occupied pad with its
+session id, its state and its directory.
+
+It takes no address, and it finds you the way attention does -- by
+walking the process tree to whichever session this process is inside.
+Not being under anchor prints the grid without a @ and is not an error.
+Rows holding nothing are not shown.
+
+It does not pick a pad for you. Read the grid and type the address.
 
 spawn   Claim a pad for a session started in the current directory.
 
@@ -104,6 +127,13 @@ rather than toggling because a shell cannot see the colour.
 pub enum Request {
     /// Print [`USAGE`] and stop.
     Help,
+    /// Print the grid, marking the calling session's pad. `true` for JSON.
+    ///
+    /// No address, for the same reason [`Self::Attention`] has none: the
+    /// interesting pad is the one this process is inside, and nothing in
+    /// a hook's or an agent's environment knows which that is
+    /// (`docs/32-the-grid-in-text.md`).
+    Ls(bool),
     /// Claim a pad.
     Spawn(Claim),
     /// Claim a pad for a sibling of another pad.
@@ -217,6 +247,7 @@ pub fn parse(args: impl IntoIterator<Item = String>, pages: &Pages) -> Result<Re
     };
     match first.as_str() {
         "help" | "-h" | "--help" => Ok(Request::Help),
+        "ls" => ls(args).map(Request::Ls),
         "spawn" => claim(args, pages).map(Request::Spawn),
         "fork" => fork(args, pages).map(Request::Fork),
         "attention" => attention(args).map(Request::Attention),
@@ -249,6 +280,24 @@ fn attention(mut args: impl Iterator<Item = String>) -> Result<bool, Error> {
         return Err(Error::Usage(format!("unexpected {extra:?}")));
     }
     Ok(on)
+}
+
+/// `ls [--json]`, and nothing else.
+///
+/// It refuses an address rather than ignoring one. `tally ls 1:1` is a
+/// reader asking to filter eight lines of output, and silently printing
+/// the whole grid instead would be answering a question they did not ask
+/// (`docs/32-the-grid-in-text.md`).
+fn ls(mut args: impl Iterator<Item = String>) -> Result<bool, Error> {
+    let json = match args.next().as_deref() {
+        None => false,
+        Some("--json") => true,
+        Some(other) => return Err(Error::Usage(format!("ls takes --json, not {other:?}"))),
+    };
+    if let Some(extra) = args.next() {
+        return Err(Error::Usage(format!("unexpected {extra:?}")));
+    }
+    Ok(json)
 }
 
 /// An address and nothing else.
@@ -517,6 +566,33 @@ mod tests {
             Request::Spawn(claim) => Ok(claim),
             other => panic!("asked to spawn, got {other:?}"),
         }
+    }
+
+    fn ls_of(args: &[&str]) -> Result<bool, Error> {
+        match parse(args.iter().map(|s| (*s).to_owned()), &named())? {
+            Request::Ls(json) => Ok(json),
+            other => panic!("asked to list, got {other:?}"),
+        }
+    }
+
+    /// No address and one flag. `ls` is the only subcommand that reads
+    /// the grid without naming part of it.
+    #[test]
+    fn ls_takes_nothing_or_json() {
+        assert_eq!(ls_of(&["ls"]), Ok(false));
+        assert_eq!(ls_of(&["ls", "--json"]), Ok(true));
+    }
+
+    /// Refused rather than ignored. `tally ls 1:1` is a reader asking to
+    /// filter the output, and printing the whole grid anyway would be
+    /// answering a question they did not ask.
+    #[test]
+    fn ls_refuses_an_address_rather_than_ignoring_it() {
+        let refused = ls_of(&["ls", "1:1"]).expect_err("an address is not a flag");
+        assert!(matches!(refused, Error::Usage(_)), "{refused:?}");
+        let _twice = ls_of(&["ls", "--json", "--json"]).unwrap_err();
+        let _unknown = ls_of(&["ls", "--long"]).unwrap_err();
+        let _trailing = ls_of(&["ls", "--json", "extra"]).unwrap_err();
     }
 
     fn attention_of(args: &[&str]) -> Result<bool, Error> {
@@ -870,8 +946,12 @@ mod tests {
             assert_eq!(got, Ok(Request::Help), "{word}");
         }
         assert!(matches!(parse([], &pages), Err(Error::Usage(_))));
+        // `ls` stood here until it became a subcommand
+        // (`docs/32-the-grid-in-text.md`). `list` is the word the agent in
+        // that document typed at `anchor` and got refused for, which makes
+        // it the honest example of one we do not have.
         assert!(matches!(
-            parse(["ls".to_owned()], &pages),
+            parse(["list".to_owned()], &pages),
             Err(Error::Usage(_))
         ));
     }
