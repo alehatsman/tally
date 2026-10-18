@@ -5,7 +5,7 @@
 //! that says **refused, not clamped**: an address outside the grid was
 //! written by something that disagrees with us about the address space,
 //! and putting it somewhere arbitrary is worse than rejecting it
-//! (`docs/03-model.md#limits`).
+//! (`docs/02-model.md#limits`).
 
 use std::fmt;
 
@@ -132,7 +132,7 @@ pub enum Request {
     /// No address, for the same reason [`Self::Attention`] has none: the
     /// interesting pad is the one this process is inside, and nothing in
     /// a hook's or an agent's environment knows which that is
-    /// (`docs/32-the-grid-in-text.md`).
+    /// (`docs/07-cli.md`).
     Ls(bool),
     /// Claim a pad.
     Spawn(Claim),
@@ -142,26 +142,26 @@ pub enum Request {
     /// directory comes from the source pad rather than from `$PWD`. The
     /// substitution cannot happen here — it needs anchord's session list —
     /// so the parser carries the source address and the binary resolves it
-    /// (`docs/11-cli.md`).
+    /// (`docs/07-cli.md`).
     Fork(Fork),
     /// Declare whether the calling session is waiting on a human.
     ///
     /// `true` sets `tl.attention`, `false` removes it. There is no address
     /// because there is nobody to type one: the only caller is a hook
-    /// inside the session it is talking about (`docs/14-attention.md`).
+    /// inside the session it is talking about (`docs/04-signals.md`).
     Attention(bool),
     /// `tally purge <addr>` — forget every ended row behind a pad.
     ///
     /// It has an address because the caller is you, not a hook, and
     /// because `anchor` has no `purge` subcommand to defer to
     /// (anchor#14). Moved here from the grid when the right column became
-    /// launchers (`docs/18-the-launch-column.md`).
+    /// launchers (`docs/05-interaction.md`).
     Purge(Slot),
     /// `tally mute <addr> [--off]` — stop a slot raising attention.
     ///
     /// Rare enough to live in a shell, and necessary enough not to delete:
     /// it is the starvation hatch for `►` and for the tempo
-    /// (`docs/16-the-queue.md`, `docs/17-the-tempo.md`).
+    /// (`docs/05-interaction.md`, `docs/05-interaction.md`).
     Mute(Slot, bool),
 }
 
@@ -184,7 +184,7 @@ pub struct Claim {
     /// It used to mean *do not hand this pane over*, and that is no
     /// longer a thing that can happen: views live on tally's own tmux
     /// server and your shell is never handed over
-    /// (`docs/24-the-tally-server.md`). What is left to decline is the
+    /// (`docs/06-views.md`). What is left to decline is the
     /// **view** — the session runs, the pad lights, and nothing opens
     /// until you press it.
     ///
@@ -196,7 +196,7 @@ pub struct Claim {
     /// Always `1..=8`, and always inside the row: a count that would run
     /// past column 8 is refused by the parser rather than clamped or
     /// wrapped, which is the same rule an address gets
-    /// (`docs/03-model.md#limits`).
+    /// (`docs/02-model.md#limits`).
     pub count: u8,
 }
 
@@ -208,7 +208,7 @@ pub struct Fork {
     /// Not checked for being occupied, and deliberately: you fork from a
     /// pad whose agent has *ended* as readily as from a live one, because
     /// anchord keeps the directory on dead rows too
-    /// (`docs/18-the-launch-column.md`).
+    /// (`docs/05-interaction.md`).
     pub from: Slot,
     /// Where it lands, and with what. Identical to a spawn's.
     pub claim: Claim,
@@ -287,7 +287,7 @@ fn attention(mut args: impl Iterator<Item = String>) -> Result<bool, Error> {
 /// It refuses an address rather than ignoring one. `tally ls 1:1` is a
 /// reader asking to filter eight lines of output, and silently printing
 /// the whole grid instead would be answering a question they did not ask
-/// (`docs/32-the-grid-in-text.md`).
+/// (`docs/07-cli.md`).
 fn ls(mut args: impl Iterator<Item = String>) -> Result<bool, Error> {
     let json = match args.next().as_deref() {
         None => false,
@@ -455,7 +455,7 @@ fn tail(
 
     // Refused rather than clamped, and never wrapped onto the next row: a
     // fleet that silently lands somewhere other than where it was aimed is
-    // worse than retyping (`docs/11-cli.md#the-rules`).
+    // worse than retyping (`docs/07-cli.md#--count-n`).
     if u16::from(at.col) + u16::from(count) - 1 > u16::from(MAX_COUNT) {
         return Err(Error::Address(format!(
             "--count {count} from column {} runs past column {MAX_COUNT}",
@@ -496,7 +496,7 @@ fn addresses(sourced: bool) -> &'static str {
 /// address that grammar rejected, and only to say *which part* of it was
 /// wrong — a human typing into a shell gets a sentence, where a label
 /// read off a session gets `None` and is left off the grid
-/// (`docs/29-what-the-loop-holds.md`).
+/// (`docs/08-daemon.md`).
 ///
 /// # Errors
 /// [`Error::Address`] for the wrong number of parts, a coordinate outside
@@ -947,7 +947,7 @@ mod tests {
         }
         assert!(matches!(parse([], &pages), Err(Error::Usage(_))));
         // `ls` stood here until it became a subcommand
-        // (`docs/32-the-grid-in-text.md`). `list` is the word the agent in
+        // (`docs/07-cli.md`). `list` is the word the agent in
         // that document typed at `anchor` and got refused for, which makes
         // it the honest example of one we do not have.
         assert!(matches!(
@@ -969,7 +969,7 @@ mod tests {
 
     /// What a human may type and what a `tl.slot` label may carry are one
     /// grammar for the three-part form, because this function asks
-    /// `slot::parse` first (`docs/29-what-the-loop-holds.md`). The
+    /// `slot::parse` first (`docs/08-daemon.md`). The
     /// two-part form is this command's own convenience and deliberately
     /// never becomes a label.
     #[test]

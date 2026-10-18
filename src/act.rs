@@ -43,7 +43,7 @@ pub enum Done {
     /// never learns it happened.
     Moved {
         /// The session that moved, so its view can follow
-        /// (`docs/31-the-moved-view.md`).
+        /// (`docs/06-views.md`).
         session: String,
         /// Where it was.
         from: Slot,
@@ -91,7 +91,7 @@ impl Context<'_> {
     ///
     /// Returns `Ok(None)` when the pad holds a session — the caller jumps,
     /// because jumping is tmux's business and not anchord's
-    /// (`docs/06-jump.md`).
+    /// (`docs/06-views.md`).
     ///
     /// # Errors
     /// Whatever `create` returned.
@@ -193,9 +193,9 @@ impl Context<'_> {
     /// A pad's address is its `tl.slot` and nothing else, so moving a
     /// session is rewriting one string. No process moves, no pane is
     /// touched *here*, and the agent never learns it happened
-    /// (`docs/22-the-mode-button.md#move-is-the-missing-verb`). The view
+    /// (`docs/05-interaction.md#move-is-the-missing-verb`). The view
     /// follows, but that is tmux's business and the caller's
-    /// (`docs/31-the-moved-view.md`).
+    /// (`docs/06-views.md`).
     ///
     /// Only the **drawn** session moves. Every ended row at the old
     /// address stays there, so the row it left still knows its directory
@@ -229,7 +229,7 @@ impl Context<'_> {
     /// anchord holds every session that ever claimed it; forgetting one
     /// of them would leave the pad looking exactly as it did before,
     /// which is the shape of a button you press twice
-    /// (`docs/22-the-mode-button.md#purge-takes-the-whole-stack`).
+    /// (`docs/05-interaction.md#stop-does-kill-and-purge`).
     ///
     /// A refusal on one id does not stop the others. anchord refuses a
     /// row it has already forgotten, and a `purge` that gave up halfway
@@ -383,7 +383,7 @@ spec = "claude"
     /// The pad the merged button exists for, and the one that makes it
     /// risky: a clean exit keeps its `tl.slot` and draws as **nothing**,
     /// so this pad is dark on every frame until the hold reveals it
-    /// (`docs/22-the-mode-button.md#stop-does-kill-and-purge`).
+    /// (`docs/05-interaction.md#stop-does-kill-and-purge`).
     ///
     /// Asserted as all three halves agreeing — the pad is dark at rest,
     /// dark red under the hold, and the press is handed every id, not
@@ -455,13 +455,13 @@ spec = "claude"
     /// story, whichever story that is.
     ///
     /// Originally written against the respawn chord, which is gone
-    /// (`docs/18-the-launch-column.md`). The invariant it guards is not:
+    /// (`docs/05-interaction.md`). The invariant it guards is not:
     /// the pixel and the press ask the same function, and a pad the
     /// preview dims is a pad the press leaves alone.
     ///
     /// It reaches the dim arm because the purge map is **empty** — a
     /// dead pad anchord would forget is a target now
-    /// (`docs/22-the-mode-button.md`), and that case is the test below.
+    /// (`docs/05-interaction.md`), and that case is the test below.
     #[test]
     fn the_preview_and_the_press_agree_about_a_dead_pad() {
         let config = Config::parse(CONFIG).expect("valid");

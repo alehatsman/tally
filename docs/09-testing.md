@@ -6,28 +6,19 @@ has to be named.
 
 ## The shape the suite ended up in
 
-370 tests, all of them in `#[cfg(test)]` modules beside the code, none of
-them needing a device, a daemon or a socket. That is not discipline; it is
-a consequence of where the boundaries were drawn, and it is the property to
-protect:
+386 unit tests in `#[cfg(test)]` modules beside the code, none of them
+needing a device, a daemon or a socket — plus 17 in `tests/relocate.rs`,
+which drive **real tmux** on a scratch socket. The unit half is not
+discipline;
+it is a consequence of where the boundaries were drawn, and it is the
+property to protect:
 
-> **Every module that decides something is pure.** `chord` takes presses
-> and emits gestures. `model` takes a session list and emits a frame.
-> `queue` takes a map and emits a head. `tempo` takes an age and emits a
-> number. `effect`, `render`, `slot`, `art`, `osc`, `signal` and `surface`
-> are the same shape. The three that touch the world — `anchor`, `device`,
-> `jump` — are tested on the **arguments they build**, not on the calls
-> they make.
-
-`effect` is the newest of them and was carved out of `model`, where it had
-made `model` and `render` import each other — the one dependency cycle this
-crate has had ([29](29-what-the-loop-holds.md)). It is the vocabulary
-`model`, `render` and `act` share: what a held gesture would do to one pad,
-and nothing about where that pad is or what is drawn on it.
-
-The tests that cannot be written are the ones about what a colour looks
-like and what a day beside it feels like, and those are
-[the last section](#what-a-green-suite-does-not-prove).
+> **Every module that decides something is pure.** `chord` takes presses and
+> emits gestures. `model` takes a session list and emits a frame. `queue`
+> takes a map and emits a head. `tempo` takes an age and emits a number.
+> `effect`, `render`, `slot`, `art`, `osc`, `signal` and `surface` are the
+> same shape. The three that touch the world — `anchor`, `device`, `jump` —
+> are tested on the **arguments they build**, not on the calls they make.
 
 ## 1. The surface — pure byte functions
 
@@ -41,9 +32,9 @@ diff(prev, next)                 -> one SysEx, only changed pads
 ```
 
 Golden tests against
-[the three worked examples](02-surface.md#the-three-worked-examples-verbatim),
-each appearing verbatim as an assertion. If our encoder cannot reproduce
-the manual's own examples byte for byte, it is wrong, and that is knowable
+[the three worked examples](03-surface.md#the-three-worked-examples-verbatim),
+each appearing verbatim as an assertion. If our encoder cannot reproduce the
+manual's own examples byte for byte, it is wrong, and that is knowable
 without hardware.
 
 Three more that are cheap and catch the mistakes that look plausible:
@@ -58,48 +49,41 @@ Three more that are cheap and catch the mistakes that look plausible:
 - **No byte ≥ `0x80` ever reaches a SysEx.** A property test rather than an
   example, because it is the failure that truncates a message mid-flight.
 
-> ⚠️ **`scroll()` was in this list, and the feature went.** The title scroll
-> was built, sanitised, tested and
-> [deleted the same hour](05-interaction.md#the-pad-cannot-say-what-it-wants).
-> `STOP_SCROLL` survives as the way to recover a device left mid-scroll by
-> something else.
-
 ## 2. The signals — a fake anchor
 
-This is the part that is worth real tests, because it is the part with
-opinions in it. Feed recorded PTY byte streams through the deriver:
+The part with opinions in it. Recorded PTY byte streams fed through the
+deriver:
 
-- bell then 3s of silence → `NeedsAnswer`
+- bell then 3 s of silence → `NeedsAnswer`
 - bell then immediate output → **not** `NeedsAnswer` (it rang and kept going)
 - **bell with trailing bytes in the same chunk** → not `NeedsAnswer`. This
-  is the one the obvious implementation gets wrong
-  ([04](04-signals.md#stating-that-precisely-because-the-obvious-phrasing-is-unimplementable)),
-  and getting it wrong makes the pad amber after every bell forever.
-- **bell followed by `\r\n` and nothing else** → `NeedsAnswer`, and the
-  same holds whether the newline is in the bell's chunk or the next one.
-  The mirror image of the above: treat the newline before the prompt as "it
-  kept going" and the signal never fires at all. Two assertions, because
-  which chunk it lands in is a buffering accident and both have to pass.
-- bell, 3s, then output → back to `Working`, and the amber stops
+  is the one the obvious implementation gets wrong, and getting it wrong
+  makes the pad amber after every bell forever
+- **bell followed by `\r\n` and nothing else** → `NeedsAnswer`, and the same
+  whether the newline is in the bell's chunk or the next one. The mirror
+  image of the above: treat the newline before the prompt as "it kept going"
+  and the signal never fires at all. Two assertions, because which chunk it
+  lands in is a buffering accident and both have to pass
+- bell, 3 s, then output → back to `Working`, and the amber stops
 - `NeedsAnswer` held for 10 minutes of continued silence → still
   `NeedsAnswer` (it is not a timer)
 - OSC title split across a chunk boundary → one title, not two fragments
-- 10MB of output with no bell → `Working` throughout, no allocation growth
+- 10 MB of output with no bell → `Working` throughout, no allocation growth
 - exit frame → a terminal state, and the watcher ends
-- bell then exit → terminal, **not** `NeedsAnswer` — the precedence table
-  ([04](04-signals.md#precedence)) in one assertion
-- declared signal (`tl.attention`) overrides a derived one, and survives its
-  source going quiet
+- bell then exit → terminal, **not** `NeedsAnswer` — the precedence table in
+  one assertion
+- declared (`tl.attention`) overrides derived, and survives its source going
+  quiet
 - `tl.mute` present → renders `Working`/`Quiet`, never amber, from either
   source
 
 > ⚠️ **Every one of these passes and none of them fires in real life.**
 > Claude Code emits zero ground-state bells, so rule 5 is unreachable
-> against the agent this grid actually runs ([14](14-attention.md)). The
-> suite is green because the detector is *correct*; the amber comes from a
-> hook. That is the most useful thing this file has to say about what a
-> green suite means — **a working detector with nothing to detect looks
-> exactly like a working feature.**
+> against the agent this grid actually runs. The suite is green because the
+> detector is *correct*; the amber comes from a hook. That is the most
+> useful thing this file has to say about what a green suite means — **a
+> working detector with nothing to detect looks exactly like a working
+> feature** ([D5](10-decisions.md#d5--the-bell-that-is-never-rung)).
 
 And one set that is not about bytes at all, against a fake `list`:
 
@@ -115,57 +99,98 @@ And one set that is not about bytes at all, against a fake `list`:
 `chord` takes a button and a direction and answers with a gesture or
 nothing. It has no clock, no session list and no device, and the
 [four chord rules](05-interaction.md#the-exact-rules-of-a-chord) are
-asserted directly against it: a modifier down after the slot does nothing,
-the action fires on press-down, hold duration means nothing, and releasing
-a modifier without tapping is a no-op.
+asserted directly against it.
 
-**The two timed gestures are deliberately not in there.** Holding `▲` past
-500 ms means *home*, and two taps on `CC19` inside 400 ms swap the corner's
-verb — both live in `tallyd`'s 16 ms loop, which already has `elapsed` on
-the line that calls `feed`. The consequence is stated so nobody goes
-looking: `Gesture::Home` is in the enum, `chord.rs` never emits it, and a
-test asserts exactly that.
+**The two timed gestures are deliberately not in there.** Hold-`▲` for home
+and the double-tap on `CC19` both live in `tallyd`'s 16 ms loop, which
+already has `elapsed` on the line that calls `feed`. The consequence is
+stated so nobody goes looking: `Gesture::Home` is in the enum, `chord.rs`
+never emits it, and a test asserts exactly that.
 
 > **The bug that justifies the split is also where the split hurts.** The
 > mode toggle froze the surface on its first press: `tallyd` flipped the
-> verb before `chord.rs` saw the release, so the release was matched
-> against a verb that no longer existed and the modifier stranded in `held`
-> forever, with no sequence of presses able to clear it. Every unit test
-> fed presses through `Chords` alone, where the mode never moves. **The
-> toggle lives in `tallyd`, the stranding happened in `chord.rs`, and the
-> bug was in neither — it was in the order the two ran**
-> ([22](22-the-mode-button.md)). Matching a release by *button* rather than
-> by verb makes the pairing true by construction, which is the only kind of
-> fix a unit test can hold onto.
->
-> It is not the only bug of that shape here — routing art-mode presses on
-> the *gesture* rather than the raw button let `CC19` reach the same clock
-> behind a plasma field ([21](21-the-arts.md)) — and the shape is worth
-> naming once: **two correct modules, run in the wrong order.** A suite
-> that tests each of them alone cannot see it.
+> verb before `chord.rs` saw the release, so the release was matched against
+> a verb that no longer existed and the modifier stranded in `held` forever.
+> Every unit test fed presses through `Chords` alone, where the mode never
+> moves. **The toggle lives in `tallyd`, the stranding happened in
+> `chord.rs`, and the bug was in neither — it was in the order the two ran**
+> ([D9](10-decisions.md#d9--two-correct-modules-in-the-wrong-order)).
+> Matching a release by *button* rather than by verb makes the pairing true
+> by construction, which is the only kind of fix a unit test can hold onto.
+
+Also asserted here: kill and purge targets are disjoint for every `Pad`; the
+preview and the press read the same `effect`; the mode toggles on two taps
+and not on one and not on an aborted hold (the sharpest one, because a
+single-tap toggle would have broken chord rule 4 silently); a long press
+clears a half-started double; the mode survives `Chords::clear`, because a
+replug forgets the hold and keeps the verb; and **exactly one thing in a
+move animates, and it is the pad in your hand** — which also asserts amber
+was not dragged along with it.
 
 ## 4. The world-facing three
 
-`anchor`, `device` and `jump` are tested on the arguments they construct
-and never on the calls they make:
+`anchor`, `device` and `jump` are tested on the arguments they construct and
+never on the calls they make:
 
 - every tmux invocation has an args test — `-p` and not `-w` on a pane
-  option, an explicit `-t` on anything that would otherwise resolve to
-  "the current one", `remain-on-exit-format` expanding `#{@tally_session}`
+  option, an explicit `-t` on anything that would otherwise resolve to "the
+  current one", `remain-on-exit-format` expanding `#{@tally_session}`
   through a conditional rather than carrying a literal id that would be
-  stale the moment a pane is rebound
-- the pane listing is parsed by position with an explicit `|` separator,
-  and the parse is asserted to hold with **two** empty fields. That test
-  exists because a stray `split_whitespace` in `back()` would have silently
-  broken `◄` when the separator changed ([27](27-the-slot-collision.md))
+  stale the moment a pane is rebound, `swap-window` aiming at a pane and
+  never a bare `rNN:`
+- the pane listing is parsed by position with an explicit `|` separator, and
+  the parse is asserted to hold with **two** empty fields. That test exists
+  because a stray `split_whitespace` in `back()` would have silently broken
+  `◄` when the separator changed
+- `relocation()`'s plan is a pure function of the listing, and every row of
+  its table is asserted: at the address, empty destination, dead occupant
+  (`-k`), live occupant (swap), absent session (placeholder)
 - `Jump` is a trait with one real implementation, so `tallyd`'s press
   handling runs against a fake that records what it was asked for
 
-## 5. The whole thing — against a real device, by hand
+## 5. Against real tmux
+
+`tests/relocate.rs`, on a scratch `-L` socket with an explicit config, under
+**four server configurations** — because `renumber-windows` is read from the
+user's `~/.tmux.conf` for every server tmux starts, and assuming otherwise
+is how a measurement became a config
+([D10](10-decisions.md#d10--a-measurement-that-was-a-config)).
+
+It was argued down once as *"a harness this repo does not have and this bug
+does not justify"*, and that was true of one bug. There have since been four
+in this subsystem whose evidence is a tmux measurement. The cost was also
+lower than that paragraph assumed: `Tmux::with_anchor` was already `pub`,
+`TALLY_TMUX_SOCKET` already redirected the socket, and the fake `anchor` is
+six lines of `sh` passed in by path rather than put on `PATH`.
+
+What it covers: a corpse claiming **another** address no longer wedges the
+pad; a live view squatting on a pad is parked above the column range, the
+pad works, and the squatter is still alive; a parked view still comes home
+when its own pad is pressed; and `audit` reports a drifted view and is
+silent about one in place.
+
+The test that pinned the old live-occupant behaviour was **rewritten rather
+than deleted**. It was written to fail the day the swap landed, and it did.
+
+**Mutation is used where the assertion could be vacuous.** Emptying the
+squatter-clearing path fails three of the tmux tests and **none** of the 386
+unit tests, which is the measurement that says those three are doing the
+work and the unit suite could not have.
+
+**Not covered, and said rather than hidden:** the branch where a relocation
+fails for an unforeseen reason. Every row of the plan table now succeeds
+against real tmux, so there is no longer a *known* way to make one fail from
+outside, and a test that forced one would be testing a tmux error nobody can
+name. The guard stays as defence against the unforeseen, which is exactly
+what it was reached for. Also not run: with a client actually attached to
+the swapped-out view. The suite is headless, and what a client does on a
+swap is tmux's documented behaviour rather than ours — the one claim in that
+subsystem taken from the manual instead of from a measurement.
+
+## 6. The whole thing — by hand, on a real device
 
 There is no way around this, and pretending otherwise is how a surface ships
-with its rows upside down. A written manual checklist, run before each
-milestone:
+with its rows upside down. A written checklist, run before each milestone:
 
 ```text
 [ ] plug in; tallyd finds the port by substring, confirms model via device inquiry
@@ -186,6 +211,7 @@ milestone:
 [ ] a jump leaves your personal tmux server alone -- list-sessions unchanged
 [ ] kill a session you are watching: still attached, corpse readable, and
     the dead line names the conversation
+[ ] move a session: its view follows, and the pad it left can be spawned onto
 [ ] unplug mid-run: no crash; replug: full repaint, correct state
 [ ] SIGTERM tallyd: device returns to Live mode, Setup menu works again
 [ ] SIGKILL tallyd, restart: device recovers to the correct grid
@@ -196,13 +222,13 @@ milestone:
 
 **Press `►` before testing a pad.** While an art is playing every pad press
 is swallowed, and a swallowed press looks exactly like a broken jump — two
-sessions have already lost time to it ([24](24-the-tally-server.md)).
+sessions have already lost time to it.
 
 ## What a green suite does not prove
 
-Borrowed wholesale from anchor's `docs/08-testing.md`, because it applies
-here harder. The [README](../README.md#status) keeps the running list of
-times it has been paid for; this is what the entries have in common:
+Borrowed wholesale from anchor's testing doc, because it applies here
+harder. [10-decisions.md](10-decisions.md) is the running list of times it
+has been paid for; this is what the entries have in common.
 
 - **That the colours are legible.** Nothing automated will tell you that
   amber-flashing and yellow-static look the same at 3 metres under a desk
@@ -217,16 +243,17 @@ times it has been paid for; this is what the entries have in common:
   working pulse was legible and tiring; a scrolling title was byte-perfect
   and unreadable at eight pads wide. Each was built, confirmed on the
   device, and then deleted by use.
+- **That the modules run in the right order.** The frame is bytes and the
+  bytes are tested; *the order the modules run in* has twice been wrong here
+  and is still the half no unit test holds. Naming the loop's state turns
+  two of those orderings into methods with one caller, which is an
+  improvement and not a sufficiency.
 - **That the attention signal is *right*.** Precision and recall of
   `NeedsAnswer` against real sessions is the actual quality metric of this
   program, and it is measurable only by using it and counting the times it
-  was wrong.
-
-  Keep that count **in a file**, not in your head:
-  [`attention.jsonl`](04-signals.md#measuring-whether-any-of-this-works) is
-  one line per transition, which turns
-  [M1's exit criterion](../ROADMAP.md#m1--the-grid-tells-the-truth) from a
-  feeling into a division.
+  was wrong. Keep that count **in a file**, not in your head:
+  [`attention.jsonl`](04-signals.md#the-instrument) is one line per
+  transition, which turns the gate from a feeling into a division.
 
 The list has a shape, and naming it is why it is kept: **a surface fact only
 shows up on the surface, and a surface you sit beside all day has a
@@ -236,13 +263,12 @@ correct, and wrong.
 ## The honest gap today
 
 **A week of `attention.jsonl`, and a number out of it.** It is the criterion
-[M1](../ROADMAP.md#m1--the-grid-tells-the-truth) shipped with, the one
-[M6](../ROADMAP.md#m6--the-amber-exists) made possible by giving the signal
-a source that fires, and the only thing on the roadmap that no amount of
-building can close. The journal currently holds a little over a day.
+the first milestone shipped with, the one the hooks made possible by giving
+the signal a source that fires, and the only thing on the roadmap that no
+amount of building can close. The journal holds a little over a day.
 
-Everything else that was open here is not. The first draft of this file
-ended *"nothing in `02-surface.md` has been executed against hardware"* —
-that was true for about a day, and [M0](../ROADMAP.md#m0--prove-the-manual)
-closed it. `02-surface.md` now carries ✅ and ❌ against each claim, which
-is the form this section should take when the week finally runs.
+Everything else that was ever open here is not. The first draft of this file
+ended *"nothing in the surface document has been executed against hardware"*
+— that was true for about a day. `03-surface.md` now carries ✅ and ❌
+against each claim, which is the form this section should take when the week
+finally runs.

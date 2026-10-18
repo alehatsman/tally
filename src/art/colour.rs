@@ -7,7 +7,7 @@ use crate::surface::{Button, Cell, Frame};
 /// which is the difference between this and [`crate::surface::palette`].
 /// For a colour that means something that would be unacceptable; for a
 /// plasma field it is fine, and nothing here asserts what any of them
-/// looks like (`docs/21-the-arts.md`).
+/// looks like (`docs/05-interaction.md`).
 pub(super) const HUES: [Entry; 15] = [5, 9, 13, 17, 21, 25, 29, 33, 37, 41, 45, 49, 53, 57, 61];
 
 /// A cooling ember, brightest first. [`Piece::Life`] draws its wake with

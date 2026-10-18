@@ -46,7 +46,7 @@ const DEVICE_SILENCE: Duration = Duration::from_secs(7);
 /// `⌂` lost its own button when `Session` became the overview modifier,
 /// and it landed here rather than being folded into the overview because
 /// the one jump the journal describes — the deep row back to row 1 — is
-/// worth a single press (`docs/20-the-overview.md`).
+/// worth a single press (`docs/05-interaction.md`).
 ///
 /// There is no tap-versus-hold ambiguity to resolve: the press scrolls
 /// one row immediately and keeping the finger down does more, so nothing
@@ -62,7 +62,7 @@ const HOME_HOLD: Duration = Duration::from_millis(500);
 /// chord rule 4 — *releasing a modifier without tapping is a no-op* —
 /// which is the escape hatch the whole hold-then-tap grammar rests on.
 /// A hold long enough to read a preview is nowhere near 250 ms; a
-/// deliberate tap is about 100 ms (`docs/22-the-mode-button.md`).
+/// deliberate tap is about 100 ms (`docs/05-interaction.md`).
 const TAP: Duration = Duration::from_millis(250);
 
 /// How close two taps on `CC19` have to be to toggle the mode.
@@ -76,7 +76,7 @@ const DOUBLE_TAP: Duration = Duration::from_millis(400);
 /// The restore is four MIDI writes and a port close, none of which is
 /// remotely signal-safe, so the handler does not do it. It wakes the loop,
 /// the loop returns, and `Device`'s `Drop` runs on the normal path
-/// (`docs/08-lifecycle.md`).
+/// (`docs/08-daemon.md`).
 extern "C" fn on_signal(signum: i32) {
     SIGNALLED.store(signum, Ordering::Relaxed);
 }
@@ -108,7 +108,7 @@ fn reraise(signum: i32) -> ! {
 /// Carry out one gesture and say what happened.
 ///
 /// A jump is tmux's and everything else is anchord's, which is the same
-/// split as `docs/06-jump.md`: `tally::act` never opens a terminal and
+/// split as `docs/06-views.md`: `tally::act` never opens a terminal and
 /// `tally::jump` never opens a socket.
 ///
 /// Errors are printed and dropped. The next reconcile redraws from a
@@ -125,7 +125,7 @@ fn reraise(signum: i32) -> ! {
 /// The clock is here and not in `chord.rs` because that module is pure —
 /// presses in, gestures out, no `now` — and that purity is what lets the
 /// four chord rules be tested without a device or a timeline. Same shape
-/// as `home_press`, and the same precedent (`docs/20-the-overview.md`).
+/// as `home_press`, and the same precedent (`docs/05-interaction.md`).
 #[derive(Debug, Clone, Copy, Default)]
 struct Corner {
     /// When it went down, while it is down.
@@ -183,10 +183,10 @@ impl Corner {
 ///
 /// These three were loose `let mut`s in `main` and were passed back to
 /// three helpers by `&mut`, one field at a time
-/// (`docs/29-what-the-loop-holds.md`). They belong together for the
+/// (`docs/08-daemon.md`). They belong together for the
 /// reason each of them is here at all: `chord.rs` is pure and has no
 /// `now`, so every gesture that is *timed* or spans more than one press
-/// is held by the loop instead (`docs/20-the-overview.md`).
+/// is held by the loop instead (`docs/05-interaction.md`).
 #[derive(Debug, Clone, Copy, Default)]
 struct Grip {
     /// The `CC19` double-tap.
@@ -217,7 +217,7 @@ impl Grip {
     /// deliberately: `feed` answers `None` for plenty of presses, and a
     /// double-tap is completed by exactly such a release. Routing this on
     /// the gesture instead is the bug that let `CC19` reach the clock
-    /// from behind a plasma field (`docs/21-the-arts.md`).
+    /// from behind a plasma field (`docs/05-interaction.md`).
     ///
     /// Returns whether the surface changed.
     fn feel(&mut self, chords: &mut Chords, button: Button, down: bool, elapsed: Duration) -> bool {
@@ -362,7 +362,7 @@ fn perform(ctx: &Context<'_>, gesture: Gesture, at: Slot, pages: &Pages, tmux: &
 /// `tl.slot` and nothing else. **No `tl.spec`**, for the same reason
 /// `tally spawn` writes none: a spec label is a name looked up in
 /// `slots.toml`, and one nothing declares would be a label that lies
-/// (`docs/11-cli.md`).
+/// (`docs/07-cli.md`).
 fn launch_labels(at: Slot, pages: &Pages) -> std::collections::BTreeMap<String, String> {
     let mut labels = std::collections::BTreeMap::new();
     if let Some(address) = at.label(pages) {
@@ -376,7 +376,7 @@ fn launch_labels(at: Slot, pages: &Pages) -> std::collections::BTreeMap<String, 
 /// Only ever reached from the working grid: once an art is up,
 /// [`art_press`] intercepts every button before `feed` can emit
 /// [`Gesture::Arts`] again, so the menu — not this — is what changes
-/// pieces (`docs/21-the-arts.md`).
+/// pieces (`docs/05-interaction.md`).
 fn next_art(reel: &mut Option<Reel>) {
     *reel = Piece::after(reel.as_ref().map(Reel::piece)).map(Reel::new);
     match reel.as_ref() {
@@ -386,7 +386,7 @@ fn next_art(reel: &mut Option<Reel>) {
 }
 
 /// Route a press while an art is playing, and say whether it is
-/// **swallowed** (`docs/21-the-arts.md`).
+/// **swallowed** (`docs/05-interaction.md`).
 ///
 /// In this mode the surface is a menu, not a grid. `Drums` and the eight
 /// launchers each pick a piece, and nothing else on the board does
@@ -424,7 +424,7 @@ fn art_press(reel: &mut Option<Reel>, repaint: &mut bool, button: Button, down: 
 /// Advance the art one frame, on every other wake.
 ///
 /// ~31 fps off a 16 ms tick: smooth to the eye at half the bytes
-/// (`docs/21-the-arts.md#the-frame-rate`).
+/// (`docs/05-interaction.md#the-arts`).
 fn advance_art(reel: Option<&mut Reel>, wake: &mut bool) {
     *wake = !*wake;
     if let Some(r) = reel.filter(|_| *wake) {
@@ -432,7 +432,7 @@ fn advance_art(reel: Option<&mut Reel>, wake: &mut bool) {
     }
 }
 
-/// The surface while an art is playing (`docs/21-the-arts.md`).
+/// The surface while an art is playing (`docs/05-interaction.md`).
 ///
 /// The art owns the sixty-four pads and nothing else. Three lights are
 /// not its to take: `►`, because the one gesture this product exists to
@@ -477,7 +477,7 @@ fn art_surface(reel: &Reel, reachable: bool, queued: usize) -> Frame {
 /// spread across sixty lines of `main`: a failed write drops it, silence
 /// past [`DEVICE_SILENCE`] drops it, every arrival and departure forces a
 /// total repaint, and both departures must clear the chord state or the
-/// first tap after a replug is a kill (`docs/29-what-the-loop-holds.md`).
+/// first tap after a replug is a kill (`docs/08-daemon.md`).
 #[derive(Debug)]
 struct Link {
     device: Option<Device>,
@@ -614,7 +614,7 @@ impl Link {
 /// `bpm` is recomputed each reconcile from the oldest thing waiting; the
 /// rest is when the next `0xF8` is due. Held together because a tempo
 /// without its schedule is a number nothing reads
-/// (`docs/29-what-the-loop-holds.md`).
+/// (`docs/08-daemon.md`).
 #[derive(Debug)]
 struct Beat {
     bpm: u64,
@@ -636,7 +636,7 @@ impl Beat {
     }
 
     /// Set the tempo from the age of the oldest thing waiting, and say so
-    /// when it moves (`docs/17-the-tempo.md`).
+    /// when it moves (`docs/05-interaction.md`).
     fn retune(&mut self, oldest_wait_ms: Option<i64>) {
         let was = self.bpm;
         self.bpm = tempo::bpm(oldest_wait_ms);
@@ -650,7 +650,7 @@ impl Beat {
     /// One byte, up to fifty-six times a second. Due pulses are sent and
     /// missed ones are **dropped, not caught up**: a burst after a stall
     /// would visibly sprint the breathing, and a skipped beat is the
-    /// honest report of a loop that was busy (`docs/17-the-tempo.md`).
+    /// honest report of a loop that was busy (`docs/05-interaction.md`).
     fn pulse(&mut self, device: Option<&mut Device>, elapsed: Duration) {
         let Some(d) = device else {
             // Unplugged. Start again when it comes back.
@@ -739,7 +739,7 @@ fn goto(
     let from = *offset;
     // Clamped, so the deep rows land somewhere real rather than hanging
     // the window off the end. Row 60 arrives fifth, which is honest
-    // (`docs/20-the-overview.md`).
+    // (`docs/05-interaction.md`).
     *offset = to.saturating_sub(1).min(slot::MAX_OFFSET);
     let lit = (1..=slot::ROWS)
         .filter(|abs| model::row_summary(grid, *abs).is_some())
@@ -817,7 +817,7 @@ fn navigate(
 }
 
 /// Count the views that are not in the window their address names, and
-/// say so. **Nothing is moved** (`docs/35-the-drift.md`).
+/// say so. **Nothing is moved** (`docs/06-views.md`).
 ///
 /// Once, after anchord first answers rather than at process start: with
 /// no session list there is nothing to audit, and a sweep over nothing
@@ -904,7 +904,7 @@ fn main() -> ExitCode {
     // Read back who was already asking when we last stopped. Without this
     // a restart writes a second rising edge for a slot that never stopped
     // asking, and times it from the restart rather than from the question
-    // (`docs/14-attention.md`). The one number M1 exists to produce is a
+    // (`docs/04-signals.md`). The one number M1 exists to produce is a
     // count of these, so it has to count them once.
     let mut journal = Journal::open(&journal_path, &pages);
     let mut sessions = Vec::new();
@@ -916,7 +916,7 @@ fn main() -> ExitCode {
     let mut waiting = Waiting::default();
     let mut beat = Beat::new();
     let mut last_reconcile = Duration::ZERO;
-    // The art, if one is playing (`docs/21-the-arts.md`). `None` is the
+    // The art, if one is playing (`docs/05-interaction.md`). `None` is the
     // working grid, and it is where the reel starts and ends.
     let mut reel: Option<Reel> = None;
     // Art advances every other wake: ~31 fps off a 16 ms tick.
@@ -966,12 +966,12 @@ fn main() -> ExitCode {
                     // plenty of presses and would skip this with the
                     // `continue` below. The clock deliberately lives
                     // here and not in `chord.rs`: that module is pure
-                    // and has no `now` (`docs/20-the-overview.md`).
+                    // and has no `now` (`docs/05-interaction.md`).
                     grip.aim(button, down, elapsed);
                     // Before the corner's clock and before `feed`:
                     // an art swallows the press whole, so neither
                     // gets to act on one the eye never aimed at a
-                    // session (`docs/21-the-arts.md`).
+                    // session (`docs/05-interaction.md`).
                     if art_press(&mut reel, &mut link.repaint, button, down) {
                         continue;
                     }
@@ -1092,7 +1092,7 @@ fn main() -> ExitCode {
 
         // The queue, after the journal has been brought up to date: the
         // map it keeps *is* the queue, ordered by when each slot started
-        // asking (`docs/16-the-queue.md`).
+        // asking (`docs/05-interaction.md`).
         let pads = model::Pads::new(&resolved, &config, &purgeable, grip.hand);
         let viewing: std::collections::BTreeSet<Slot> = tmux
             .viewing()
@@ -1105,7 +1105,7 @@ fn main() -> ExitCode {
             queued: queue::depth(journal.waiting(), &pads, &viewing),
         };
         // How fast the surface breathes: the age of the oldest thing
-        // waiting (`docs/17-the-tempo.md`). The ramp still runs on the
+        // waiting (`docs/05-interaction.md`). The ramp still runs on the
         // device -- only the beat is ours.
         beat.retune(queue::oldest(journal.waiting(), &pads).map(|since| now - since));
 
@@ -1171,7 +1171,7 @@ fn main() -> ExitCode {
     // behind breathes at its own 120 rather than holding our last tempo.
     // Only on a *clean* exit: a `tallyd` that is killed stops the clock
     // dead, and the frozen breathing is the point
-    // (`docs/17-the-tempo.md`).
+    // (`docs/05-interaction.md`).
     if let Some(e) = link.device().and_then(|d| d.clock_stop().err()) {
         eprintln!("tallyd: clock stop: {e}");
     }
@@ -1201,7 +1201,7 @@ mod tests {
     /// releasing a modifier without tapping is a no-op, and that escape
     /// hatch is what the hold-then-tap grammar is built on. Abort a kill
     /// twice and the mode must not have moved
-    /// (`docs/22-the-mode-button.md#changing-the-mode`).
+    /// (`docs/05-interaction.md#changing-the-mode`).
     #[test]
     fn an_aborted_hold_is_not_a_tap() {
         let mut c = Corner::default();
@@ -1290,7 +1290,7 @@ mod tests {
     /// [`Link`] is a type: a device that leaves always leaves the same
     /// way — no device, a total frame owed to the next one, and exactly
     /// one departure for the loop to answer
-    /// (`docs/29-what-the-loop-holds.md`).
+    /// (`docs/08-daemon.md`).
     #[test]
     fn a_device_that_leaves_always_leaves_the_same_way() {
         let mut link = Link::new();
@@ -1346,7 +1346,7 @@ mod tests {
 
     /// The tempo is a function of the oldest wait and nothing else, and
     /// `None` is the floor rather than a special case
-    /// (`docs/17-the-tempo.md`).
+    /// (`docs/05-interaction.md`).
     #[test]
     fn the_tempo_follows_the_oldest_wait() {
         let mut beat = Beat::new();
