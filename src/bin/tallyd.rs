@@ -285,7 +285,15 @@ impl Hand {
     }
 }
 
-fn perform(ctx: &Context<'_>, gesture: Gesture, at: Slot, pages: &Pages, tmux: &impl Jump) -> Hand {
+fn perform(
+    ctx: &Context<'_>,
+    gesture: Gesture,
+    at: Slot,
+    pages: &Pages,
+    tmux: &impl Jump,
+    journal: &mut Journal,
+    queued: usize,
+) -> Hand {
     let (row, col) = (at.row, at.col);
     match gesture {
         Gesture::Tap { .. } => match ctx.tap(at, pages) {
@@ -300,6 +308,20 @@ fn perform(ctx: &Context<'_>, gesture: Gesture, at: Slot, pages: &Pages, tmux: &
                     if let Err(e) = tmux.jump(&r.session, r.claude.as_deref(), &label, at.place()) {
                         eprintln!("tallyd: {e}");
                     }
+                    // The gesture the product exists for, written down at
+                    // last (#43). `None` when this pad was not asking,
+                    // which is the distinction the week needs: a tap can
+                    // land on something quiet, and `►` never can.
+                    //
+                    // Both numbers are last tick's, like the grid the
+                    // finger landed on -- the queue as it was when the
+                    // press happened, not as it is after it.
+                    let now = tally::now_ms();
+                    let waited = journal
+                        .waiting()
+                        .get(&at)
+                        .map(|(_, since)| now.saturating_sub(*since));
+                    journal.jumped_pad(now, &label, waited, queued);
                 }
             }
             Ok(Some(Done::Nothing)) => {}
@@ -1027,7 +1049,16 @@ fn main() -> ExitCode {
                                 // is the only honest thing to act on.
                                 pads: model::Pads::new(&grid, &config, &purgeable, grip.hand),
                             };
-                            perform(&ctx, gesture, at, &pages, &tmux).apply(&mut grip.hand);
+                            perform(
+                                &ctx,
+                                gesture,
+                                at,
+                                &pages,
+                                &tmux,
+                                &mut journal,
+                                waiting.queued,
+                            )
+                            .apply(&mut grip.hand);
                             // Whatever it was, the grid is now stale.
                             // Pull the list forward rather than
                             // leaving the pad wrong for two seconds.
