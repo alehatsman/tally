@@ -2122,7 +2122,8 @@ mod tests {
             clients("").is_empty(),
             "zero clients is a valid state, not an error"
         );
-        assert!(clients("\n\n").is_empty());
+        let blank = clients("\n\n");
+        assert!(blank.is_empty(), "{blank:?}");
         assert!(clients("/dev/ttys000\n").is_empty(), "a pane is required");
     }
 
