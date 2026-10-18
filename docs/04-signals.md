@@ -442,6 +442,36 @@ label does not live here. If the agent was answered while tallyd was down,
 the next tick writes the falling edge with an `after_ms` that includes the
 downtime — honest, and visible as such.
 
+### What the instrument cannot see, and what the signal now means
+
+Two findings from reading 55 hours of it, and the second is the larger.
+
+**It does not record the gesture it is measuring.** There is a nav line for
+`next`, `back` and `overview`, and **none for a plain pad tap** — the
+gesture the product exists for, running at a reported 341/day against 62
+`next` presses in 55 hours. So the file holds the ambers that were raised
+and almost none of the answers, and the gate it exists to settle cannot be
+computed from it ([#43](https://github.com/alehatsman/tally/issues/43)).
+
+**And the question it was built for describes a signal that no longer
+exists.** The gate asks *how many ambers were wrong*, which was the right
+instrument when amber meant *the detector believes it rang and went quiet*.
+Since the hook replaced the bell, `Stop` fires on **every turn** — so amber
+means *an agent finished a turn*, measured at **544 rises in 55 hours**,
+about ten an hour.
+
+A hook-raised amber is essentially never *wrong*; the hook is
+authoritative. What it can be is **correct and ignored**. So the honest
+question is not precision and recall, it is *how many did you go to, and
+how many aged out* — and `after_ms` already carries the second half
+(p50 117 s, p90 983 s, max 18.7 h, 10% answered inside ten seconds).
+
+**This is worth stating plainly because it is a risk, not a bookkeeping
+note.** Ten rises an hour is a lot of light for a surface whose whole claim
+is that you can ignore it until it speaks. If the week says most of them
+age out, the thing to change is `Stop` being a rising edge at all, and that
+is upstream of every milestone built on top of it.
+
 ## Edge cases
 
 | case | behaviour |

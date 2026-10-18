@@ -44,12 +44,19 @@ device; the grid, the jump, the chords, `tally spawn`, the queue, the tempo,
 the launch column and the overview followed, and then the surface ran out of
 buttons. Every build item in [the roadmap](ROADMAP.md) is done.
 
-**One thing is owed, and no amount of building closes it:** a week of
-`attention.jsonl`, and a number out of it — *how many ambers sent you to a
-session that wanted nothing.* The journal holds a little over a day. Nine
-milestones have shipped on top of a signal whose trustworthiness has never
-been measured to the standard the first one set for it, and that is the
-honest statement of where this stands.
+**One thing is owed, and it turned out not to be time.** The gate since M1
+has been a week of `attention.jsonl` and a number out of it. Reading 55
+hours of it found that **the journal does not record a plain pad jump** —
+the gesture the product exists for — so it holds the ambers that were
+raised and almost none of the answers, and the gate cannot be computed from
+it at any length ([#43](https://github.com/alehatsman/tally/issues/43)).
+
+**And the question needs restating.** Amber used to mean *the detector
+believes it rang and went quiet*; since the hooks it means *an agent
+finished a turn*, about ten times an hour. A hook-raised amber is never
+really *wrong* — it can only be **correct and ignored**. So the number owed
+is *how many you went to, and how many aged out*
+([04](docs/04-signals.md#what-the-instrument-cannot-see-and-what-the-signal-now-means)).
 
 **The thing worth reading is what a day of use found.** The amber — the
 signal this whole product is a bet on — never fired once against the agent
