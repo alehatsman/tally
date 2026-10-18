@@ -163,33 +163,81 @@ fn a_move_onto_a_corpse_replaces_it() {
     });
 }
 
-/// ⚠️ **This pins a known hole, on purpose.**
+/// Two live views trade places (`docs/34`,
+/// [#19](https://github.com/alehatsman/tally/issues/19)).
 ///
-/// When the destination holds a **live** pane, `relocation()` returns
-/// `None` and `relocate` then tags the pane where it stands — two writes
-/// that disagree, and a pane whose `@tally_slot` names an address other
-/// than its window. `docs/31` recorded it, argued it, and left it;
-/// [#19](https://github.com/alehatsman/tally/issues/19) is the tracker.
+/// ⚠️ **This test used to assert the opposite.** It pinned the hole
+/// `docs/31` shipped knowingly — the view left where it stood and
+/// labelled where it was not — and was written to fail the day the hole
+/// was closed. This is that day; it is rewritten rather than deleted,
+/// because the old assertion is the thing worth being able to see in the
+/// history.
 ///
-/// **When #19 lands this test fails, and that is the point.** It is here
-/// so the fix has something to flip rather than something to discover.
+/// The arrangement is the one that actually happens. Move's legal target
+/// is a pad with **no live session** (`docs/22`), so a live occupant is
+/// by construction a view that is itself out of place — which is what
+/// [#20](https://github.com/alehatsman/tally/issues/20) produced in bulk
+/// before `hold_indexes` pinned it.
 #[test]
-fn a_move_onto_a_live_pane_is_refused_and_mislabels_the_view_today() {
-    each_config("move onto a live pane", |s| {
-        press(s, "S1", 1, 1);
-        press(s, "S2", 1, 2);
-
-        moved(s, "S1", 1, 2).expect("relocate reports success even when it refuses");
-
-        let v = s.view("S1");
-        assert!(v.at("r01", 1), "today S1 does not move: #19 — {}", s.dump());
+fn two_live_views_trade_places() {
+    each_config("swap with a live occupant", |s| {
+        // S2 belongs at 1:1:5 and is drifted onto 1:1:2's window, the way
+        // a close with `renumber-windows on` used to do it.
+        press(s, "S2", 1, 5);
+        let squatter = s.view("S2").id;
+        let _drifted = s.sh(&["move-window", "-s", &squatter, "-t", "r01:2"]);
         assert_eq!(
-            v.slot,
-            "1:1:2",
-            "and is labelled where it is not: #19 — {}",
+            s.view("S2").slot,
+            "1:1:5",
+            "still claims 1:1:5 — {}",
             s.dump()
         );
-        assert!(s.view("S2").at("r01", 2), "S2 is untouched — {}", s.dump());
+
+        // S1 is moved onto the address S2 is squatting on.
+        press(s, "S1", 1, 1);
+        moved(s, "S1", 1, 2).expect("relocate");
+
+        let p = s.view("S1");
+        assert!(p.at("r01", 2), "S1 lands at its address — {}", s.dump());
+        assert_eq!(p.slot, "1:1:2", "and wears it — {}", s.dump());
+
+        let o = s.view("S2");
+        assert!(o.at("r01", 1), "S2 took S1's old window — {}", s.dump());
+        assert_eq!(
+            o.id,
+            squatter,
+            "the same pane, not a new one — {}",
+            s.dump()
+        );
+        assert!(!o.dead, "nothing was closed to make room — {}", s.dump());
+        assert_eq!(o.slot, "1:1:5", "its own claim is untouched — {}", s.dump());
+    });
+}
+
+/// The displaced view is not thereby correct, and the swap does not
+/// pretend it is — but it is no worse off than any other drift, and the
+/// lazy path still brings it home.
+///
+/// This is the honest limit of `docs/34`: a swap chooses *which* view is
+/// out of place, it does not reduce how many are. Draining the last one
+/// without a press is [#22](https://github.com/alehatsman/tally/issues/22).
+#[test]
+fn the_view_a_swap_displaced_is_repaired_by_its_own_press() {
+    each_config("swap then repair the displaced", |s| {
+        press(s, "S2", 1, 5);
+        let squatter = s.view("S2").id;
+        let _drifted = s.sh(&["move-window", "-s", &squatter, "-t", "r01:2"]);
+        press(s, "S1", 1, 1);
+        moved(s, "S1", 1, 2).expect("relocate");
+
+        press(s, "S2", 1, 5);
+
+        assert!(
+            s.view("S2").at("r01", 5),
+            "pressing S2 brings it home — {}",
+            s.dump()
+        );
+        assert!(s.view("S1").at("r01", 2), "S1 stays put — {}", s.dump());
     });
 }
 
