@@ -34,7 +34,7 @@ pub const OFF: Entry = 0;
 /// right for the same reason it reads right everywhere else, though —
 /// most of the grid is a legal destination, and a surface that lights
 /// two thirds of itself brightly has said nothing
-/// (`docs/22-the-mode-button.md#the-colours`).
+/// (`docs/05-interaction.md#picking-something-up-flips-the-question-not-the-board`).
 ///
 /// Brightness answers "where am I" before hue answers anything, which is
 /// why the top row spends exactly one bright colour and this carries
@@ -48,7 +48,7 @@ pub const DARK_GREY: Entry = 1;
 ///
 /// It used to light *the page you are on* as well. That went with the
 /// page buttons themselves when the top row became a queue
-/// (`docs/16-the-queue.md`), and the roles left are the ones that answer
+/// (`docs/05-interaction.md`), and the roles left are the ones that answer
 /// **what is my hand doing** rather than **where am I**.
 pub const WHITE: Entry = 3;
 /// Red. A session that exited non-zero, the corner resting in Stop, and a
@@ -61,20 +61,20 @@ pub const RED: Entry = 5;
 /// Means *the daemon had a problem* wherever it appears — a `lost` session
 /// on the grid, an unreachable anchord on the logo — and, under a held
 /// Stop, a pad whose ended rows are about to be forgotten
-/// (`docs/22-the-mode-button.md`).
+/// (`docs/05-interaction.md`).
 pub const DARK_RED: Entry = 7;
 /// Orange. **Needs an answer** — the one colour the product lives or dies
 /// by, and since `9b2eee5` the only thing that moves on the resting
 /// surface. A held Move flashes the pad in your hand — faster than this,
 /// deliberately, because a flash is one beat where this ramp is two and
 /// the clock they share is not allowed to move for it
-/// (`docs/22-the-mode-button.md#the-colours`).
+/// (`docs/05-interaction.md#picking-something-up-flips-the-question-not-the-board`).
 pub const AMBER: Entry = 9;
 /// Yellow with a green cast.
 ///
 /// The colour language never uses it, which is exactly why the Uprising
 /// ends on it: the smile is the one place on this surface yellow goes
-/// (`docs/21-the-arts.md`).
+/// (`docs/05-interaction.md`).
 pub const YELLOW: Entry = 13;
 /// Green. **Alive**, and nothing finer than that.
 ///
@@ -99,7 +99,7 @@ pub const DARK_GREEN: Entry = 23;
 /// greens failed, so the row went to one bright thing and [`DARK_GREY`]
 /// took the role. One button is not a row and the failure mode does not
 /// reach it, which is why the entry came back rather than staying retired
-/// (`docs/22-the-mode-button.md#the-colours`).
+/// (`docs/05-interaction.md#picking-something-up-flips-the-question-not-the-board`).
 pub const TURQUOISE: Entry = 37;
 /// Blue. Unused: it *was* the action button at rest, until the kill
 /// button took the colour of its own consequence.

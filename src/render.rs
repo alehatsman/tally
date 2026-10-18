@@ -20,7 +20,7 @@
 //! hand under a held Move, which does blink: one pad, for as long as
 //! your thumb is down, on a grid amber has been painted off of. Nothing
 //! sits beside it all day, so nothing it costs is anything the rules
-//! above were buying (`docs/22-the-mode-button.md#the-colours`).
+//! above were buying (`docs/05-interaction.md#picking-something-up-flips-the-question-not-the-board`).
 //!
 //! Green used to move too: a pulse meant *producing output*. That cost
 //! more than it bought and was reported as **tiring** after a day beside
@@ -63,7 +63,7 @@ pub fn slot(state: SlotState) -> Cell {
         // Reclaimable or not, the colour is the same: the daemon still
         // cannot account for what this session did. What changes is
         // whether the pad can be claimed, which is a question for the
-        // press, not for the eye (`docs/03-model.md`).
+        // press, not for the eye (`docs/02-model.md`).
         SlotState::Lost { .. } => Cell::Static(DARK_RED),
     }
 }
@@ -88,7 +88,7 @@ pub fn arrow(movable: bool) -> Cell {
 /// the whole surface now runs on. A row with no session has no directory
 /// to inherit and a full row has nowhere to put one, and in both cases a
 /// lit button would be a promise it cannot keep
-/// (`docs/18-the-launch-column.md`).
+/// (`docs/05-interaction.md`).
 pub fn launch(ready: bool) -> Cell {
     if ready {
         Cell::Static(DARK_GREY)
@@ -106,7 +106,7 @@ pub fn launch(ready: bool) -> Cell {
 /// urgent*. The top row is five navigation buttons and should look like
 /// it. What separates this one is that it is held rather than pressed,
 /// and that is learned from the grid changing under a thumb, not from a
-/// hue (`docs/20-the-overview.md`).
+/// hue (`docs/05-interaction.md`).
 pub fn overview_button(held: bool) -> Cell {
     if held {
         Cell::Static(WHITE)
@@ -127,7 +127,7 @@ pub fn overview_button(held: bool) -> Cell {
 /// that has content keeps its true colour, because **state outranks
 /// position**. The failure mode is stated rather than hidden: a window
 /// whose eight rows are all occupied shows no marker at all
-/// (`docs/20-the-overview.md`).
+/// (`docs/05-interaction.md`).
 pub fn overview(summary: Option<SlotState>, in_window: bool) -> Cell {
     match (summary, in_window) {
         (Some(state), _) => slot(state),
@@ -140,7 +140,7 @@ pub fn overview(summary: Option<SlotState>, in_window: bool) -> Cell {
 ///
 /// It is never dark, because unlike the rest of the row it never has
 /// nothing to do — there is always a reel to start
-/// (`docs/21-the-arts.md`). White is the same white the right column
+/// (`docs/05-interaction.md`). White is the same white the right column
 /// uses while a modifier is held, and says the same thing: *this is what
 /// you are doing right now*. Getting back out is `►`, not this button.
 pub fn arts(playing: bool) -> Cell {
@@ -155,7 +155,7 @@ pub fn arts(playing: bool) -> Cell {
 ///
 /// It is the only button in that mode that returns you to the working
 /// grid, so it is never dark — the top row's rule is *dark does nothing*,
-/// and this always does exactly one thing (`docs/21-the-arts.md`). The
+/// and this always does exactly one thing (`docs/05-interaction.md`). The
 /// same white as `◄` and as a held modifier, saying the same thing: this
 /// is live right now.
 pub fn leave() -> Cell {
@@ -187,7 +187,7 @@ pub fn back(available: bool) -> Cell {
 /// button is bright, and it is always the one you are on. It is gone, with
 /// the per-page amber, because `►` crosses pages. You no longer navigate
 /// *to* attention; attention navigates to you. The defence is one number,
-/// pages used 70 : 2, and it is written down in `docs/16-the-queue.md` so
+/// pages used 70 : 2, and it is written down in `docs/05-interaction.md` so
 /// it can be revisited if pages ever become load-bearing.
 pub fn next(waiting: bool) -> Cell {
     if waiting {
@@ -201,7 +201,7 @@ pub fn next(waiting: bool) -> Cell {
 ///
 /// **The colour is the mode**, and it is the only thing that says which
 /// mode you are in — which is what makes a latched corner honest
-/// (`docs/22-the-mode-button.md#changing-the-mode`). Red for *Stop*, the
+/// (`docs/05-interaction.md#changing-the-mode`). Red for *Stop*, the
 /// colour of what it does and the word on the silkscreen; turquoise for
 /// *Move*, which touches nothing that is running.
 ///
@@ -232,7 +232,7 @@ pub fn action(button: Option<Action>, held: bool) -> Cell {
 /// Each colour is the colour of the **consequence**, not of the button —
 /// and it takes no [`Action`] at all, which is that sentence stated in
 /// the type. One button now carries two consequences
-/// (`docs/22-the-mode-button.md`), so a colour derived from the button
+/// (`docs/05-interaction.md`), so a colour derived from the button
 /// would have to be wrong about one of them.
 ///
 /// Nothing here pulses — a preview lasts as long as your thumb does, and
@@ -244,7 +244,7 @@ pub fn action(button: Option<Action>, held: bool) -> Cell {
 /// pad in hand it inverts: most of the grid is a legal destination, so
 /// dim is the target and bright is what is in the way. The two readings
 /// cannot collide, because `Effect::Skips` is unreachable with a full
-/// hand (`docs/22-the-mode-button.md#the-colours`).
+/// hand (`docs/05-interaction.md#picking-something-up-flips-the-question-not-the-board`).
 #[expect(
     clippy::match_same_arms,
     reason = "skipped and droppable are the same pixel for different reasons, \
@@ -264,7 +264,7 @@ pub fn preview(effect: Effect) -> Cell {
         // empty, and what is in the way once it is full. So the
         // occupied board does not repaint under you when you pick
         // something up — what changes is that the free pads light
-        // instead (`docs/22-the-mode-button.md#the-colours`).
+        // instead (`docs/05-interaction.md#picking-something-up-flips-the-question-not-the-board`).
         Effect::Acts(Consequence::PickedUp) | Effect::Occupied => Cell::Static(TURQUOISE),
         // Where it can land, at the dimmest level the language has.
         //
@@ -278,7 +278,7 @@ pub fn preview(effect: Effect) -> Cell {
         //
         // [`DARK_GREY`] rather than a new entry because it is the only
         // dim level in the language and it already means *available,
-        // not urgent* (`docs/02-surface.md#colour`), which is a landing
+        // not urgent* (`docs/03-surface.md#colour`), which is a landing
         // spot exactly. It also means *this gesture will not touch it*
         // under a held Stop — two meanings for one value, and they
         // never share a frame: with a hand full, `Effect::Skips` is
@@ -552,7 +552,7 @@ mod tests {
 
     /// Every top-row button is self-describing: dark does nothing, lit
     /// does exactly one thing. There is no state to remember and no mode
-    /// to be in (`docs/16-the-queue.md`).
+    /// to be in (`docs/05-interaction.md`).
     #[test]
     fn a_dark_top_row_button_does_nothing() {
         assert_eq!(arrow(false), Cell::Off);
@@ -658,7 +658,7 @@ mod tests {
     /// One button, two consequences, and the only thing standing between
     /// them is that they do not look alike. A thumb one pad off forgets a
     /// row instead of doing nothing, so this is the assertion the merged
-    /// button rests on (`docs/22-the-mode-button.md`).
+    /// button rests on (`docs/05-interaction.md`).
     #[test]
     fn ending_and_forgetting_do_not_look_alike() {
         assert_ne!(
@@ -669,7 +669,7 @@ mod tests {
 
     /// The mode is the only thing that says which mode you are in, so
     /// the two must not look alike. This is what makes a latched corner
-    /// honest (`docs/22-the-mode-button.md#changing-the-mode`).
+    /// honest (`docs/05-interaction.md#changing-the-mode`).
     #[test]
     fn the_corner_says_which_verb_it_is_carrying() {
         let stop = action(Some(Action::Stop), false);

@@ -28,7 +28,7 @@ pub enum Action {
     /// Two consequences on one button, and they can never land on the
     /// same pad: alive and ended are disjoint sets, so the preview shows
     /// exactly one colour per pad and the press does exactly what it
-    /// showed (`docs/22-the-mode-button.md#stop-does-kill-and-purge`).
+    /// showed (`docs/05-interaction.md#stop-does-kill-and-purge`).
     ///
     /// It is called *Stop* rather than *Kill* because killing is only
     /// half of what it does, and because that is the word the silkscreen
@@ -41,7 +41,7 @@ pub enum Action {
     /// day the board is a log of where things happened to land rather
     /// than a layout you chose. A move is one `tl.slot` write and the
     /// agent never learns it happened
-    /// (`docs/22-the-mode-button.md#move-is-the-missing-verb`).
+    /// (`docs/05-interaction.md#move-is-the-missing-verb`).
     ///
     /// Two taps inside one hold, which needs no new grammar: this module
     /// already emits one [`Gesture::Chord`] per tap and the pairing lives
@@ -55,18 +55,18 @@ impl Action {
     ///
     /// Exactly one does. `CC89`–`CC29` became the seven `>` launchers
     /// when the column stopped being four hold-modifiers
-    /// (`docs/18-the-launch-column.md`), so the corner is the only
+    /// (`docs/05-interaction.md`), so the corner is the only
     /// modifier left — and it is the one the silkscreen labels *Stop*.
     ///
     /// **Takes the mode**, because the corner carries two verbs now and
     /// which one is live is surface state, not a property of the button
-    /// (`docs/22-the-mode-button.md#changing-the-mode`).
+    /// (`docs/05-interaction.md#changing-the-mode`).
     pub fn of(button: Button, mode: Self) -> Option<Self> {
         match button {
             Button::Action(8) => Some(mode),
             // `Action(1)`-`Action(7)` are `>`, and they are **taps**, not
             // modifiers: they destroy nothing, so there is nothing for a
-            // hold to protect (`docs/18-the-launch-column.md`).
+            // hold to protect (`docs/05-interaction.md`).
             _ => None,
         }
     }
@@ -75,7 +75,7 @@ impl Action {
     pub fn button(self) -> Button {
         match self {
             // Both modes, one button. That is the whole design: there
-            // were no spare buttons left (`docs/18-the-launch-column.md`).
+            // were no spare buttons left (`docs/05-interaction.md`).
             Self::Stop | Self::Move => Button::Action(8),
         }
     }
@@ -87,7 +87,7 @@ impl Action {
 
     /// The other mode. A toggle rather than a cycle: two fit, a third
     /// would need you to remember the order
-    /// (`docs/22-the-mode-button.md#what-is-deliberately-not-here`).
+    /// (`docs/05-interaction.md#what-the-corner-deliberately-does-not-carry`).
     #[must_use]
     pub fn toggled(self) -> Self {
         match self {
@@ -134,12 +134,12 @@ pub enum Gesture {
     /// **This module never emits it.** It is a *held* gesture now —
     /// `▲` held past a threshold — and a threshold needs a clock, which
     /// this module deliberately does not have. `tallyd` produces it from
-    /// the loop that already owns the time (`docs/20-the-overview.md`).
+    /// the loop that already owns the time (`docs/05-interaction.md`).
     Home,
     /// A pad tapped while the overview is up: put the window here.
     ///
     /// Row and col address the *overview*, not the grid — pad `(r, c)` is
-    /// absolute row `(r - 1) * 8 + c` (`docs/20-the-overview.md`).
+    /// absolute row `(r - 1) * 8 + c` (`docs/05-interaction.md`).
     Goto {
         /// Overview row 1-8, 1 is the top.
         row: u8,
@@ -149,9 +149,9 @@ pub enum Gesture {
     /// Move to the next art, or back to the grid (`Drums`).
     ///
     /// The only button on this surface that does nothing useful, which is
-    /// the whole argument for it being there (`docs/21-the-arts.md`).
+    /// the whole argument for it being there (`docs/05-interaction.md`).
     Arts,
-    /// `>` beside a grid row: spawn into it (`docs/18-the-launch-column.md`).
+    /// `>` beside a grid row: spawn into it (`docs/05-interaction.md`).
     Launch {
         /// Grid row 1-7, 1 is the top. There is no `>` beside row 8.
         row: u8,
@@ -163,12 +163,12 @@ pub enum Gesture {
 /// Two of the eight carry nothing and return `None`, which is the same
 /// answer `Action::of` gives for `CC49`-`CC79` and for the same reason: an
 /// inert button that lights up like a live one is an invitation to press
-/// it (`docs/16-the-queue.md`).
+/// it (`docs/05-interaction.md`).
 ///
 /// None of these is a chord. `◄` and `►` commit nothing — they move you —
 /// so there is nothing for a hold to protect. That is the whole reason
 /// navigation won these two buttons over *answer from the grid*, which
-/// would have needed one (`docs/12-the-layout.md`).
+/// would have needed one (`docs/05-interaction.md`).
 fn top(n: u8) -> Option<Gesture> {
     match n {
         1 => Some(Gesture::PageUp),
@@ -208,7 +208,7 @@ pub struct Chords {
     /// invisible. The state is the colour of the button that set it, and
     /// the grid does not change until you hold — at which point it
     /// repaints entirely in the mode's colour under your thumb, before
-    /// anything can fire (`docs/22-the-mode-button.md#changing-the-mode`).
+    /// anything can fire (`docs/05-interaction.md#changing-the-mode`).
     mode: Action,
 }
 
@@ -262,7 +262,7 @@ impl Chords {
                 // removed only the current verb stranded the old one in
                 // `held` forever. That left [`Self::modifier`] answering
                 // `Some` with nothing down, so the grid froze in a
-                // preview with no way out (`docs/22-the-mode-button.md`).
+                // preview with no way out (`docs/05-interaction.md`).
                 self.held.retain(|a| a.button() != button);
             }
             return None;
@@ -358,7 +358,7 @@ impl Chords {
     /// purpose: it is pure, and that is what lets the four chord rules be
     /// tested without a device or a timeline. The loop that owns
     /// `elapsed` owns the threshold, exactly as it does for the `▲` hold
-    /// (`docs/20-the-overview.md`, `docs/22-the-mode-button.md`).
+    /// (`docs/05-interaction.md`, `docs/05-interaction.md`).
     pub fn toggle_mode(&mut self) {
         self.mode = self.mode.toggled();
     }

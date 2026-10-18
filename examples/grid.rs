@@ -30,7 +30,7 @@ fn main() {
     for (row, col, state) in slots {
         f.set(Button::Grid { row, col }, render::slot(state));
     }
-    // The top row: `▲ ▼ ◄ ► · · · ·` (docs/16-the-queue.md).
+    // The top row: `▲ ▼ ◄ ► · · · ·` (docs/05-interaction.md).
     f.set(Button::Top(1), render::arrow(false));
     f.set(Button::Top(2), render::arrow(true));
     f.set(Button::Top(3), render::back(true));
@@ -40,7 +40,7 @@ fn main() {
             Button::Action(row),
             // The corner at rest, in whichever verb it is carrying. A
             // fixture needs one of the two and does not care which
-            // (`docs/22-the-mode-button.md`).
+            // (`docs/05-interaction.md`).
             render::action(
                 tally::chord::Action::of(Button::Action(row), tally::chord::Action::Stop),
                 false,

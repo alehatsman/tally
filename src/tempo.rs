@@ -4,10 +4,10 @@
 //! waiting eighteen minutes*, which is the thing that decides whether you
 //! get up — and in real use the waits span two orders of magnitude (p50
 //! **187 s**, p90 **1,076 s**, max **2,403 s**) while the pad looks
-//! identical at both ends (`docs/17-the-tempo.md`).
+//! identical at both ends (`docs/05-interaction.md`).
 //!
 //! There is no second amber to spend on this. There is a clock.
-//! `docs/02-surface.md` records that both animations run at 120 bpm *when
+//! `docs/03-surface.md` records that both animations run at 120 bpm *when
 //! no MIDI clock is supplied*; supply one and the beat is ours while the
 //! **ramp stays on the device**, so a pulse is still smooth under load and
 //! still never stutters.

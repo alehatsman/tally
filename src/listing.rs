@@ -3,7 +3,7 @@
 //! The device has rendered sixty-four pads since M0 and never rendered
 //! one as a character. An agent *on* a pad has no address and no map, and
 //! six tool calls is what working that out by hand cost
-//! (`docs/32-the-grid-in-text.md`).
+//! (`docs/07-cli.md`).
 //!
 //! Pure, and in the library rather than the binary for the reason
 //! [`crate::cli`] gives: the rules are worth testing without spawning a
@@ -90,7 +90,7 @@ pub fn pads(drawn: &BTreeMap<Slot, Resolved>, sessions: &[Session]) -> Vec<Pad> 
 /// (`Stop`). `Stop` fires every turn and `Notification` rarely, so a
 /// finished turn is the common case and "waiting for an answer" -- what
 /// this said until `ls` acquired readers that are programs -- was false
-/// most of the times it appeared (`docs/14-attention.md`,
+/// most of the times it appeared (`docs/04-signals.md`,
 /// <https://github.com/alehatsman/tally/issues/23>). Whether the two
 /// should be told apart at all is that issue's question; until it is
 /// answered, this says only what the label actually means.
@@ -118,7 +118,7 @@ pub fn words(state: SlotState) -> String {
 /// **One glyph per colour the device uses**, and that correspondence is
 /// the point rather than a convenience: the CLI already refuses to form
 /// its own opinion about what a pad holds, and a listing with its own
-/// vocabulary would be a third one (`docs/11-cli.md`).
+/// vocabulary would be a third one (`docs/07-cli.md`).
 #[must_use]
 pub fn glyph(state: SlotState) -> char {
     match state {

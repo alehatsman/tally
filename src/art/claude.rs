@@ -87,7 +87,7 @@ pub(super) const SPARK: [Sprite; 4] = [
 /// Amber, which is the surface's reserved *answer me*. Borrowing it is
 /// safe for the reason every piece here borrows something: while an art
 /// is playing the grid means nothing at all, and the logo carries the
-/// attention instead (`docs/21-the-arts.md`). Fire and the ember trail
+/// attention instead (`docs/05-interaction.md`). Fire and the ember trail
 /// spend the same amber, and the Uprising spends it telling a joke about
 /// what it normally means.
 pub(super) fn paint(n: u32, frame: &mut Frame) {

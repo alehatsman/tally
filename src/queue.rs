@@ -9,7 +9,7 @@
 //! So the bottleneck is not finding the blocked agent — at five lit pads
 //! out of sixty-four there is no finding problem. It is *choosing*, and
 //! the thing that separates the choices is how long each has been waiting
-//! (`docs/16-the-queue.md`).
+//! (`docs/05-interaction.md`).
 //!
 //! This module is pure, like [`crate::chord`]: it takes the map the
 //! journal already keeps and produces a slot. It does not know that tmux
@@ -37,7 +37,7 @@ pub struct Head {
     /// Carried so that answering through `►` tags the view with it, the
     /// same as pressing the pad does — otherwise the one path you use
     /// when you are busy is the one that leaves the dead line short
-    /// (`docs/26-the-dead-pane.md`).
+    /// (`docs/06-views.md`).
     pub claude: Option<String>,
 }
 
@@ -46,7 +46,7 @@ pub struct Head {
 ///
 /// **The predicate, written once.** It used to be written three times,
 /// character-identical in two of them, under a doc comment arguing that
-/// one predicate is the whole point (`docs/29-what-the-loop-holds.md`).
+/// one predicate is the whole point (`docs/08-daemon.md`).
 /// Three copies agreed by coincidence of having been typed in one
 /// sitting.
 ///
@@ -113,7 +113,7 @@ pub fn depth(
 /// not exclude it: a request you are sitting in front of and have not
 /// answered is still a request that has been waiting, and the grid is
 /// read by the room rather than by your current focus
-/// (`docs/17-the-tempo.md`).
+/// (`docs/05-interaction.md`).
 ///
 /// That difference is this function's whole content — it is
 /// [`answering`] with the `viewing` filter the other two add left off,
@@ -338,7 +338,7 @@ mod tests {
     /// The three questions are one predicate plus one filter, and this is
     /// the table that says so: every combination of muted / being-looked-at
     /// / not-asking-at-all, checked against all three entry points at once
-    /// (`docs/29-what-the-loop-holds.md`).
+    /// (`docs/08-daemon.md`).
     ///
     /// `oldest` deliberately counts the slot you are sitting in front of
     /// and `head`/`depth` deliberately do not, so the row where `viewing`
