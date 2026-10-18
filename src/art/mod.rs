@@ -611,7 +611,7 @@ mod tests {
         for _ in 0..Piece::REEL.len() {
             at = Piece::after(at);
             let piece = at.expect("the reel is not exhausted yet");
-            assert!(!piece.name().is_empty());
+            assert!(!piece.name().is_empty(), "{piece:?} has no name");
             walked.push(piece);
         }
         assert_eq!(walked, Piece::REEL.to_vec());
