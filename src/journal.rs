@@ -936,7 +936,7 @@ mod tests {
         Journal::default()
             .record(&BTreeMap::new(), &Pages::default(), T0, &mut out)
             .expect("write");
-        assert!(out.is_empty());
+        assert!(out.is_empty(), "{out:?}");
     }
 
     /// The sink's one rule, and the reason it is a type: a write that

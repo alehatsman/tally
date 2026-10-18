@@ -853,7 +853,7 @@ mod tests {
             }
         );
         assert_eq!(claim.command, None, "a bare spawn defaults downstream");
-        assert!(claim.args.is_empty());
+        assert!(claim.args.is_empty(), "{:?}", claim.args);
     }
 
     /// The label a spawn writes has to be readable back, and that is only
