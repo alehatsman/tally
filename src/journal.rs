@@ -302,6 +302,12 @@ impl Journal {
             .write(|out| nav_next(out, now, slot, waited_ms, queued));
     }
 
+    /// Record a press of a **pad** ([`nav_pad`]).
+    pub fn jumped_pad(&mut self, now: i64, slot: &str, waited_ms: Option<i64>, queued: usize) {
+        self.sink
+            .write(|out| nav_pad(out, now, slot, waited_ms, queued));
+    }
+
     /// Record a press of `◄` ([`nav_back`]).
     pub fn jumped_back(&mut self, now: i64, ok: bool) {
         self.sink.write(|out| nav_back(out, now, ok));
@@ -336,6 +342,45 @@ pub fn nav_next(
             via: "next",
             slot: Some(slot),
             waited_ms: Some(waited_ms),
+            queued: Some(queued),
+            ok: None,
+        },
+    )
+}
+
+/// Record a press of a pad that went somewhere.
+///
+/// **The gesture the product exists for, and the one the journal did not
+/// write down** ([#43](https://github.com/alehatsman/tally/issues/43)).
+/// `next`, `back` and `overview` were recorded from the start; a plain tap
+/// was not, so the file held the ambers that were *raised* and almost none
+/// of the ones that were *answered* — and the gate
+/// (`docs/04-signals.md`) asks how many of the raised ones you went to.
+///
+/// `waited_ms` is `None` when the slot was **not asking**, and that is the
+/// field the whole line is for rather than a missing value. A tap is not
+/// `►`: it can land on a pad that wants nothing, and *going to look at
+/// something quiet* and *answering an amber* are the two things the week
+/// has to tell apart. Present means you answered one; absent means you
+/// went somewhere nothing was waiting.
+///
+/// # Errors
+/// Whatever the sink returns.
+pub fn nav_pad(
+    out: &mut impl Write,
+    now: i64,
+    slot: &str,
+    waited_ms: Option<i64>,
+    queued: usize,
+) -> io::Result<()> {
+    write_line(
+        out,
+        &Nav {
+            ms: now,
+            kind: "nav",
+            via: "pad",
+            slot: Some(slot),
+            waited_ms,
             queued: Some(queued),
             ok: None,
         },
@@ -612,6 +657,41 @@ mod tests {
         assert_eq!(back["via"], "back");
         assert_eq!(back["ok"], false);
         assert!(back.get("slot").is_none(), "back names no slot");
+    }
+
+    /// The gesture the product exists for, and the one that wrote nothing
+    /// until [#43](https://github.com/alehatsman/tally/issues/43).
+    ///
+    /// **The presence of `waited_ms` is the measurement**, not a detail
+    /// of serialisation: with it, the tap answered an amber and the line
+    /// says how long that pad had been asking; without it, the tap went
+    /// somewhere nothing was waiting. `►` can only ever do the first, so
+    /// no existing line can tell the two apart.
+    #[test]
+    fn a_pad_press_says_whether_it_answered_anything() {
+        let mut out = Vec::new();
+        nav_pad(&mut out, 9_200, "1:2:1", Some(219_722), 4).expect("write");
+        nav_pad(&mut out, 9_300, "1:3:7", None, 0).expect("write");
+        let text = String::from_utf8(out).expect("utf8");
+        let mut lines = text.lines();
+
+        let answered: serde_json::Value =
+            serde_json::from_str(lines.next().expect("line")).expect("json");
+        assert_eq!(answered["kind"], "nav");
+        assert_eq!(answered["via"], "pad", "not next, and not overview");
+        assert_eq!(answered["slot"], "1:2:1");
+        assert_eq!(answered["waited_ms"], 219_722);
+        assert_eq!(answered["queued"], 4);
+
+        let quiet: serde_json::Value =
+            serde_json::from_str(lines.next().expect("line")).expect("json");
+        assert_eq!(quiet["via"], "pad");
+        assert_eq!(quiet["slot"], "1:3:7");
+        assert!(
+            quiet.get("waited_ms").is_none(),
+            "a tap on a pad that wanted nothing must not claim a wait"
+        );
+        assert_eq!(quiet["queued"], 0);
     }
     use super::*;
 

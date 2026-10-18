@@ -446,12 +446,29 @@ downtime — honest, and visible as such.
 
 Two findings from reading 55 hours of it, and the second is the larger.
 
-**It does not record the gesture it is measuring.** There is a nav line for
-`next`, `back` and `overview`, and **none for a plain pad tap** — the
-gesture the product exists for, running at a reported 341/day against 62
-`next` presses in 55 hours. So the file holds the ambers that were raised
-and almost none of the answers, and the gate it exists to settle cannot be
-computed from it ([#43](https://github.com/alehatsman/tally/issues/43)).
+⚠️ **It did not record the gesture it is measuring. It does now.** There
+was a nav line for `next`, `back` and `overview`, and **none for a plain
+pad tap** — the gesture the product exists for, running at a reported
+341/day against 62 `next` presses in 55 hours. So the file held the ambers
+that were raised and almost none of the answers, and the gate it exists to
+settle could not be computed from it at any length
+([#43](https://github.com/alehatsman/tally/issues/43)).
+
+`via: "pad"` is written beside the other three now, and **the week starts
+from the build that carries it** — the 2.3 days already in the file cannot
+be repaired, because the presses they are missing have happened.
+
+One field is not borrowed from `next`, and it is the one the line is for:
+
+> `waited_ms` is **absent when the pad was not asking.**
+
+`►` can only ever go to something that wants you. A tap can land on a pad
+that wants nothing, and *going to look at something quiet* and *answering
+an amber* are the two things the week has to tell apart. Present means an
+amber was answered and says how long it had waited; absent means the trip
+was yours, not the grid's. Both numbers are the ones that were true when
+the finger landed — last tick's queue, like the grid the press was aimed
+at.
 
 **And the question it was built for describes a signal that no longer
 exists.** The gate asks *how many ambers were wrong*, which was the right
