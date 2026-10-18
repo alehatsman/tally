@@ -144,6 +144,18 @@ piece and is waiting for the next instruction. That is `Stop`.
 `Notification` stays in the list because when it does fire, it is the
 strongest possible statement of *wants you*, and it costs one line.
 
+> ⚠️ **Both hooks write the same bit, and a second kind of reader now
+> reads it.** `tally attention on` takes no argument, so *blocked on a
+> dialog* and *turn finished* are one string by the time anything sees
+> them. That is right for the reader this document was measured against —
+> a human, for whom both mean *go look*. It is not obviously right for a
+> program: [32](32-the-grid-in-text.md) is read by agents, and `tally ls`
+> now says `wants you` rather than `waiting for an answer` because the
+> latter was false in the common case. Whether the two states should be
+> told apart at all is
+> [#23](https://github.com/alehatsman/tally/issues/23). **The amber is
+> unchanged either way** — nothing below is amended.
+
 ### Why `PreToolUse` on the falling edge as well
 
 `UserPromptSubmit` covers answering with words. It does not cover answering

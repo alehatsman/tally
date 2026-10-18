@@ -78,13 +78,13 @@ $ tally ls
   1:2  #  .  .  .  ?  .  .  .
   1:3  !  .  .  .  .  .  .  .
 
-  @ you   # running   ? waiting   ! failed   x lost   . free
+  @ you   # running   ? wants you   ! failed   x lost   . free
 
   1:1:1  01M57RWW07PGARAA4BD4QN9PPE  running                 /repo/dotfiles
   1:1:2  01M57RX1C8QGBSBB5CE5RO0QQF  running                 /repo/tally
   1:1:3  01M57SZ0MXAXN70VX1D0RJ486N  running                 /repo/tally-fix-move
   1:1:4  01M57T8BQK95WCTN0GC30RESJK  running                 /repo/tally-feat-ls  <- you
-  1:2:5  01M57SM03QVQ7BVN99MSBYDJ45  waiting for an answer   /repo/provision
+  1:2:5  01M57SM03QVQ7BVN99MSBYDJ45  wants you               /repo/provision
   1:3:1  01M52ZZ5R4VJ8T1H6PQW3NXK2D  failed, exit 1          /repo/anchor
 
   rows not shown hold nothing
@@ -141,6 +141,36 @@ make.
 So `ls` says **`running`** for both. Not a simplification: the honest
 word for what a listing without watchers actually knows, which is that
 anchord says the session is alive.
+
+### The amber says *wants you*, and that is two states
+
+⚠️ This section was added after the fact. The listing shipped saying
+**`waiting for an answer`**, which is false most of the times it printed.
+
+[14](14-attention.md) raises `tl.attention` from two hooks — `Notification`
+when the agent is **blocked** on a dialog, `Stop` when its **turn is
+finished** — and `tally attention on` takes no argument, so *which hook
+fired is lost at the write*. One bit, two states, by design: for a human
+glancing at the grid both mean *go look*, which is the whole job of the
+amber and does not change here.
+
+For a reader that is a **program** it is not the same claim. `Stop` fires
+every turn and `Notification` rarely, so the common case behind an amber is
+an agent sitting at a prompt with its work done — and a supervisor that
+read `waiting for an answer` and went to unblock it was acting on a
+question nobody asked.
+
+So the words say exactly what the label says and no more. `wants you` is
+true of both states, which is the most a listing can honestly print from
+one bit. **It is vague on purpose and it is not the fix** — whether the two
+should be distinguished at all, and which layer would own it, is
+[#23](https://github.com/alehatsman/tally/issues/23), and it stays open.
+The glyph is unchanged, the colour is unchanged, and the pad still pulses
+amber for both.
+
+This is the cost of a document acquiring a reader it was not written for.
+`14` was measured against a human walking past a desk and was right about
+that reader; `32` added a second one and did not go back and re-read it.
 
 ### Which rows
 
@@ -260,6 +290,32 @@ indistinguishable from a shell that was never on it.
 `free` is `frees_the_pad`, stated rather than inferred: it is the one
 thing a caller is deciding on, and making it re-derive the predicate from
 a state string would be the second opinion this document keeps refusing.
+
+## What this output promises
+
+**Something parses this.** That is not a hypothetical — it is the habit
+that closed [25](25-the-squad.md): an agent reads the grid, finds a free
+pad, and calls `tally spawn` itself. A listing with readers that are
+programs is an interface, so it owes them a statement of what moves.
+
+| | |
+|---|---|
+| **stable** — changing it is a break, and needs a reason in a document | `--json`'s keys and their meanings; the `you` / `unplaced` distinction; `free` as `frees_the_pad`; the exit codes; the glyph-per-colour mapping |
+| **not stable** — read it, do not parse it | the text picture: column widths, `STATE_WIDTH`, spacing, the key line, row ordering, which rows are shown |
+| **follows the device, not this document** | the glyph set. If the surface grows a colour, the text grows a glyph, and that is the rule [above](#one-glyph-per-colour) rather than a promise made here |
+
+**The state strings are the awkward case**, and this section exists partly
+to say so. They are one vocabulary shared with `tally spawn`'s refusals on
+purpose, they appear in `--json` as `state`, and they have already moved
+once — `waiting for an answer` became `wants you` in exactly the kind of
+silent break this table is meant to prevent. Treat `state` as **prose for a
+human, carried in a machine format**: branch on `free`, which is a boolean
+and is what a caller is actually deciding, and never on the sentence.
+
+A caller that needs a state it can switch on is asking for a field this
+document does not have, and should say which decision it is making — which
+is also how [#23](https://github.com/alehatsman/tally/issues/23) gets
+answered with evidence instead of guessing.
 
 ## What it does not do
 
