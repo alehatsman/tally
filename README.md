@@ -167,6 +167,7 @@ spec once blocked on reading it the other way.
 | [32-the-grid-in-text.md](docs/32-the-grid-in-text.md) | `tally ls` — the agents on the grid cannot see colour, and locating themselves by hand cost six tool calls. One glyph per colour, the caller's pad marked, and why it shows rather than picks |
 | [31-the-moved-view.md](docs/31-the-moved-view.md) | a moved session takes its view with it: the pane follows the label, and the pad it left is free |
 | [34-the-swap.md](docs/34-the-swap.md) | two live views trade places: the one being relocated always lands at its address, the occupant takes the window it vacated, and nothing is closed. Also: an address is not written onto a pane whose window does not hold it |
+| [35-the-drift.md](docs/35-the-drift.md) | drift nothing was looking for: a squatter is parked out of the address space rather than sent home, a corpse claiming another address stops wedging the pad, and a startup sweep **counts** drift without touching it |
 
 Not design, and nothing below is built:
 
