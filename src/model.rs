@@ -1008,6 +1008,16 @@ mod tests {
     }
 
     /// anchor lists newest-first, so the first one seen owns the pad.
+    ///
+    /// **Both orderings, because the list decides and not the state.**
+    /// With the corpse listed first it is the corpse that is drawn, and
+    /// the live session is on no pad at all — which is not a bug here
+    /// but the rule, working. Only one gesture can produce that list:
+    /// a drop (`Context::put_down`) is the only path that gives an
+    /// address to a session anchord already had, so it is the only one
+    /// that can arrive older than what is already claiming the pad, and
+    /// it clears the pad rather than asking this function to pick
+    /// differently.
     #[test]
     fn two_sessions_on_one_pad_render_the_newest() {
         let pages = Pages::default();
@@ -1020,6 +1030,17 @@ mod tests {
             f.get(Button::Grid { row: 1, col: 1 }),
             Cell::Static(GREEN),
             "newest should win"
+        );
+
+        let mut failed = session("dead", "exited", Some("1:1:1"));
+        failed.exit_code = Some(1);
+        let mut running = session("live", "running", Some("1:1:1"));
+        running.state = "running".to_owned();
+        let f = frame(&[failed, running], &BTreeMap::new(), &view(&pages));
+        assert_eq!(
+            f.get(Button::Grid { row: 1, col: 1 }),
+            Cell::Static(RED),
+            "newest still wins when the newest is the dead one"
         );
     }
 
