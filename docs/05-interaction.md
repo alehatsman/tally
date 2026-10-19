@@ -750,11 +750,25 @@ and the board is unchanged.
 | **what moves** | the drawn session, and only it |
 | **what stays** | every ended row at the old address |
 | **legal target** | a pad with no live session, on the visible grid |
+| **what the landing loses** | the rows behind it, if it was drawing one |
 | **across pages** | `▲▼` under a held modifier already works; the pad in hand survives the scroll |
 
 **The history does not follow.** The ended rows behind the old pad stay
 where they are, so the old row still knows its directory and keeps its `>`.
 Dragging a session out of a row is not a claim that the row never existed.
+
+**A landing that was drawing a corpse is cleared.** `tl.slot` is a claim and
+not a lease, so after the write both sessions hold the address and the grid
+draws whichever anchord lists first — the newest. Every other way a session
+reaches a contested pad creates it on arrival and is therefore always the
+newest; a move places a session anchord *already had*, so tidying a
+morning-old agent onto a pad that failed an hour ago makes the agent the
+older one, and it would be drawn on no pad at all: not jumpable, not in
+`tally ls`, and nothing on the surface saying why. So the drop forgets the
+rows underneath — the red going away under your finger, which is what
+holding Stop on that pad already does. A **dark** pad keeps its history:
+those rows are clean exits and kills, which the grid skips anyway, so they
+can never claim the pad back from what you put there.
 
 #### Picking something up flips the question, not the board
 

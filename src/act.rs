@@ -148,6 +148,28 @@ impl Context<'_> {
     /// address stays there, so the row it left still knows its directory
     /// and keeps its `>`: dragging a session out of a row is not a claim
     /// that the row never existed.
+    ///
+    /// **A pad that was drawing a corpse is left with one claimant.**
+    /// `tl.slot` is a claim and not a lease, so after the write both
+    /// sessions hold the address and [`crate::model::resolve`] draws
+    /// whichever anchord lists first — the newest. Move is the only
+    /// gesture that places a session anchord *already had*, so it is the
+    /// only one that can arrive **older** than what is there: tidy a
+    /// morning-old agent onto a pad that failed an hour ago and the
+    /// agent is drawn on no pad at all. So the rows underneath are
+    /// forgotten, which is the red going away under your finger — the
+    /// same thing the hold already does to that pad
+    /// ([`Self::forget`]).
+    ///
+    /// Only for a pad that was **drawing** something. The rows behind a
+    /// dark pad are clean exits and kills, which `resolve` skips and
+    /// which therefore cannot claim it from anybody; forgetting those
+    /// would destroy history to fix nothing.
+    ///
+    /// The purge goes **after** the label and cannot fail. Before it, a
+    /// refused label write would have forgotten those rows for a move
+    /// that never happened — and Move must not destroy anything on a
+    /// gesture that did not land.
     fn put_down(&self, to: Slot, pages: &Pages) -> Result<Done, anchor::Error> {
         // All three are things `effect` already established before it
         // said `Dropped`; they are re-asked rather than assumed because
@@ -164,6 +186,9 @@ impl Context<'_> {
         let mut set = BTreeMap::new();
         let _slot = set.insert(anchor::LABEL_SLOT.to_owned(), address);
         self.client.label(&r.session, &set, &[])?;
+        if self.pads.grid().contains_key(&to) {
+            let _cleared = self.forget(to);
+        }
         Ok(Done::Moved {
             session: r.session.clone(),
             from,
@@ -203,6 +228,10 @@ impl Context<'_> {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
+    use std::io::{BufRead, BufReader, Write};
+    use std::os::unix::net::UnixListener;
+    use std::thread::JoinHandle;
+    use std::time::{Duration, Instant};
 
     use super::*;
     use crate::model::{frame_from, Resolved, View};
@@ -261,12 +290,60 @@ mod tests {
         }
     }
 
-    /// Nothing below talks to anchord: every case here is one the context
-    /// settles before a socket would be opened. A socket that is not there
-    /// is therefore the right client to test with — and it proves these
-    /// paths really do not touch it.
+    /// Nothing handed this talks to anchord: every case it is used for is
+    /// one the context settles before a socket would be opened. A socket
+    /// that is not there is therefore the right client to test with — and
+    /// it proves those paths really do not touch it. The one test about
+    /// what gets *written* uses [`recording`] instead.
     fn nowhere() -> Client {
         Client::new("/nonexistent/anchor.sock")
+    }
+
+    /// A fake anchord that says yes to everything and keeps what it was
+    /// asked.
+    ///
+    /// It stops at `stop_after` requests or at a deadline, whichever
+    /// comes first. [`Client`] opens a connection per op, so a test that
+    /// allows more calls than it expects asserts "and nothing else" by
+    /// waiting the deadline out — where accepting forever would hang the
+    /// suite on exactly the regression it is there to catch.
+    fn recording(name: &str, stop_after: usize) -> (Client, JoinHandle<Vec<String>>) {
+        let dir = std::env::temp_dir().join("tally-act-test");
+        std::fs::create_dir_all(&dir).expect("a temp dir for the socket");
+        let path = dir.join(format!("{name}-{}.sock", std::process::id()));
+        // A socket file outlives the process that bound it, so a crashed
+        // earlier run would make `bind` fail with "address in use".
+        let _stale = std::fs::remove_file(&path);
+        let listener = UnixListener::bind(&path).expect("bind");
+        listener
+            .set_nonblocking(true)
+            .expect("a listener that can be given up on");
+        let server = std::thread::spawn(move || {
+            let mut seen: Vec<String> = Vec::new();
+            let deadline = Instant::now() + Duration::from_millis(750);
+            while seen.len() < stop_after && Instant::now() < deadline {
+                // Nothing waiting, or a real error: either way the
+                // deadline is what ends this, and a client that never
+                // called is the assertion the test makes.
+                let Ok((mut stream, _addr)) = listener.accept() else {
+                    std::thread::sleep(Duration::from_millis(5));
+                    continue;
+                };
+                stream
+                    .set_nonblocking(false)
+                    .expect("a stream that can be read");
+                let mut request = String::new();
+                let _read = BufReader::new(stream.try_clone().expect("clone"))
+                    .read_line(&mut request)
+                    .expect("read the request");
+                stream
+                    .write_all(b"{\"id\":1,\"ok\":true}\n")
+                    .expect("write the reply");
+                seen.push(request);
+            }
+            seen
+        });
+        (Client::new(&path), server)
     }
 
     /// The preview and the press read one predicate, so a dim pad is
@@ -403,6 +480,80 @@ mod tests {
                 Done::Nothing,
                 "{dead:?}: and the press must agree with the pixel"
             );
+        }
+    }
+
+    /// A drop onto a pad that is drawing a corpse must leave that pad
+    /// with **one** claimant.
+    ///
+    /// `tl.slot` is a claim and not a lease, so both sessions hold the
+    /// address the moment the label lands, and `resolve` draws whichever
+    /// anchord lists first — the newest. Every other way a session
+    /// reaches a contested pad creates it on arrival and so is always the
+    /// newest; Move places a session anchord already had, and an agent
+    /// running since the morning tidied onto a pad that failed an hour
+    /// ago is older than the corpse. It would be drawn on no pad at all:
+    /// not jumpable, not in `tally ls`, and nothing on the surface saying
+    /// why.
+    ///
+    /// Asserted against a fake anchord, because the claim is about the
+    /// calls and nothing else can see them. The dark pad is the other
+    /// half: its rows are ones `resolve` already skips, and a drop that
+    /// forgot them would be destroying history to fix nothing.
+    #[test]
+    fn a_drop_forgets_the_corpse_it_landed_on() {
+        let (held, dead, dark) = (at(2, 2), at(5, 5), at(6, 6));
+        let pages = Pages::default();
+        let mut grid = BTreeMap::new();
+        let _h = grid.insert(held, resolved(held, SlotState::Working, false));
+        let _d = grid.insert(
+            dead,
+            Resolved {
+                session: "01J_dead".to_owned(),
+                ..resolved(dead, SlotState::Failed { code: 1 }, false)
+            },
+        );
+        let mut purge = BTreeMap::new();
+        let _onto = purge.insert(dead, vec!["01J_dead".to_owned(), "01J_older".to_owned()]);
+        let _under = purge.insert(dark, vec!["01J_gone".to_owned()]);
+
+        for (to, allowed, want) in [(dead, 4, 3), (dark, 3, 1)] {
+            let (client, server) = recording(&format!("drop-{}", to.row), allowed);
+            let ctx = Context {
+                client: &client,
+                pads: Pads::new(&grid, &purge, Some(held)),
+            };
+            assert_eq!(
+                effect(Action::Move, ctx.pads.at(to), ctx.pads.hand()),
+                Effect::Acts(Consequence::Dropped),
+                "the preview promised a landing on {to:?}"
+            );
+            assert_eq!(
+                ctx.chord(Action::Move, to, &pages)
+                    .expect("the address write"),
+                Done::Moved {
+                    session: "01J".to_owned(),
+                    from: held,
+                    to,
+                },
+            );
+            let seen = server.join().expect("server thread");
+            let _gone = std::fs::remove_file(client.path());
+            let ops: Vec<serde_json::Value> = seen
+                .iter()
+                .map(|line| serde_json::from_str(line).expect("anchord was sent JSON"))
+                .collect();
+            assert_eq!(ops.len(), want, "{to:?}: {ops:?}");
+            assert_eq!(ops[0]["op"], "label", "the address first, always");
+            assert_eq!(ops[0]["session"], "01J");
+            assert_eq!(
+                ops[0]["set"][anchor::LABEL_SLOT],
+                to.label(&pages).expect("an address for a declared page")
+            );
+            for (op, id) in ops.iter().skip(1).zip(["01J_dead", "01J_older"]) {
+                assert_eq!(op["op"], "purge");
+                assert_eq!(op["session"], id, "the whole stack, newest first");
+            }
         }
     }
 }
