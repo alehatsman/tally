@@ -42,6 +42,10 @@ midir = "0.11.1"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 toml = "0.9"
+# The bridge's wire, so both ends of the socket compile one codec. Ours, in
+# this repository, std-only (docs/13-bridge.md). `version` as well as
+# `path`, because a bare path is a wildcard to cargo-deny.
+tallybridge = { path = "bridge", version = "0.1.0" }
 
 # Fleet lint block, from alehatsman/rust-quality `lints.toml`.
 # Not hand-maintained: `rq/lints-check` reports drift against that file.
