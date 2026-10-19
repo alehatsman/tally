@@ -244,7 +244,8 @@ re-proposed as new.
 
 ## Open scope questions
 
-**Two cuts the evidence suggests and nobody has decided.** They are larger
+**One cut the evidence suggests and nobody has decided, and one held
+open at a smaller size.** They are larger
 than the graveyard above because each removes something that *works*, and
 that is a decision about what this product is rather than a cleanup.
 
@@ -261,14 +262,25 @@ the spawning that actually happens
 times the overview was opened across 55 hours, and never moved. Seven rows
 of sixty-four have *ever* held a session.
 
-The 64-row space is sized by the hardware, not by any observed need, and it
-is what pays for three features: `▲▼` scrolling, hold-`▲` home, and the
-overview. **A sixteen-row space needs none of the three.** One cut removing
-three features.
+The 64-row space is sized by the hardware, not by any observed need.
 
-**The cost is a migration:** addresses live in `tl.slot` labels and in
-muscle memory, and [02](02-model.md#the-address-pinned) pins the format
-deliberately. [#41](https://github.com/alehatsman/tally/issues/41).
+> ⚠️ **Partly answered, 2026-10-19.** The three features the size paid for
+> were `▲▼` scrolling, hold-`▲` home, and the overview. **The overview is
+> cut** on its own evidence — nine presses, `lit` stuck at 4, all nine
+> destinations inside the window they started in, the empty middle never
+> once crossed ([05](05-interaction.md#the-overview-cut), #41). The other
+> two are **kept**: they are how you move through the space, and they are
+> used.
+>
+> **So the space itself is still 64 rows and this question is still
+> open** — but it is now one feature's worth of cost, not three. The
+> remaining argument for shrinking is the address format, not the
+> navigation.
+
+**The cost of shrinking is a migration:** addresses live in `tl.slot`
+labels and in muscle memory, and [02](02-model.md#the-address-pinned) pins
+the format deliberately so humans can type it into shell scripts.
+[#41](https://github.com/alehatsman/tally/issues/41).
 
 ### The reel is nine pieces
 
