@@ -372,7 +372,6 @@ fn perform(
         | Gesture::Back
         | Gesture::Next
         | Gesture::Home
-        | Gesture::Goto { .. }
         | Gesture::Arts
         | Gesture::Launch { .. } => {}
     }
@@ -742,34 +741,6 @@ fn launch(
     true
 }
 
-/// Put the window where an overview pad points.
-///
-/// Lifted out of `main` for the same reason `navigate` was: it touches
-/// nothing but the offset and the journal, and `main` has a complexity
-/// budget that this pushed over.
-///
-/// `grid` is **last tick's** resolution — the map the finger was looking
-/// at when it landed, which is the only honest thing to count `lit` from.
-fn goto(
-    row: u8,
-    col: u8,
-    offset: &mut u8,
-    grid: &std::collections::BTreeMap<Slot, model::Resolved>,
-    journal: &mut Journal,
-) {
-    let to = View::overview_row(row, col);
-    let from = *offset;
-    // Clamped, so the deep rows land somewhere real rather than hanging
-    // the window off the end. Row 60 arrives fifth, which is honest
-    // (`docs/05-interaction.md`).
-    *offset = to.saturating_sub(1).min(slot::MAX_OFFSET);
-    let lit = (1..=slot::ROWS)
-        .filter(|abs| model::row_summary(grid, *abs).is_some())
-        .count();
-    eprintln!("tallyd: goto row {to} ({lit} rows lit)");
-    journal.jumped_to(tally::now_ms(), to, from, lit);
-}
-
 /// The four top-row gestures: move the window, or move you.
 ///
 /// Lifted out of `main` because none of them touches anchord and all of
@@ -830,11 +801,7 @@ fn navigate(
             }
             Err(e) => eprintln!("tallyd: {e}"),
         },
-        Gesture::Tap { .. }
-        | Gesture::Chord { .. }
-        | Gesture::Launch { .. }
-        | Gesture::Arts
-        | Gesture::Goto { .. } => {}
+        Gesture::Tap { .. } | Gesture::Chord { .. } | Gesture::Launch { .. } | Gesture::Arts => {}
     }
 }
 
@@ -1018,9 +985,6 @@ fn main() -> ExitCode {
                                 &anchor,
                             );
                         }
-                        Gesture::Goto { row, col } => {
-                            goto(row, col, &mut offset, &grid, &mut journal);
-                        }
                         Gesture::PageUp
                         | Gesture::PageDown
                         | Gesture::Home
@@ -1172,7 +1136,6 @@ fn main() -> ExitCode {
             queued: waiting.queued,
             held: chords.modifier(),
             hand: grip.hand,
-            overview: chords.overview(),
             art: reel.is_some(),
             pressed: &pressed,
             mode: chords.mode(),

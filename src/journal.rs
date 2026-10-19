@@ -312,11 +312,6 @@ impl Journal {
     pub fn jumped_back(&mut self, now: i64, ok: bool) {
         self.sink.write(|out| nav_back(out, now, ok));
     }
-
-    /// Record a press of an overview pad ([`nav_goto`]).
-    pub fn jumped_to(&mut self, now: i64, to: u8, from: u8, lit: usize) {
-        self.sink.write(|out| nav_goto(out, now, to, from, lit));
-    }
 }
 
 /// Record a press of `►` or `◄`.
@@ -352,8 +347,8 @@ pub fn nav_next(
 ///
 /// **The gesture the product exists for, and the one the journal did not
 /// write down** ([#43](https://github.com/alehatsman/tally/issues/43)).
-/// `next`, `back` and `overview` were recorded from the start; a plain tap
-/// was not, so the file held the ambers that were *raised* and almost none
+/// `next` and `back` were recorded from the start; a plain tap was not,
+/// so the file held the ambers that were *raised* and almost none
 /// of the ones that were *answered* — and the gate
 /// (`docs/04-signals.md`) asks how many of the raised ones you went to.
 ///
@@ -406,29 +401,6 @@ pub fn nav_back(out: &mut impl Write, now: i64, ok: bool) -> io::Result<()> {
     )
 }
 
-/// Record a press of an overview pad: where it went, where it was, and
-/// how much of the address space was occupied at the time.
-///
-/// `lit` is the instrument the design is a bet on. If it sits at seven
-/// for a month, the honest follow-up is not a better map but a smaller
-/// address space (`docs/05-interaction.md`).
-///
-/// # Errors
-/// Whatever the sink returns.
-pub fn nav_goto(out: &mut impl Write, now: i64, to: u8, from: u8, lit: usize) -> io::Result<()> {
-    write_line(
-        out,
-        &Goto {
-            ms: now,
-            kind: "nav",
-            via: "overview",
-            to,
-            from,
-            lit,
-        },
-    )
-}
-
 /// A press of a navigation button.
 ///
 /// `kind` is what separates these from state lines, and it is written on
@@ -447,23 +419,6 @@ struct Nav<'a> {
     queued: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     ok: Option<bool>,
-}
-
-/// A press of an overview pad.
-///
-/// A shape of its own rather than more `Option`s on [`Nav`]: none of its
-/// three numbers is ever absent, and a row is not a slot address.
-#[derive(Debug, Serialize)]
-struct Goto {
-    ms: i64,
-    kind: &'static str,
-    via: &'static str,
-    /// Absolute row 1-64, the one that becomes the top of the window.
-    to: u8,
-    /// The offset the window had before the press.
-    from: u8,
-    /// Non-empty rows at that moment, 0-64.
-    lit: usize,
 }
 
 /// A slot that just started asking.
@@ -678,7 +633,7 @@ mod tests {
         let answered: serde_json::Value =
             serde_json::from_str(lines.next().expect("line")).expect("json");
         assert_eq!(answered["kind"], "nav");
-        assert_eq!(answered["via"], "pad", "not next, and not overview");
+        assert_eq!(answered["via"], "pad", "not next, and not back");
         assert_eq!(answered["slot"], "1:2:1");
         assert_eq!(answered["waited_ms"], 219_722);
         assert_eq!(answered["queued"], 4);
