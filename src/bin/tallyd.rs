@@ -290,7 +290,7 @@ impl Hand {
     /// Fold this into the loop's hand.
     ///
     /// A method rather than a `match` at the call site for the same
-    /// reason [`corner_event`] exists: `main` is at the
+    /// reason [`Grip::feel`] exists: `main` is at the
     /// cognitive-complexity cap and this is the kind of three-arm
     /// bookkeeping that belongs next to the enum it is about.
     fn apply(self, hand: &mut Option<Slot>) {
