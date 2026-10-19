@@ -1,3 +1,4 @@
+use super::grid::{linear, pads};
 use crate::surface::palette::{Entry, AMBER, DARK_GREY, DARK_RED, OFF, RED, WHITE, YELLOW};
 use crate::surface::{Button, Cell, Frame};
 
@@ -23,17 +24,14 @@ pub(super) fn hue(i: usize) -> Entry {
 /// puts the heat there and in nothing else.
 pub(super) fn paint_heat(frame: &mut Frame, heat: &[u8; 64], max: u8, ramp: &[Entry]) {
     let steps = u8::try_from(ramp.len()).unwrap_or(1).max(1);
-    for row in 1..=8u8 {
-        for col in 1..=8u8 {
-            let i = usize::from(row - 1) * 8 + usize::from(col - 1);
-            let h = heat.get(i).copied().unwrap_or(0).min(max);
-            let cell = if h == 0 {
-                Cell::Off
-            } else {
-                let step = usize::from((max - h) * steps / max.max(1));
-                Cell::Static(ramp.get(step).or(ramp.last()).copied().unwrap_or(OFF))
-            };
-            frame.set(Button::Grid { row, col }, cell);
-        }
+    for (row, col) in pads() {
+        let h = heat.get(linear(row, col)).copied().unwrap_or(0).min(max);
+        let cell = if h == 0 {
+            Cell::Off
+        } else {
+            let step = usize::from((max - h) * steps / max.max(1));
+            Cell::Static(ramp.get(step).or(ramp.last()).copied().unwrap_or(OFF))
+        };
+        frame.set(Button::Grid { row, col }, cell);
     }
 }

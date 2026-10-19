@@ -1,6 +1,11 @@
+use super::colour::{paint_heat, EMBER};
 use super::rng::Rng;
-use crate::surface::palette::OFF;
-use crate::surface::{Button, Cell, Frame};
+use crate::surface::Frame;
+
+/// Full heat, and the length of the wake: a dead pad is dark five
+/// generations later. Six, which is also [`EMBER`]'s length, so a
+/// generation of cooling is exactly one step down the ramp.
+pub(super) const HEAT_MAX: u8 = 6;
 
 /// How many art frames one generation lasts. Six a second: fast enough to
 /// read as motion, slow enough to follow a glider.
@@ -111,21 +116,10 @@ impl Life {
         }
     }
 
+    /// The wake, through the same ramp [`Rain`] and [`Fire`] use. It had
+    /// its own copy of the walk and the arithmetic until the two were
+    /// shown to agree on all seven heats — see `life_and_paint_heat_agree`.
     pub(super) fn paint(&self, f: &mut Frame) {
-        for row in 1..=8u8 {
-            for col in 1..=8u8 {
-                let i = usize::from(row - 1) * 8 + usize::from(col - 1);
-                let h = self.heat.get(i).copied().unwrap_or(0);
-                let cell = match usize::from(HEAT_MAX.saturating_sub(h)) {
-                    _ if h == 0 => Cell::Off,
-                    step => Cell::Static(super::colour::EMBER.get(step).copied().unwrap_or(OFF)),
-                };
-                f.set(Button::Grid { row, col }, cell);
-            }
-        }
+        paint_heat(f, &self.heat, HEAT_MAX, &EMBER);
     }
 }
-
-/// Full heat, and the length of the wake: a dead pad is dark five
-/// generations later.
-pub(super) const HEAT_MAX: u8 = 6;

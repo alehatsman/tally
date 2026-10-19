@@ -27,6 +27,25 @@ pub(super) const BLOOM: [Sprite; 2] = [
     ],
 ];
 
+/// The mark itself: a rounded sunburst, and the frame the turn passes
+/// through twice.
+///
+/// The diagonals stop short of the corners on purpose — that taper is what
+/// gives it a circular silhouette instead of the square one a plain
+/// asterisk has, and it is the whole difference between Claude's mark and
+/// a `*`. Named rather than written twice into [`SPARK`]: it was written
+/// twice, and a mark whose two copies drifted would read as a stutter.
+pub(super) const MARK: Sprite = [
+    0b0001_1000,
+    0b0101_1010,
+    0b0011_1100,
+    0b1111_1111,
+    0b1111_1111,
+    0b0011_1100,
+    0b0101_1010,
+    0b0001_1000,
+];
+
 /// The turn, as four spoke positions.
 ///
 /// Orthogonal, then all eight, then diagonal, then all eight again —
@@ -45,20 +64,7 @@ pub(super) const SPARK: [Sprite; 4] = [
         0b0001_1000,
         0b0001_1000,
     ],
-    // The mark itself: a rounded sunburst. The diagonals stop short of
-    // the corners on purpose — that taper is what gives it a circular
-    // silhouette instead of the square one a plain asterisk has, and it
-    // is the whole difference between Claude's mark and a `*`.
-    [
-        0b0001_1000,
-        0b0101_1010,
-        0b0011_1100,
-        0b1111_1111,
-        0b1111_1111,
-        0b0011_1100,
-        0b0101_1010,
-        0b0001_1000,
-    ],
+    MARK,
     // turned 45°
     [
         0b1000_0001,
@@ -70,16 +76,7 @@ pub(super) const SPARK: [Sprite; 4] = [
         0b0100_0010,
         0b1000_0001,
     ],
-    [
-        0b0001_1000,
-        0b0101_1010,
-        0b0011_1100,
-        0b1111_1111,
-        0b1111_1111,
-        0b0011_1100,
-        0b0101_1010,
-        0b0001_1000,
-    ],
+    MARK,
 ];
 
 /// Claude's mark, in Claude's colour.
@@ -98,7 +95,7 @@ pub(super) fn paint(n: u32, frame: &mut Frame) {
         BLOOM.get(step).copied().unwrap_or(BLOOM[1])
     } else {
         let step = usize::try_from((t - opening) / SPARK_FRAME % 4).unwrap_or(0);
-        SPARK.get(step).copied().unwrap_or(SPARK[1])
+        SPARK.get(step).copied().unwrap_or(MARK)
     };
     draw(frame, sprite, AMBER);
 }
