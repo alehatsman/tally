@@ -105,8 +105,7 @@ impl Watchers {
             .spawn(move || {
                 run(&client, &owned, &signals, now);
                 // Releasing the slot here is what makes a dropped watcher
-                // recoverable: the next reconcile sees no thread for a
-                // still-live session and starts a fresh one.
+                // recoverable ([`Watchers::watching`]).
                 let _was_there = held(&watching).remove(&owned);
             });
         if let Err(e) = spawned {
@@ -193,16 +192,8 @@ mod tests {
 
     /// Poison both mutexes, then use the `Watchers` normally.
     ///
-    /// The regression for the defect the review found. A poisoned
-    /// `watching` used to make [`Watchers::reconcile`]'s `fresh` false for
-    /// every session forever, so no watcher was ever started again — and a
-    /// `Mutex` stays poisoned for the life of the process, so it never came
-    /// back. `tallyd` kept running and the grid kept rendering from the
-    /// anchord list, so nothing looked wrong and nothing was logged.
-    /// `snapshot` and `retain_known` had the same shape with quieter
-    /// symptoms: every signal gone, and a map that grew until restart.
-    ///
-    /// Both halves here are deterministic — no thread is relied on. The
+    /// The regression for the failure [`Watchers`] states the policy for.
+    /// Both halves are deterministic — no thread is relied on — and the
     /// signals half is the observable one: before the fix `snapshot`
     /// returned an empty map and this assertion failed.
     #[test]

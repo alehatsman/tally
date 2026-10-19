@@ -63,10 +63,8 @@ impl Piece {
     /// Every piece, in the order `Drums` walks them.
     ///
     /// The animals first and the joke last — a reel opens on the one that
-    /// is somebody and ends on the thing worth filming. What is in between
-    /// is fields, simulations and two arcade cabinets, and the count is
-    /// `REEL.len()` rather than a number written in prose: this doc said
-    /// "three, two and the joke" for a reel that had grown to nine.
+    /// is somebody and ends on the thing worth filming. Count it with
+    /// `REEL.len()`, never with a number written in prose.
     pub const REEL: [Self; 9] = [
         Self::Bestiary,
         Self::Claude,
@@ -261,10 +259,8 @@ mod tests {
             .collect()
     }
 
-    /// The art owns the sixty-four pads and **nothing else**. The top row,
-    /// the right column and the logo are the caller's, and a piece that
-    /// reached into them would silently take over the three lights that
-    /// report — which is the one thing `docs/05-interaction.md` forbids.
+    /// The art owns the sixty-four pads and **nothing else**
+    /// ([`Reel::frame`]).
     #[test]
     fn no_piece_ever_touches_a_reporting_light() {
         for piece in Piece::REEL {
@@ -285,9 +281,8 @@ mod tests {
         }
     }
 
-    /// Round the reel and back to the grid. Nobody has to know how many
-    /// pieces there are to get out — which is also why this walks
-    /// `REEL.len()` rather than a number.
+    /// Round the reel and back to the grid, without knowing how many
+    /// pieces there are.
     #[test]
     fn the_reel_wraps_back_to_no_art() {
         let mut at = None;

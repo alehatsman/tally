@@ -1,9 +1,5 @@
 //! The walk across the sixty-four pads, written once.
 //!
-//! Eight pieces wrote `for row in 1..=8 { for col in 1..=8 {` out by hand,
-//! and three of them followed it with the same `row * 8 + col` line. The
-//! shape was never the interesting part of any of them.
-//!
 //! The dimensions come from [`crate::slot::WINDOW`] and
 //! [`crate::slot::COLS`], which are the *hardware* grid — the pads the
 //! Launchpad has — and not the address space. An art paints what is on the

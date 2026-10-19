@@ -83,7 +83,7 @@ pub struct Scanner {
     /// The payload of the sequence currently open, when it is one we are
     /// capturing. Lives on the scanner rather than in `State` so that a
     /// sequence can be abandoned mid-payload without moving a `Vec`
-    /// between two variants — which is what `State::Discard` used to be.
+    /// between two variants.
     buf: Vec<u8>,
 }
 
@@ -398,13 +398,11 @@ mod tests {
         assert_eq!(got.last_bell, Some(chunk.len() - 1));
     }
 
-    /// A doubled `ESC` mid-payload used to be read three ways in one
-    /// file: ground state held it, an abandoned sequence held it, and a
-    /// captured payload dropped to abandoning — which left
-    /// `ESC ] 0 ; x ESC ESC \\` open until some later terminator closed
-    /// it. All three hold it now. The title goes, because an `ESC` in the
-    /// middle of a payload is junk, but the sequence still ends where it
-    /// says it ends.
+    /// A doubled `ESC` is held in all three places it can appear: ground
+    /// state, an abandoned sequence and a captured payload. The title
+    /// goes, because an `ESC` mid-payload is junk, but the sequence still
+    /// ends where it says it ends — otherwise `ESC ] 0 ; x ESC ESC \\`
+    /// stays open until some later terminator closes it.
     #[test]
     fn a_doubled_escape_inside_a_payload_still_terminates_the_sequence() {
         let mut s = Scanner::default();

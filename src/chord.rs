@@ -43,11 +43,7 @@ pub enum Action {
     Stop,
     /// `CC19` in its other mode — **pick a pad up and put it down.**
     ///
-    /// The surface had no way to rearrange itself: a shell spawn lands
-    /// where you typed and `>` takes the leftmost free column, so after a
-    /// day the board is a log of where things happened to land rather
-    /// than a layout you chose. A move is one `tl.slot` write and the
-    /// agent never learns it happened
+    /// One `tl.slot` write; the agent never learns it happened
     /// (`docs/05-interaction.md#move-is-the-missing-verb`).
     ///
     /// Two taps inside one hold, which needs no new grammar: this module
@@ -62,8 +58,7 @@ impl Action {
     ///
     /// Exactly one does. `CC89`–`CC29` became the seven `>` launchers
     /// when the column stopped being four hold-modifiers
-    /// (`docs/05-interaction.md`), so the corner is the only
-    /// modifier left — and it is the one the silkscreen labels *Stop*.
+    /// (`docs/05-interaction.md`), so the corner is the only one left.
     ///
     /// **Takes the mode**, because the corner carries two verbs now and
     /// which one is live is surface state, not a property of the button
@@ -138,10 +133,8 @@ pub enum Gesture {
     Next,
     /// Scroll back to row 1 (`⌂`).
     ///
-    /// **This module never emits it.** It is a *held* gesture now —
-    /// `▲` held past a threshold — and a threshold needs a clock, which
-    /// this module deliberately does not have. `tallyd` produces it from
-    /// the loop that already owns the time (`docs/05-interaction.md`).
+    /// **This module never emits it**: `▲` held past a threshold needs a
+    /// clock, so `tallyd` produces it ([module docs](self)).
     Home,
     /// Move to the next art, or back to the grid (`Drums`).
     ///
@@ -158,24 +151,22 @@ pub enum Gesture {
 /// What a top-row button does.
 ///
 /// Two of the eight carry nothing and return `None`, which is the same
-/// answer `Action::of` gives for `CC49`-`CC79` and for the same reason: an
+/// answer [`Action::of`] gives for `CC49`-`CC79` and for the same reason: an
 /// inert button that lights up like a live one is an invitation to press
 /// it (`docs/05-interaction.md`).
 ///
-/// None of these is a chord. `◄` and `►` commit nothing — they move you —
-/// so there is nothing for a hold to protect. That is the whole reason
-/// navigation won these two buttons over *answer from the grid*, which
-/// would have needed one (`docs/05-interaction.md`).
+/// None of these is a chord: navigation commits nothing, so there is
+/// nothing for a hold to protect. That is how it won these buttons over
+/// *answer from the grid*, which would have needed one.
 fn top(n: u8) -> Option<Gesture> {
     match n {
         1 => Some(Gesture::PageUp),
         2 => Some(Gesture::PageDown),
         3 => Some(Gesture::Back),
         4 => Some(Gesture::Next),
-        // 5 is `Session`. It held the overview up until #41 cut it, and
-        // it is deliberately left carrying nothing rather than given a
-        // verb to justify itself -- the surface ran out of buttons at
-        // M12 and this is the first one back.
+        // 5 is `Session`: it held the overview until #41 cut it, and is
+        // left carrying nothing rather than given a verb to justify
+        // itself.
         6 => Some(Gesture::Arts),
         _ => None,
     }
@@ -187,14 +178,12 @@ fn top(n: u8) -> Option<Gesture> {
 pub struct Chords {
     /// The modifier under the thumb, if any.
     ///
-    /// **One, not a set.** It was a `Vec` while the right column had four
-    /// hold-modifiers; `CC89`–`CC29` became the seven `>` launchers (see
-    /// [`Action::of`]) and the corner is the only one left, so a second
-    /// element was unreachable. If a second modifier is ever restored,
-    /// the rule that goes with it is in `docs/05-interaction.md` — *two
-    /// modifiers down fires nothing* — and it has to be rebuilt here,
-    /// because what this shape gives you instead is newest-wins, and
-    /// newest-wins makes a fumble destructive.
+    /// **One, not a set**, because [`Action::of`] leaves exactly one
+    /// modifier on the surface. If a second is ever restored, the rule
+    /// that goes with it — *two modifiers down fires nothing*,
+    /// `docs/05-interaction.md` — has to be rebuilt here: what this shape
+    /// gives you instead is newest-wins, and newest-wins makes a fumble
+    /// destructive.
     held: Option<Action>,
     /// Which verb `CC19` is carrying.
     ///
@@ -212,8 +201,7 @@ impl Default for Chords {
     fn default() -> Self {
         Self {
             held: None,
-            // It rests on Stop: four presses of muscle memory, and the
-            // word the silkscreen puts under that corner.
+            // Stop is what the corner carried before `Move` existed.
             mode: Action::Stop,
         }
     }
@@ -287,11 +275,8 @@ impl Chords {
 
     /// Flip the corner to its other verb.
     ///
-    /// **Called by `tallyd`, never from here.** A double-tap is two
-    /// presses close together in time, and this module has no clock
-    /// ([module docs](self)). The loop that owns `elapsed` owns the
-    /// threshold, exactly as it does for the `▲` hold
-    /// (`docs/05-interaction.md`).
+    /// **Called by `tallyd`, never from here**: a double-tap is a
+    /// threshold, and thresholds need a clock ([module docs](self)).
     pub fn toggle_mode(&mut self) {
         self.mode = self.mode.toggled();
     }
@@ -342,9 +327,8 @@ mod tests {
         }
     }
 
-    /// `Session` held the overview up until #41 cut it. It is inert now,
-    /// not repurposed: it emits nothing on press or release, and it
-    /// changes nothing about what the pads around it mean.
+    /// `Session` is inert, not repurposed: it emits nothing on press or
+    /// release, and changes nothing about what the pads around it mean.
     #[test]
     fn session_carries_nothing() {
         let mut c = Chords::default();
@@ -366,8 +350,7 @@ mod tests {
         );
     }
 
-    /// `⌂` is the one gesture this module does not produce. It needs a
-    /// clock, and this module does not have one.
+    /// `⌂` is the one gesture this module does not produce: it needs a clock.
     #[test]
     fn home_is_never_emitted_here() {
         let mut c = Chords::default();
@@ -508,9 +491,7 @@ mod tests {
         assert_eq!(c.feed(PAD, true), Some(Gesture::Tap { row: 3, col: 5 }));
     }
 
-    /// `Drums` and nothing else. The two buttons beside it still carry
-    /// nothing, and an inert button that fired a gesture would be the
-    /// exact failure `top` exists to prevent.
+    /// `Drums` and nothing else; the two buttons beside it stay inert.
     #[test]
     fn drums_is_the_only_art_button() {
         let mut c = Chords::default();
@@ -525,8 +506,7 @@ mod tests {
         );
     }
 
-    /// The corner carries two verbs and `Action::of` answers with
-    /// whichever is loaded. Same button, same gesture, different word.
+    /// Same button, same gesture, different word.
     #[test]
     fn the_corner_answers_with_the_mode_it_is_in() {
         for mode in Action::all() {
@@ -534,8 +514,6 @@ mod tests {
         }
     }
 
-    /// It rests on Stop: four presses of muscle memory, and the word the
-    /// silkscreen puts under that corner.
     #[test]
     fn the_corner_rests_on_stop_and_toggles_to_move() {
         let mut c = Chords::default();
@@ -546,9 +524,8 @@ mod tests {
         assert_eq!(c.mode(), Action::Stop, "a toggle, not a cycle");
     }
 
-    /// A hold under `Move` emits the same `Chord` shape a hold under
-    /// `Stop` does. The pairing of two taps into a move lives above this
-    /// module, which is why no new grammar was needed.
+    /// A hold under `Move` emits the same [`Gesture::Chord`] a hold under
+    /// `Stop` does; the pairing lives above this module ([`Action::Move`]).
     #[test]
     fn a_move_chord_is_an_ordinary_chord() {
         let mut c = Chords::default();
@@ -573,9 +550,7 @@ mod tests {
         );
     }
 
-    /// The mode is not a button that can be stuck down. A replug that
-    /// silently moved the corner back to Stop would be the surface lying
-    /// about itself.
+    /// The mode is not a button that can be stuck down ([`Chords::clear`]).
     #[test]
     fn a_replug_forgets_the_hold_and_keeps_the_mode() {
         let mut c = Chords::default();
@@ -586,15 +561,8 @@ mod tests {
         assert_eq!(c.mode(), Action::Move, "the mode is not");
     }
 
-    /// The bug that froze the grid, and the reason releases are matched
-    /// by **button** rather than by verb.
-    ///
-    /// The double-tap toggles on the release, so the press went down
-    /// under one verb and came up under another. Removing only the
-    /// current verb left the old one held with nothing under the thumb:
-    /// [`Chords::modifier`] kept answering `Some`, the whole grid stayed
-    /// in a preview, and the corner stayed white. There was no sequence
-    /// of presses that recovered it.
+    /// The bug that froze the grid: a press that went down under one verb
+    /// and came up under another ([`Chords::feed`]).
     #[test]
     fn toggling_the_mode_on_a_release_strands_nothing() {
         let mut c = Chords::default();

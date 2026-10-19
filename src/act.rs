@@ -36,8 +36,7 @@ pub enum Done {
     /// A pad came into your hand. **Nothing was written** — a pick-up
     /// that is never put down must leave anchord untouched.
     Picked(Slot),
-    /// A session changed address: one `tl.slot` write, and the agent
-    /// never learns it happened.
+    /// A session changed address ([`crate::chord::Action::Move`]).
     Moved {
         /// The session that moved, so its view can follow
         /// (`docs/06-views.md`).
@@ -71,9 +70,7 @@ impl std::fmt::Display for Done {
 /// Everything a press needs in order to act.
 ///
 /// Two fields and no third: the socket, and the same [`Pads`] the frame
-/// was drawn from. A press reads the grid and the purgeable rows
-/// **through** it, so there is nowhere left for this side to form its own
-/// opinion of what a pad is.
+/// was drawn from (module docs).
 #[derive(Debug, Clone, Copy)]
 pub struct Context<'a> {
     /// Where the sessions live.
@@ -88,18 +85,15 @@ impl Context<'_> {
     /// # Errors
     /// Whatever anchord returned. A refusal is reported, not retried.
     pub fn chord(&self, action: Action, at: Slot, pages: &Pages) -> Result<Done, anchor::Error> {
-        // The **consequence** dispatches, not the button. `Stop` carries
-        // two, and asking `effect` which one applies here is the same
-        // question the preview asked a frame ago — so there is still one
-        // predicate, and still no second place for it to disagree.
+        // The **consequence** dispatches, not the button: `Stop` carries
+        // two, and which one applies is the question the preview asked a
+        // frame ago.
         match effect(action, self.pads.at(at), self.pads.hand()) {
-            // `Holds` is the pad already in your hand. Putting it back
-            // where it came from is not a move and writes nothing, which
-            // is the same answer the preview gave by lighting it rather
-            // than dimming it.
-            // `Occupied` is a live session with your hand already full.
-            // It is not a swap and never has been — the colour changed,
-            // the answer did not.
+            // `Holds` is the pad already in your hand: putting it back
+            // where it came from is not a move and writes nothing.
+            // `Occupied` is a live session with your hand already full,
+            // and it is not a swap — the colour changed, the answer did
+            // not.
             Effect::None | Effect::Skips | Effect::Holds | Effect::Occupied => Ok(Done::Nothing),
             Effect::Acts(Consequence::Ends) => self.kill(at),
             Effect::Acts(Consequence::Forgotten) => Ok(self.forget(at)),
@@ -145,12 +139,10 @@ impl Context<'_> {
 
     /// Put the pad in your hand down here: **one label write.**
     ///
-    /// A pad's address is its `tl.slot` and nothing else, so moving a
-    /// session is rewriting one string. No process moves, no pane is
-    /// touched *here*, and the agent never learns it happened
-    /// (`docs/05-interaction.md#move-is-the-missing-verb`). The view
-    /// follows, but that is tmux's business and the caller's
-    /// (`docs/06-views.md`).
+    /// A pad's address is its `tl.slot` and nothing else
+    /// ([`crate::chord::Action::Move`]), so no process moves and no pane
+    /// is touched *here*. The view follows, but that is tmux's business
+    /// and the caller's (`docs/06-views.md`).
     ///
     /// Only the **drawn** session moves. Every ended row at the old
     /// address stays there, so the row it left still knows its directory
@@ -186,12 +178,10 @@ impl Context<'_> {
     /// which is the shape of a button you press twice
     /// (`docs/05-interaction.md#stop-does-kill-and-purge`).
     ///
-    /// A refusal on one id does not stop the others. anchord refuses a
-    /// row it has already forgotten, and a `purge` that gave up halfway
+    /// A refusal on one id does not stop the others, and the whole thing
+    /// cannot fail — which is why it returns no `Result`. anchord refuses
+    /// a row it has already forgotten, and a `purge` that gave up halfway
     /// would leave the pad in a state no further press could clear.
-    /// It cannot fail as a whole, which is why it returns no `Result`:
-    /// a stack that half-forgets has still forgotten something, and the
-    /// next reconcile draws whatever actually survived.
     fn forget(&self, at: Slot) -> Done {
         let mut forgotten = 0;
         for id in self.pads.rows(at) {
@@ -344,18 +334,12 @@ mod tests {
     /// It was found as a `tl.spec` that no longer resolved: the renderer
     /// counted the label alone and the press resolved it, so holding
     /// respawn painted the pad green — *this will respawn* — and the press
-    /// did nothing. The preview lied about the only thing it is there to
-    /// be believed about. Both the label and the respawn chord are gone;
-    /// the invariant they cost is what this still holds.
+    /// did nothing. Both the label and the respawn chord are gone; the
+    /// invariant they cost is what this still holds.
     ///
     /// Asserted as the two halves agreeing rather than as one expected
     /// colour: what matters is that the pixel and the press tell the same
     /// story, whichever story that is.
-    ///
-    /// Originally written against the respawn chord, which is gone
-    /// (`docs/05-interaction.md`). The invariant it guards is not:
-    /// the pixel and the press ask the same function, and a pad the
-    /// preview dims is a pad the press leaves alone.
     ///
     /// It reaches the dim arm because the purge map is **empty** — a
     /// dead pad anchord would forget is a target now

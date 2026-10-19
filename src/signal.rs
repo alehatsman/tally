@@ -118,14 +118,10 @@ pub enum SessionState {
 pub struct Derived {
     /// When a BEL was last seen. `None` if never.
     ///
-    /// **Recorded, not consulted.** No predicate reads it, and the one
-    /// that looks like it should must not: `docs/04-signals.md` writes
-    /// "bell since the last output" as a timestamp comparison, and the
-    /// BEL arrives *inside* an output chunk, so this and `last_output_ms`
-    /// are set to the same instant and `>=` versus `>` flips the answer.
-    /// The outstanding-bell flag is a flag for exactly that reason. Kept
-    /// because it is the only record of *when* a session last rang, and
-    /// the spec's mechanism sketch names it.
+    /// **Recorded, not consulted**, and the predicate that looks like it
+    /// should read it must not ([`Derived::feed`]). Kept because it is
+    /// the only record of *when* a session last rang, and
+    /// `docs/04-signals.md`'s mechanism sketch names it.
     pub last_bell_ms: Option<i64>,
     /// When output last arrived.
     pub last_output_ms: i64,
@@ -168,10 +164,7 @@ impl Derived {
             return;
         }
         // The scan runs first, because **`BEL` is also an OSC string
-        // terminator**. `ESC ] 0 ; title BEL` contains a `0x07` that is not
-        // a ring, and an agent that sets its terminal title would otherwise
-        // look like one that asked a question — a pad flashing amber for
-        // nothing, which is the failure M1 is counting.
+        // terminator** ([`crate::osc`]).
         let scan = self.scanner.feed(bytes);
         if let Some(title) = scan.titles.into_iter().next_back() {
             self.title = Some(title);
@@ -201,9 +194,8 @@ impl Derived {
 
     /// What the agent last called itself.
     ///
-    /// Allowed to be absent, always. Losing the title loses a word, never
-    /// a pad: no signal here may become load-bearing enough that losing it
-    /// breaks the surface.
+    /// Allowed to be absent, always: losing the title loses a word, never
+    /// a pad (module docs).
     pub fn title(&self) -> Option<&str> {
         self.title.as_deref()
     }
