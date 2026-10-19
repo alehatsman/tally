@@ -188,15 +188,20 @@ Code specifically, and against that agent it is the *only* one that fires.
 
 ```text
 ~/.claude/settings.json
-  Stop, Notification  →  tally attention on  || true
-  UserPromptSubmit    →  tally attention off || true
-  PreToolUse          →  tally attention off || true
+  Notification        →  tally attention blocked || true
+  Stop                →  tally attention done    || true
+  UserPromptSubmit    →  tally attention off     || true
+  PreToolUse          →  tally attention off     || true
 ```
 
 ```text
 tallyd, on the tick it already makes:
   tl.attention present  →  NeedsAnswer { source: Declared }
 ```
+
+**The amber reads presence and nothing else**, including a value this
+build has never heard of. A vocabulary that grows must not be able to put
+a light out.
 
 The hook talks to **anchord**, which tallyd is already polling. That buys
 more than it looks like:
@@ -252,17 +257,47 @@ hook's exit status. It is still one line on stderr, and the grid is already
 reporting the same outage as a dark red logo, which is the louder and
 correct channel.
 
-#### One bit, two states
+#### One bit, two states — and the word that split
 
-Both rising hooks write the same label and `tally attention on` takes no
-argument, so *blocked on a dialog* and *turn finished* are one string by the
-time anything sees them. That is right for the reader this was measured
-against — a human, for whom both mean *go look*. It is not obviously right
-for a program: `tally ls` is read by agents, and says `wants you` rather
-than `waiting for an answer` because the latter was false in the common
-case. Whether the two states should be told apart at all is
-[#23](https://github.com/alehatsman/tally/issues/23). **The amber is
-unchanged either way.**
+Both rising hooks used to write `"1"`, so *blocked on a dialog* and *turn
+finished* were one string by the time anything saw them. That is right for
+the reader this was measured against — a human, for whom both mean *go
+look* — and it stopped being right when `tally ls` acquired readers that
+are programs ([#23](https://github.com/alehatsman/tally/issues/23)).
+
+The two readers want opposite things from one bit:
+
+| the reader | wants | a wrong answer costs |
+|---|---|---|
+| a human at the grid | **recall** — never miss a session that wants me | a glance |
+| a program polling `tally ls` | **precision** — act only on *blocked* | a wrong action |
+
+**So the bit did not change and the word did.** `tl.attention` still
+raises the amber by being *present*; its **value** now names which hook
+wrote it.
+
+| the hook | the command | the value | `tally ls --json` |
+|---|---|---|---|
+| `Notification` | `tally attention blocked` | `blocked` | `"wants": "blocked"` |
+| `Stop` | `tally attention done` | `finished` | `"wants": "finished"` |
+| anything that did not say | `tally attention on` | `1` | `"wants": "unstated"` |
+
+**`on` is kept and is not an alias.** It is a third answer — *a hook
+declared something and did not say what* — and it is what every label
+written before this carries. A `settings.json` nobody updated keeps
+raising ambers, which matters because the install for this is prose in
+this document and there is no upgrade step that could have rewritten it.
+
+**Three things deliberately did not change.** The grid renders one amber
+for all three values; `SlotState` has no new variant; and `state` in
+`--json` still says `wants you` for every one of them —
+[07](07-cli.md#what-this-output-promises) already tells a program to
+branch on a key and never on the sentence, so the fix is another key.
+
+**What this unblocks:** [#13](https://github.com/alehatsman/tally/issues/13)
+needed a third origin on this bit — *a pad that consumed no input* — and
+could not have one while the bit carried two meanings in one string. It
+can now be a fourth word.
 
 ## Clearing attention
 

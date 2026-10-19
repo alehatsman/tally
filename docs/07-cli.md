@@ -336,12 +336,17 @@ saying `waiting for an answer`, which is false most of the times it printed:
 `Stop` fires every turn and `Notification` rarely, so the common case behind
 an amber is an agent sitting at a prompt with its work done. A supervisor
 that read *waiting for an answer* and went to unblock it was acting on a
-question nobody asked. `wants you` is true of both states, which is the most
-a listing can honestly print from one bit. **It is vague on purpose and it
-is not the fix** — [#23](https://github.com/alehatsman/tally/issues/23) is
-whether the two should be distinguished at all. This is the cost of a
-document acquiring a reader it was not written for
-([04](04-signals.md#one-bit-two-states)).
+question nobody asked. `wants you` is true of both states, and it
+**stays** — the picture is for a human, and a human wants recall.
+
+**The fix went into `--json`, not here**
+([#23](https://github.com/alehatsman/tally/issues/23)). The rising hook
+now names itself in the label's value and `--json` reports it as `wants`:
+`blocked`, `finished` or `unstated`. The pad is still one amber and the
+sentence is still `wants you`; what split is the key a program branches
+on. This is what a document acquiring a reader it was not written for
+costs — and the answer was a second key, not a different sentence
+([04](04-signals.md#one-bit-two-states--and-the-word-that-split)).
 
 **Which rows:** those holding at least one drawn session, plus the caller's,
 in address order. Sixty-four rows of dots is wallpaper. The trailing line —
@@ -380,6 +385,9 @@ choose between a silent exit 0 and a failure. A listing has no such problem.
     {"slot": "1:1:1", "session": "01M57RWW07PGARAA4BD4QN9PPE",
      "state": "running", "free": false,
      "cwd": "/repo/dotfiles", "claude": "c1567a67-…"},
+    {"slot": "1:2:1", "session": "01M57RWW07PGARAA4BD4QN9PPF",
+     "state": "wants you", "free": false, "wants": "blocked",
+     "cwd": "/repo/tally"},
     {"slot": "1:3:1", "session": "01M52ZZ5R4VJ8T1H6PQW3NXK2D",
      "state": "failed, exit 1", "free": true,
      "cwd": "/repo/anchor", "exit_code": 1}
@@ -400,6 +408,18 @@ a shell that was never on it.
 thing a caller is deciding on, and making it re-derive the predicate from a
 state string would be the second opinion this refuses.
 
+**`wants` is the other key a program branches on**, and it is present only
+when a hook declared something: `blocked` (a dialog or a question is up),
+`finished` (the turn ended and it is at its prompt), or `unstated` (a hook
+that did not say, which is every label written before #23). It is the
+*only* place the two are told apart — the pad is one amber and `state` is
+`wants you` for all three, because a human wants recall and a program
+wants precision ([04](04-signals.md#one-bit-two-states--and-the-word-that-split)).
+
+**Treat an unrecognised value as `unstated`.** The vocabulary can grow,
+and a reader that has not caught up must degrade to *wants you* rather
+than to *nothing*.
+
 ### What this output promises
 
 **Something parses this.** That is not hypothetical — it is the habit that
@@ -409,7 +429,7 @@ interface, so it owes them a statement of what moves.
 
 | | |
 |---|---|
-| **stable** — changing it is a break, and needs a reason in a document | `--json`'s keys and their meanings; the `you` / `unplaced` distinction; `free` as `frees_the_pad`; the exit codes; the glyph-per-colour mapping |
+| **stable** — changing it is a break, and needs a reason in a document | `--json`'s keys and their meanings; the `you` / `unplaced` distinction; `free` as `frees_the_pad`; `wants` and its three values, plus the rule that an unknown one reads as `unstated`; the exit codes; the glyph-per-colour mapping |
 | **not stable** — read it, do not parse it | the text picture: column widths, spacing, the key line, row ordering, which rows are shown |
 | **follows the device, not this document** | the glyph set. If the surface grows a colour, the text grows a glyph |
 
