@@ -693,11 +693,10 @@ impl Client {
 
     /// A socket to anchord, bounded in both directions.
     ///
-    /// Shared by [`Self::call`] and [`Self::attach`] because the two
-    /// opened it identically and the six lines drifting apart would be
-    /// the attach quietly losing its handshake bound. `attach` lifts the
-    /// read bound again once it is past the handshake, which is the one
-    /// difference and is argued there.
+    /// Shared by [`Self::call`] and [`Self::attach`], so neither can lose
+    /// its handshake bound. [`Self::attach`] lifts the read bound again
+    /// once it is past the handshake, which is the one difference and is
+    /// argued there.
     fn connect(&self) -> Result<UnixStream, Error> {
         let stream = UnixStream::connect(&self.path)?;
         stream.set_read_timeout(Some(TIMEOUT))?;
@@ -755,9 +754,8 @@ mod tests {
         assert_eq!(s.slot_label(), None);
     }
 
-    /// A session with only the two fields these tests are about. The
-    /// other eight carried no meaning in either test and were written out
-    /// twice; `src/watch.rs::tests` already does it this way.
+    /// A session with only the two fields these tests are about
+    /// ([`Session::fixture`]).
     fn session(state: &str, labels: BTreeMap<String, String>) -> Session {
         Session::fixture("x", state).with_labels(labels)
     }

@@ -1410,13 +1410,10 @@ impl Jump for Tmux {
         let clients = self.client_panes();
         self.record_origins(&clients, &pane);
 
-        // Switch **every** client — but every client is now one of
-        // tally's, because they are the only ones on this socket. Your
-        // personal server cannot be listed from here and so cannot be
-        // moved (`docs/06-views.md`).
-        //
-        // Zero clients is not an error: the view exists and is correct,
-        // and it is there the next time you attach.
+        // Switch **every** client: they are all tally's, because they are
+        // the only ones on this socket ([`SOCKET`]). Zero of them is not
+        // an error — the view exists and is there the next time you
+        // attach.
         for (client, _) in &clients {
             self.run(&switch_args(client, &pane))?;
         }
@@ -1472,10 +1469,8 @@ impl Jump for Tmux {
         let live = self.panes();
         let mut moved = false;
         for (client, pane) in taken {
-            // Through `row`, like every other read of this listing: the
-            // fields are `|`-separated and a hand-rolled split here went
-            // stale the moment that changed
-            // (`docs/06-views.md`).
+            // Through [`row`], like every other read of this listing: a
+            // hand-rolled split goes stale the day [`FIELD`] changes.
             if !live.lines().filter_map(row).any(|r| r.pane.id == pane) {
                 continue; // the origin closed while you were away
             }
