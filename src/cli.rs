@@ -227,9 +227,7 @@ impl Claim {
     /// consumes is this module's parser's — a count that would run past
     /// the last column is refused at parse time
     /// (`tests::a_count_that_leaves_the_row_is_refused`), so `at.col + n`
-    /// cannot leave the row and cannot overflow a `u8`. The function that *relies* on a
-    /// rule belongs next to the one that *enforces* it; it used to assert
-    /// the invariant in a doc comment from a file with no tests.
+    /// cannot leave the row and cannot overflow a `u8`.
     ///
     /// `None` is a page with no declared name, which is a grid the
     /// address cannot be spelled on.

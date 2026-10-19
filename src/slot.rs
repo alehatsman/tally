@@ -15,10 +15,8 @@ use crate::surface::Button;
 
 /// How many pages an address can name.
 ///
-/// It used to read *how many pages the top row can select*, and the top row
-/// stopped selecting them: a page is still how an address is written and
-/// what `slots.toml` declares, but it is no longer somewhere you jump —
-/// see [`ROWS`]. The count outlived the gesture that justified it.
+/// A page is how an address is written and what `slots.toml` declares; it
+/// is not somewhere you jump — see [`ROWS`].
 pub const PAGES: u8 = 8;
 
 /// Columns in a row — the grid's left-to-right edge.

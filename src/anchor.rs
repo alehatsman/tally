@@ -249,15 +249,9 @@ pub struct Session {
 /// A `Session` for tests: the two fields anchord always sends, and the
 /// defaults for the eight that carry `#[serde(default)]`.
 ///
-/// Five test modules hand-wrote this ten-field literal — `anchor`, `model`,
-/// `attention`, `watch` and `queue` — which declared the defaults twice:
-/// once on the field, once in every fixture. Adding a field meant editing
-/// five unrelated files, and a fixture that drifted from the struct was a
-/// test passing against a session anchord would never send.
-///
-/// The local `session(..)` helpers stay. They read well at the call site
-/// and each takes the arguments its own module varies; what they no longer
-/// do is restate what a default is.
+/// One home, so a `#[serde(default)]` is declared once rather than once
+/// per fixture. The local `session(..)` helpers stay: each takes the
+/// arguments its own module varies, and none of them restates a default.
 #[cfg(test)]
 impl Session {
     pub(crate) fn fixture(id: &str, state: &str) -> Self {

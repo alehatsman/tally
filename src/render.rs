@@ -142,16 +142,14 @@ pub fn next(waiting: bool) -> Cell {
 /// **The colour is the mode**, and it is the only thing that says which
 /// mode you are in — which is what makes a latched corner honest
 /// (`docs/05-interaction.md#changing-the-mode`). Red for *Stop*, the
-/// colour of what it does and the word on the silkscreen; turquoise for
-/// *Move*, which touches nothing that is running.
+/// colour of what it does; turquoise for *Move*, which touches nothing
+/// that is running.
 ///
 /// White while held, unchanged: it is the only feedback that the
-/// modifier is actually down, and it does not need to repeat the mode,
-/// because holding repaints the whole grid in the mode's colour.
+/// modifier is actually down, and it need not repeat the mode, because
+/// holding repaints the whole grid in the mode's colour.
 ///
-/// `CC49`-`CC79` carry no gesture and are dark: a button lit like a live
-/// one that does nothing when you press it is worse than an unlit button,
-/// because you press it twice.
+/// `CC49`-`CC79` carry no gesture and are dark ([`arrow`]).
 pub fn action(button: Option<Action>, held: bool) -> Cell {
     match (button, held) {
         (None, _) => Cell::Off,
@@ -171,21 +169,17 @@ pub fn action(button: Option<Action>, held: bool) -> Cell {
 ///
 /// Each colour is the colour of the **consequence**, not of the button —
 /// and it takes no [`Action`] at all, which is that sentence stated in
-/// the type. One button now carries two consequences
-/// (`docs/05-interaction.md`), so a colour derived from the button
-/// would have to be wrong about one of them.
+/// the type: one button carries two consequences, so a colour derived
+/// from the button would have to be wrong about one of them.
 ///
 /// Nothing here pulses — a preview lasts as long as your thumb does, and
 /// motion on sixty pads for two seconds is noise. The pad in your hand
 /// is the one exemption, and it flashes rather than pulses.
 ///
 /// **Dim is not always the skipped level.** Under a held Stop, bright is
-/// the target and dim is what will be spared. Under a held Move with a
-/// pad in hand it inverts: most of the grid is a legal destination, so
-/// dim is the target and bright is what is in the way. The two readings
-/// cannot collide; the [`Consequence::Dropped`] arm below says why, and
-/// names the test that pins it
-/// (`docs/05-interaction.md#picking-something-up-flips-the-question-not-the-board`).
+/// the target and dim is what will be spared; with a pad in hand it
+/// inverts. The two readings cannot collide
+/// ([`crate::effect::effect`]).
 #[expect(
     clippy::match_same_arms,
     reason = "skipped and droppable are the same pixel for different reasons, \
@@ -215,10 +209,8 @@ pub fn preview(effect: Effect) -> Cell {
         // held Stop. The two never share a frame; [`crate::effect::effect`]
         // says why.
         Effect::Acts(Consequence::Dropped) => Cell::Static(DARK_GREY),
-        // The pad in your hand: turquoise, like every other occupied
-        // pad, and the only one that moves. It is one of them, and it
-        // is the one you are carrying — hue says the first, motion says
-        // the second.
+        // The pad in your hand: one of the occupied pads, and the one
+        // you are carrying — hue says the first, motion says the second.
         //
         // **Flash, not pulse.** Both run on the one clock
         // ([`crate::tempo`]), so picking the shorter figure — one beat

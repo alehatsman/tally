@@ -32,10 +32,7 @@ const USAGE_ERROR: u8 = 2;
 /// The prologue of every subcommand but `help`, and the failure is the
 /// same in all of them: with anchord down there is no grid, and an empty
 /// list would read as "nothing is running" when what we have is "I cannot
-/// tell" ([`tally::anchor::Error::Unreachable`]). It was six copies of
-/// this block, four of them byte-identical, and three of the six carried
-/// no comment at all -- which is the tell that they were pasted rather
-/// than decided.
+/// tell" ([`tally::anchor::Error::Unreachable`]).
 fn connected() -> Result<(Client, Vec<tally::anchor::Session>), ExitCode> {
     let client = Client::new(Client::default_path());
     match client.list() {
@@ -51,7 +48,7 @@ fn connected() -> Result<(Client, Vec<tally::anchor::Session>), ExitCode> {
 ///
 /// An undeclared page has no spelling, so there is no `tl.slot` to write
 /// and nothing to print: the address the user typed cannot be said back
-/// to them. Four subcommands reach this and said so in four places.
+/// to them.
 fn address_of(at: Slot, pages: &Pages) -> Result<String, ExitCode> {
     at.label(pages).ok_or_else(|| {
         eprintln!("tally: that address has no page name");

@@ -539,18 +539,14 @@ fn pane_title_args(pane: &str, title: &str) -> Vec<String> {
 /// stale the moment the pane is rebound to another session; `#{@…}`
 /// expands at draw time, so the line is right by construction.
 ///
-/// The id goes early because the line is truncated at pane width — a
-/// narrow split loses the tail, never the payload. `attach exit` is named
-/// for what it is: the pane runs `anchor attach`, so the status is the
-/// attach client's, not the agent's.
+/// `attach exit` is named for what it is: the pane runs `anchor attach`,
+/// so the status is the attach client's, not the agent's.
 ///
-/// **The conversation goes first, ahead of the anchor id**
-/// (`docs/06-views.md`). The rule is *payload early, because
-/// the tail is what truncation eats*. Measured at 80 columns with the
-/// conversation second,
-/// the cut landed mid-UUID — `claude --resume c1567a67-d7e0` — and half
-/// an id resumes nothing, while half an anchor id costs nothing: it names
-/// a PTY that is gone by the time you are reading this line.
+/// **Payload early, because the tail is what truncation eats**
+/// (`docs/06-views.md`). Measured at 80 columns with the conversation
+/// second, the cut landed mid-UUID — `claude --resume c1567a67-d7e0` —
+/// and half an id resumes nothing, while half an anchor id costs
+/// nothing: it names a PTY that is already gone.
 fn dead_pane_format() -> String {
     // The conversation is conditional on itself: an **unset** user option
     // takes the false branch, so a view of a plain shell keeps exactly
@@ -1581,8 +1577,7 @@ mod tests {
         assert_eq!(row_session(64), "r64");
     }
 
-    /// Creating a view must not move anybody: the switch is a separate,
-    /// deliberate step.
+    /// Creating a view must not move anybody ([`new_window_args`]).
     #[test]
     fn opening_a_view_in_a_row_does_not_steal_focus() {
         let args = new_window_args(PLACE, SESSION, "anchor", false);
@@ -1594,10 +1589,8 @@ mod tests {
         );
     }
 
-    /// The column *is* the window index, so a row reads left to right
-    /// whatever order its tabs arrived in — and with nothing to order,
-    /// there is no insertion rule left to get wrong
-    /// (`docs/06-views.md`).
+    /// The column *is* the window index ([`window_target`]), so there is
+    /// no insertion rule left to get wrong.
     #[test]
     fn a_column_is_the_window_index() {
         let args = new_window_args(Place { row: 7, col: 3 }, SESSION, "anchor", false);
@@ -1886,9 +1879,7 @@ mod tests {
     }
 
     /// Aimed at the pane, never at a bare `rNN:`, and `-d` so that a
-    /// relocation moves nobody. Measured against tmux 3.6b in
-    /// `docs/06-views.md`; this pins the arguments that measurement
-    /// was made with.
+    /// relocation moves nobody ([`swap_window_args`]).
     #[test]
     fn a_swap_names_the_pane_and_does_not_follow_it() {
         let args = swap_window_args("%7", MOVED_TO);
@@ -1900,10 +1891,9 @@ mod tests {
         assert_eq!(args[target + 1], "r02:1", "{args:?}");
     }
 
-    /// `dead_view_at` asks *"is there a corpse claiming this address"*,
-    /// so a corpse claiming a **different** one is invisible to it and
-    /// wedged the pad forever (`docs/06-views.md`). This one asks
-    /// about the window instead, which is the question that was missing.
+    /// A corpse claiming a **different** address is invisible to
+    /// [`dead_view_at`] and wedged the pad forever; this one asks about
+    /// the window instead.
     #[test]
     fn the_occupant_is_found_by_its_window_whatever_it_claims() {
         let listing = "%8|1|01DEAD|1:9:9|r02|1\n";
@@ -2013,11 +2003,10 @@ mod tests {
         assert_eq!(dead.id, "%4");
     }
 
-    /// The bug a window option would reintroduce: every pane in the
-    /// window inherits it, so a split of a view claims the same session
-    /// — and `remain-on-exit` is pane-scoped for a second reason, that an
-    /// adopted view sits among panes that are yours. One function now, so
-    /// one test: every option [`Tmux::tag`] writes goes through it.
+    /// The bug a window option would reintroduce ([`PANE_OPTION`]), and
+    /// `remain-on-exit` is pane-scoped for a second reason: an adopted
+    /// view sits among panes that are yours. One function, so one test —
+    /// every option [`Tmux::tag`] writes goes through it.
     #[test]
     fn every_tag_is_a_pane_option_not_a_window_one() {
         for name in [
@@ -2115,10 +2104,9 @@ mod tests {
         );
     }
 
-    /// The one command whose arguments used to be inlined, and so the
-    /// one nothing pinned. [`clients`] reads the two fields back out by
-    /// splitting on the space between them, so the format is half of a
-    /// contract the parser holds the other half of.
+    /// [`clients`] reads the two fields back out by splitting on the
+    /// space between them, so the format is half of a contract the parser
+    /// holds the other half of.
     #[test]
     fn a_client_is_listed_with_the_pane_it_is_on() {
         let args = list_clients_args();
@@ -2322,10 +2310,8 @@ mod tests {
         assert_eq!(o.get("/dev/ttys003").map(String::as_str), Some("%5"));
     }
 
-    /// The bug the journal caught an hour after shipping. `docs/16`
-    /// assumed you jump *from* nvim; every pane this grid is used from is
-    /// an anchor session, so every candidate origin was a view and `◄`
-    /// never had anywhere to go.
+    /// The bug the journal caught an hour after shipping
+    /// ([`Tmux::origin`]).
     #[test]
     fn standing_in_a_view_still_counts_as_somewhere_to_come_back_to() {
         let t = Tmux::default();
@@ -2337,8 +2323,7 @@ mod tests {
     }
 
     /// `next → next → next → back` must land where you started, not three
-    /// agents deep. Held by *first jump wins* rather than by refusing to
-    /// record views, which is what made `◄` useless.
+    /// agents deep ([`Tmux::origin`]).
     #[test]
     fn a_chained_jump_does_not_overwrite_where_you_started() {
         let t = Tmux::default();
