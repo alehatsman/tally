@@ -1010,7 +1010,13 @@ fn reconcile(
     // `purgeable` is recomputed on the error arm too, which is
     // free: `sessions` is deliberately kept on a failed list, so
     // the answer is the one it already had.
-    (model::purgeable(sessions, pages), tmux.viewing())
+    let viewed = tmux.viewing();
+    // Same reason, same clock: `can_go_back` is read on every frame and
+    // must stay a map lookup, so the fork that tells a closed origin
+    // from a live one happens here. `◄` is lit by the map this
+    // leaves behind.
+    tmux.prune_origins();
+    (model::purgeable(sessions, pages), viewed)
 }
 
 /// Read the queue off the journal: which slot `►` would offer, and how
