@@ -16,6 +16,7 @@ mod bestiary;
 mod claude;
 mod colour;
 mod fire;
+mod grid;
 mod life;
 mod pacman;
 mod plasma;
@@ -61,8 +62,11 @@ pub enum Piece {
 impl Piece {
     /// Every piece, in the order `Drums` walks them.
     ///
-    /// Three that are only pretty, two that are classics, and the joke
-    /// last — a reel ends on the thing worth filming.
+    /// The animals first and the joke last — a reel opens on the one that
+    /// is somebody and ends on the thing worth filming. What is in between
+    /// is fields, simulations and two arcade cabinets, and the count is
+    /// `REEL.len()` rather than a number written in prose: this doc said
+    /// "three, two and the joke" for a reel that had grown to nine.
     pub const REEL: [Self; 9] = [
         Self::Bestiary,
         Self::Claude,
@@ -252,9 +256,8 @@ mod tests {
     use crate::surface::{Cell, TOP_BUTTONS};
 
     fn grid(f: &Frame) -> Vec<Cell> {
-        (1..=8u8)
-            .flat_map(|row| (1..=8u8).map(move |col| Button::Grid { row, col }))
-            .map(|b| f.get(b))
+        grid::pads()
+            .map(|(row, col)| f.get(Button::Grid { row, col }))
             .collect()
     }
 
@@ -282,8 +285,9 @@ mod tests {
         }
     }
 
-    /// Three presses from the grid and back to it. Nobody has to know how
-    /// many pieces there are to get out.
+    /// Round the reel and back to the grid. Nobody has to know how many
+    /// pieces there are to get out — which is also why this walks
+    /// `REEL.len()` rather than a number.
     #[test]
     fn the_reel_wraps_back_to_no_art() {
         let mut at = None;
@@ -384,6 +388,47 @@ mod tests {
         assert_eq!(f.get(Button::Grid { row: 1, col: 1 }), Cell::Off);
     }
 
+    /// [`Life::paint`] used to carry its own copy of the walk, the index
+    /// and the ramp arithmetic. It goes through
+    /// [`colour::paint_heat`] now, and this pins the thing that made that
+    /// safe: the two agree on **every** heat a pad can hold, not just on
+    /// the three the wake test happens to look at.
+    #[test]
+    fn life_and_paint_heat_agree() {
+        for h in 0..=life::HEAT_MAX {
+            let mut life = Life::seeded(rng::SEED);
+            life.cells = 0;
+            life.heat = [h; 64];
+            let mut f = Frame::dark();
+            life.paint(&mut f);
+            // The rule as `Life` wrote it before the move: dark at no
+            // heat, otherwise `HEAT_MAX - h` steps down the ember.
+            let want = if h == 0 {
+                Cell::Off
+            } else {
+                let step = usize::from(life::HEAT_MAX.saturating_sub(h));
+                Cell::Static(colour::EMBER[step])
+            };
+            assert!(grid(&f).iter().all(|&c| c == want), "heat {h}");
+        }
+    }
+
+    /// [`Piece::LOOP`] claims to be the longest loop in the reel, and two
+    /// tests walk every piece for exactly that many frames. A piece whose
+    /// own loop outgrew it would be walked short, and the part that was
+    /// never reached is the part nothing checks.
+    #[test]
+    fn the_declared_loop_outlasts_every_piece() {
+        for len in [
+            uprising::UPRISING_LOOP,
+            bestiary::BESTIARY_LOOP,
+            pacman::PACMAN_LOOP,
+            claude::CLAUDE_LOOP,
+        ] {
+            assert!(len <= Piece::LOOP, "{len} frames outruns Piece::LOOP");
+        }
+    }
+
     /// The joke lands. By the end every lit pad is the face, it is yellow
     /// — the one palette entry the product itself never spends — and
     /// nothing else is on.
@@ -391,8 +436,7 @@ mod tests {
     fn the_uprising_ends_on_a_smile() {
         let mut f = Frame::dark();
         uprising::paint(uprising::UPRISING_LOOP - 1, &mut f);
-        let lit: Vec<(u8, u8)> = (1..=8u8)
-            .flat_map(|row| (1..=8u8).map(move |col| (row, col)))
+        let lit: Vec<(u8, u8)> = grid::pads()
             .filter(|&(row, col)| f.get(Button::Grid { row, col }) != Cell::Off)
             .collect();
         assert_eq!(
@@ -577,9 +621,8 @@ mod tests {
         );
     }
 
-    /// Nothing in the reel sits still. Six pieces, and the frozen-grid
-    /// check applies to all of them rather than to the three that had one
-    /// written by hand.
+    /// Nothing in the reel sits still. The frozen-grid check applies to
+    /// every piece rather than to the three that had one written by hand.
     #[test]
     fn no_piece_in_the_reel_stalls() {
         for piece in Piece::REEL {
@@ -601,9 +644,9 @@ mod tests {
         }
     }
 
-    /// The reel is six and walking it is six presses. A piece added to
-    /// `REEL` and forgotten in `name` would print the wrong thing in the
-    /// log, which is the only place a press is recorded.
+    /// Walking the reel takes as many presses as it has pieces. A piece
+    /// added to `REEL` and forgotten in `name` would print the wrong
+    /// thing in the log, which is the only place a press is recorded.
     #[test]
     fn every_piece_in_the_reel_is_named_and_reachable() {
         let mut at = None;
