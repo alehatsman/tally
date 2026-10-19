@@ -10,9 +10,12 @@ repository = "https://github.com/alehatsman/tally"
 # (ROADMAP.md, F3; docs/12-install.md).
 publish = false
 
-# tally is one crate, so it is its own workspace root -- which is what
-# `[workspace.lints]` below needs to exist.
+# tally is its own workspace root -- which is what `[workspace.lints]` below
+# needs to exist -- and the bridge is the one other member, so it inherits
+# the same lints. `cargo test` here means tally alone and
+# `--workspace` takes the bridge too (docs/13-bridge.md).
 [workspace]
+members = ["bridge"]
 
 [lints]
 workspace = true
