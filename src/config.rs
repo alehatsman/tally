@@ -13,10 +13,13 @@
 //! config is eight unnamed pages, which is a fully working grid — it
 //! lights up for anything a shell script labelled.
 //!
-//! A *malformed* file is a different matter and is treated differently:
-//! it is reported and then ignored, and tallyd runs on defaults. Refusing
-//! to start would take away the watching to punish a mistake in the
-//! naming, and watching is the half that is load-bearing.
+//! A *malformed* file is a different matter, and **this module reports
+//! it and the caller decides** — the two callers decide opposite ways,
+//! and this is the canonical statement of both. tallyd carries on with
+//! defaults: refusing to start would take away the watching to punish a
+//! mistake in the naming, and watching is the half that is load-bearing.
+//! `tally spawn` stops instead, because the page names are what decide
+//! where a session lands and guessing is how you lose one.
 
 use std::collections::BTreeSet;
 use std::fmt;
