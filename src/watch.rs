@@ -21,23 +21,31 @@ pub type Signals = BTreeMap<String, Derived>;
 
 /// Supervises one watcher per live slot.
 ///
-/// **Every lock here is taken with `if let Ok`, never `unwrap`.** A
-/// poisoned mutex costs signals; a `tallyd` that panics costs the grid,
-/// and the grid falls back to a list that is still truthful. That is the
-/// same policy [`crate::journal::Sink`] writes down for a failing journal,
-/// inherited here rather than restated — except for what it costs, which
-/// is not the same in all three places:
+/// **A poisoned lock here is ignored, not treated as fatal.**
 ///
-/// - [`Self::snapshot`] yields an empty map: one dark frame, recovered on
-///   the next tick.
-/// - [`Self::retain_known`] skips one prune: the map grows by a tick,
-///   recovered on the next one.
-/// - [`Self::reconcile`] is the one that does **not** self-heal. `fresh`
-///   is false whenever the `watching` lock is poisoned, so `Self::spawn`
-///   is never called; a mutex stays poisoned for the life of the process,
-///   so no session is watched again until `tallyd` restarts. Survivable
-///   only because the pad is still green and `►` still jumps — the grid
-///   loses derived attention, not the sessions.
+/// Both mutexes guard a plain collection — a `BTreeSet<String>` and a
+/// [`Signals`] map — and every mutation under them is a single collection
+/// call. There is no multi-field invariant a panic could leave torn, so
+/// poisoning here carries no information. The `if let Ok` / `is_ok_and`
+/// spellings this replaced were not being careful; they were dropping the
+/// work and saying nothing.
+///
+/// What they cost, which the header they replaced got wrong in two places
+/// out of three: a `Mutex` stays poisoned for the life of the process, so
+/// **none** of these self-healed on the next tick.
+///
+/// - [`Self::reconcile`] made `fresh` false for every session forever, so
+///   no watcher was ever started again. `tallyd` kept running and the grid
+///   kept rendering from the anchord list, so nothing looked wrong and
+///   nothing was logged.
+/// - [`Self::snapshot`] returned an empty map every tick, not one dark
+///   frame — every derived signal gone until a restart.
+/// - [`Self::retain_known`] skipped the prune every tick, not one, so the
+///   map grew for the life of the process.
+///
+/// Ignoring the poison restores all three to ordinary operation. The panic
+/// that set it still killed its own watcher, and the reconcile starts a
+/// fresh one.
 #[derive(Debug, Clone)]
 pub struct Watchers {
     client: Client,
@@ -46,6 +54,13 @@ pub struct Watchers {
     /// when it ends, and the next reconcile starts a fresh one if the
     /// session is still live.
     watching: Arc<Mutex<BTreeSet<String>>>,
+}
+
+/// Take one of this module's locks, ignoring poisoning.
+///
+/// The reasoning, and what the previous spellings cost, is on [`Watchers`].
+fn held<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 impl Watchers {
@@ -61,10 +76,7 @@ impl Watchers {
     /// Start a watcher for every live slot that lacks one.
     pub fn reconcile(&self, sessions: &[Session], pages: &Pages, now: i64) {
         for session in crate::model::needs_watcher(sessions, pages) {
-            let fresh = self
-                .watching
-                .lock()
-                .is_ok_and(|mut w| w.insert(session.id.clone()));
+            let fresh = held(&self.watching).insert(session.id.clone());
             if fresh {
                 self.spawn(&session.id, now);
             }
@@ -73,16 +85,14 @@ impl Watchers {
 
     /// A copy of the current signals, for rendering.
     pub fn snapshot(&self) -> Signals {
-        self.signals.lock().map(|s| s.clone()).unwrap_or_default()
+        held(&self.signals).clone()
     }
 
     /// Forget sessions anchord no longer reports, so the map does not grow
     /// for the life of the process.
     pub fn retain_known(&self, sessions: &[Session]) {
         let known: BTreeSet<&str> = sessions.iter().map(|s| s.id.as_str()).collect();
-        if let Ok(mut signals) = self.signals.lock() {
-            signals.retain(|id, _| known.contains(id.as_str()));
-        }
+        held(&self.signals).retain(|id, _| known.contains(id.as_str()));
     }
 
     fn spawn(&self, id: &str, now: i64) {
@@ -97,15 +107,11 @@ impl Watchers {
                 // Releasing the slot here is what makes a dropped watcher
                 // recoverable: the next reconcile sees no thread for a
                 // still-live session and starts a fresh one.
-                if let Ok(mut w) = watching.lock() {
-                    let _was_there = w.remove(&owned);
-                }
+                let _was_there = held(&watching).remove(&owned);
             });
         if let Err(e) = spawned {
             eprintln!("tallyd: could not start a watcher for {id}: {e}");
-            if let Ok(mut w) = self.watching.lock() {
-                let _was_there = w.remove(id);
-            }
+            let _was_there = held(&self.watching).remove(id);
         }
     }
 }
@@ -123,9 +129,7 @@ fn run(client: &Client, id: &str, signals: &Arc<Mutex<Signals>>, now: i64) {
     // From 0 the first time; from `scanned_to` after a drop, so a watcher
     // that fell behind does not re-read the whole log -- worst on exactly
     // the busy sessions that caused the drop.
-    let from = signals
-        .lock()
-        .map_or(0, |s| s.get(id).map_or(0, |d| d.scanned_to));
+    let from = held(signals).get(id).map_or(0, |d| d.scanned_to);
     let mut packets = match client.attach(id, from) {
         Ok(f) => f,
         Err(e) => {
@@ -133,20 +137,16 @@ fn run(client: &Client, id: &str, signals: &Arc<Mutex<Signals>>, now: i64) {
             return;
         }
     };
-    if let Ok(mut s) = signals.lock() {
-        let _existing = s
-            .entry(id.to_owned())
-            .or_insert_with(|| Derived::starting_at(now));
-    }
+    let _existing = held(signals)
+        .entry(id.to_owned())
+        .or_insert_with(|| Derived::starting_at(now));
 
     while let Some(packet) = packets.next_packet() {
         match packet {
             Packet::Output { bytes, .. } => {
                 let at = crate::now_ms();
-                if let Ok(mut s) = signals.lock() {
-                    if let Some(d) = s.get_mut(id) {
-                        d.feed(&bytes, at);
-                    }
+                if let Some(d) = held(signals).get_mut(id) {
+                    d.feed(&bytes, at);
                 }
             }
             // An exit ends the watcher. Whatever was derived while it ran
@@ -199,6 +199,56 @@ mod tests {
         assert!(
             w.watching.lock().expect("lock").is_empty(),
             "watcher must release its slot"
+        );
+    }
+
+    /// Poison both mutexes, then use the `Watchers` normally.
+    ///
+    /// The regression for the defect the review found. A poisoned
+    /// `watching` used to make [`Watchers::reconcile`]'s `fresh` false for
+    /// every session forever, so no watcher was ever started again — and a
+    /// `Mutex` stays poisoned for the life of the process, so it never came
+    /// back. `tallyd` kept running and the grid kept rendering from the
+    /// anchord list, so nothing looked wrong and nothing was logged.
+    /// `snapshot` and `retain_known` had the same shape with quieter
+    /// symptoms: every signal gone, and a map that grew until restart.
+    ///
+    /// Both halves here are deterministic — no thread is relied on. The
+    /// signals half is the observable one: before the fix `snapshot`
+    /// returned an empty map and this assertion failed.
+    #[test]
+    fn a_poisoned_lock_does_not_stop_the_watchers() {
+        fn poison<T: Send + 'static>(m: &Arc<Mutex<T>>) {
+            let m = Arc::clone(m);
+            let _expected = std::thread::spawn(move || {
+                let _guard = m.lock().expect("fresh mutex");
+                panic!("poison it");
+            })
+            .join();
+        }
+
+        let w = Watchers::new(Client::new("/nonexistent/anchor.sock"));
+        let _seeded = held(&w.signals).insert("here".to_owned(), Derived::starting_at(0));
+        poison(&w.signals);
+        poison(&w.watching);
+        assert!(w.signals.is_poisoned() && w.watching.is_poisoned());
+
+        // Was: an empty map, every tick, until a restart.
+        assert_eq!(
+            w.snapshot().into_keys().collect::<Vec<_>>(),
+            ["here"],
+            "a poisoned lock must not erase the signals"
+        );
+
+        // Was: the prune skipped, every tick, until a restart.
+        w.retain_known(&[]);
+        assert!(w.snapshot().is_empty(), "retain_known must still prune");
+
+        // Was: `fresh` false for every session, so `spawn` was never called
+        // and nothing was ever watched again.
+        assert!(
+            held(&w.watching).insert("a".to_owned()),
+            "the watching set must still be usable"
         );
     }
 
