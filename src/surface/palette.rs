@@ -1,12 +1,13 @@
 //! The colour vocabulary, verified against hardware in M0.
 //!
 //! Named rather than numeric at every call site: a bare `9` in render code
-//! is a number nobody can check, and [`crate::render`] is the only place
-//! that gets to decide what a colour *means*.
+//! is a number nobody can check. [`crate::render`] is where a colour gets
+//! a *meaning* in the state language; `crate::art` spends the same entries
+//! for their hue alone, which is why the two never argue about one.
 //!
 //! Every entry here was confirmed by looking at a real Launchpad Mini MK3.
-//! Two are no longer used by anything — they stay because what the device
-//! does with them is a fact worth keeping, and re-deriving it costs a
+//! One is no longer used by anything — it stays because what the device
+//! does with it is a fact worth keeping, and re-deriving it costs a
 //! device and an afternoon.
 
 /// A palette entry, `0..=127`.
@@ -65,9 +66,8 @@ pub const RED: Entry = 5;
 pub const DARK_RED: Entry = 7;
 /// Orange. **Needs an answer** — the one colour the product lives or dies
 /// by, and since `9b2eee5` the only thing that moves on the resting
-/// surface. A held Move flashes the pad in your hand — faster than this,
-/// deliberately, because a flash is one beat where this ramp is two and
-/// the clock they share is not allowed to move for it
+/// surface. The one pad allowed to outrun it is the pad in your hand, and
+/// [`crate::render::preview`] is where that is paid for
 /// (`docs/05-interaction.md#picking-something-up-flips-the-question-not-the-board`).
 pub const AMBER: Entry = 9;
 /// Yellow with a green cast.
@@ -78,27 +78,26 @@ pub const AMBER: Entry = 9;
 pub const YELLOW: Entry = 13;
 /// Green. **Alive**, and nothing finer than that.
 ///
-/// It is static, always. Green used to pulse for *producing output* and
-/// sit still for idle, and a day beside it reported the motion as tiring
-/// — so motion is spent only on [`AMBER`] now, and the cost is that
-/// working and quiet look identical
-/// (`docs/05-interaction.md#nothing-blinks-and-only-attention-moves`).
+/// Static, always — [`crate::render`]'s header records what a green pulse
+/// was measured to cost. The price here is that working and quiet look
+/// identical (`docs/05-interaction.md#nothing-blinks-and-only-attention-moves`).
 pub const GREEN: Entry = 21;
 /// A second green, close to [`GREEN`] but distinguishable by eye.
 ///
-/// Unused, and the reason is worth keeping: it *was* "exited clean", and
-/// three greens on one grid proved legible yet unmemorable.
+/// The colour language does not use it, and the reason is worth keeping:
+/// it *was* "exited clean", and three greens on one grid proved legible
+/// yet unmemorable. `art::rain` spends it as a ramp step, which asks
+/// nothing of memory.
 pub const DARK_GREEN: Entry = 23;
 /// Cyan. **Move at rest, and a session that is there** — a pad you could
 /// pick up with an empty hand, every occupied pad once your hand is full,
 /// and, flashing against [`OFF`], the pad in your hand
 /// ([`crate::render::action`], [`crate::render::preview`]).
 ///
-/// It failed once, as a page button lit beside a white current page: both
-/// were legible and neither said which was which, the same way the three
-/// greens failed, so the row went to one bright thing and [`DARK_GREY`]
-/// took the role. One button is not a row and the failure mode does not
-/// reach it, which is why the entry came back rather than staying retired
+/// It was retired once, as a page button lit beside a white current page:
+/// both were legible and neither said which was which, the same way the
+/// three greens failed. One button is not a row, so the failure mode does
+/// not reach the corner, which is why the entry came back
 /// (`docs/05-interaction.md#picking-something-up-flips-the-question-not-the-board`).
 pub const TURQUOISE: Entry = 37;
 /// Blue. Unused: it *was* the action button at rest, until the kill
