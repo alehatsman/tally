@@ -85,11 +85,17 @@ impl SlotState {
     ///
     /// Dark, failed, or held only by a row anchord lost to its own
     /// restart. **One predicate, and it lives on the state rather than on
-    /// a pad** because the two things that ask are a grid and a shell, and
-    /// only one of them has a [`crate::effect::Pad`] to ask with. They did
-    /// not share one before, and a grid that disagrees with the CLI about
-    /// what a pad is, is a grid that lies about what pressing it does
+    /// a pad** because the things that ask are shells (`tally spawn`/`fork`
+    /// and `tally ls --json`'s `free` key), which have a state and no
+    /// [`crate::effect::Pad`] to ask with. They did not share one before,
+    /// and a CLI that disagrees with itself about what a pad is, is one
+    /// that lies about what spawning onto it does
     /// ([#9](https://github.com/alehatsman/tally/issues/9)).
+    ///
+    /// **The grid does not ask it, on purpose.** `>` ([`crate::model::row_launch`])
+    /// skips a failed pad that `tally spawn` would reclaim: a one-press tap
+    /// must not bury a red pad you have not gone to look at, whereas a typed
+    /// `spawn` names the pad and says so.
     #[must_use]
     pub fn frees_the_pad(self) -> bool {
         matches!(
