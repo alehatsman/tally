@@ -99,7 +99,7 @@ pub struct Pad {
 impl Pad {
     /// Alive: working, quiet, or asking. The three states a kill ends and
     /// a mute is about.
-    fn alive(self) -> bool {
+    pub fn alive(self) -> bool {
         matches!(
             self.state,
             Some(SlotState::Working | SlotState::Quiet | SlotState::NeedsAnswer { .. })
