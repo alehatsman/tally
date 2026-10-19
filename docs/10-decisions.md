@@ -40,6 +40,41 @@ and an afternoon.
 
 → [05](05-interaction.md#why-the-colour-language-is-one-sentence)
 
+### D26 — The health light answered two questions
+
+**Built:** `CC99` as a three-state light — dark when healthy, dark red for
+an unreachable `anchord`, amber pulsing when a session *off the visible
+window* needed an answer. Unreachable outranked amber. Both meanings were
+argued for: health is visible from further away than `►`, so the logo
+carried the half of attention the grid could not show.
+
+**Found:** reported from the desk as a **bug**. The light sits dark all day,
+then scrolling the window lights it — and the only honest reading of that is
+*the scroll button leaked into the logo*. Nothing leaked; the second meaning
+was simply unguessable, because the light's other state is a fault and the
+eye files any change on it under *something is wrong*.
+
+The dark idle was the other half. **Dark is also what a dead `tallyd` leaves
+behind** — shutdown clears all 81 LEDs
+([08](08-daemon.md#shutdown-is-not-optional)) — so *working* and *not
+running at all* were the same picture, and the one question the health light
+exists to answer could not be answered by looking at it.
+
+**Now:** health only, and lit at rest. Green 21 while the stack is up, dark
+red 7 for an unreachable `anchord`, off for *no daemon*. The amber went to
+`►`, which already pulsed for the same fact and is the thing you press.
+
+**The rule it produced:** *a light whose other state is a fault cannot be
+lent out.* Whatever else it says will be read as alarm. And the corollary
+that cost more: **off is a state, not a default** — a light that rests dark
+is indistinguishable from a light nobody is driving.
+
+**The cost, named:** while an art owns the grid, off-window attention is
+reported by `►` alone, where it used to be on two lights. One light, and it
+is the actionable one.
+
+→ [05](05-interaction.md#the-logo-is-the-health-light)
+
 ### D2 — The hard amber flash
 
 **Built:** attention as a 50% duty-cycle flash, channel 2. Checked on

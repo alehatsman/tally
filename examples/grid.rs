@@ -1,7 +1,7 @@
 //! A realistic grid, rendered through the real `render::slot` path.
 //! Changing the colour language changes this picture — which is the point.
 
-use tally::render::{self, Health};
+use tally::render;
 use tally::signal::{SlotState, Source};
 use tally::surface::{Button, Cell, Frame};
 
@@ -47,13 +47,7 @@ fn main() {
             ),
         );
     }
-    f.set(
-        Button::Logo,
-        render::logo(Health {
-            anchord_reachable: true,
-            offscreen_attention: false,
-        }),
-    );
+    f.set(Button::Logo, render::logo(true));
 
     let bytes = f.repaint();
     let moving = Button::all()

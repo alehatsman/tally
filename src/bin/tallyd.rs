@@ -461,10 +461,10 @@ fn advance_art(reel: Option<&mut Reel>, wake: &mut bool) {
 ///
 /// The art owns the sixty-four pads and nothing else. Three lights are
 /// not its to take: `►`, because the one gesture this product exists to
-/// provide does not go away because the grid is busy; `Drums`, because a
-/// mode has to say it is on; and the logo, which carries **all** the
-/// attention now rather than only the scrolled-off kind — a grid showing
-/// a plasma field is showing none of it.
+/// provide does not go away because the grid is busy — and behind a
+/// plasma field it is carrying **all** the attention, since none of it is
+/// on the grid; `Drums`, because a mode has to say it is on; and the
+/// logo, because an art does not make the stack any more or less up.
 fn art_surface(reel: &Reel, reachable: bool, queued: usize) -> Frame {
     let mut frame = reel.frame();
     // The menu: one button a piece, white on the one that is playing.
@@ -481,15 +481,9 @@ fn art_surface(reel: &Reel, reachable: bool, queued: usize) -> Frame {
             tally::render::leave()
         },
     );
-    // All the attention is attention you cannot see, because the grid is
-    // showing a plasma field.
-    frame.set(
-        Button::Logo,
-        tally::render::logo(tally::render::Health {
-            anchord_reachable: reachable,
-            offscreen_attention: queued > 0,
-        }),
-    );
+    // Health, the same as anywhere else. The art changed the grid, not
+    // the stack behind it.
+    frame.set(Button::Logo, tally::render::logo(reachable));
     frame
 }
 
