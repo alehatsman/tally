@@ -115,9 +115,7 @@ fn reraise(signum: i32) -> ! {
 /// hold, the gesture chord rule 4 promises will do nothing. Two of them
 /// inside [`DOUBLE_TAP`] toggle the mode.
 ///
-/// The clock is here and not in [`tally::chord`], which has none. Same
-/// shape as [`Grip::home_due`], and the same precedent
-/// (`docs/05-interaction.md`).
+/// The clock is here rather than in [`tally::chord`] ([`Grip`]).
 #[derive(Debug, Clone, Copy, Default)]
 struct Corner {
     /// When it went down, while it is down.
@@ -143,12 +141,10 @@ impl Corner {
         // a half-double behind for the next one to pair with.
         //
         // The third is not hypothetical: an art swallows the **press**
-        // and not the release ([`art_press`] answers `false` for `!down`),
-        // so while a piece is playing this is handed a release with no
-        // matching press. `is_none_or` on `None` is what catches it, and
-        // the test below is what keeps that true — the alternative is a
-        // double-tap completing behind a plasma field, which is the bug
-        // 6039146 already cost us once.
+        // and not the release ([`art_press`] answers `false` for
+        // `!down`), so while a piece is playing this is handed a release
+        // with no matching press. `is_none_or` on `None` is what catches
+        // it, and the test below is what keeps that true.
         if self.used || held.is_none_or(|h| h > TAP) {
             self.tapped = None;
             return false;
@@ -218,9 +214,7 @@ impl Grip {
             chords.toggle_mode();
             eprintln!("tallyd: corner {:?}", chords.mode());
         }
-        // Letting go empties the hand. A pick-up you did not put down must
-        // leave the board exactly as it was, which is chord rule 4 doing the
-        // job it was put there for.
+        // Letting go empties the hand ([`tally::act::Done::Picked`]).
         if !down {
             self.hand = None;
         }
@@ -247,10 +241,8 @@ impl Grip {
     /// One function rather than a line per field, because the chord state
     /// is split across two types and the halves drifted: the departure
     /// branch cleared [`Chords`] and left the hand behind, so a hold-tap
-    /// that was interrupted by a replug put the carried pad down wherever
-    /// the next finger landed. A pick-up that is never put down is already
-    /// specified to leave anchord untouched (`docs/05-interaction.md`,
-    /// chord rule 4); a departure is one of the ways it is never put down.
+    /// interrupted by a replug put the carried pad down wherever the next
+    /// finger landed.
     fn unplugged(&mut self, chords: &mut Chords) {
         chords.clear();
         self.hand = None;
@@ -293,10 +285,7 @@ impl Hand {
 /// split as `docs/06-views.md`: `tally::act` never opens a terminal and
 /// `tally::jump` never opens a socket.
 ///
-/// Errors are printed and dropped. The next reconcile redraws from a
-/// fresh `list`, so a kill that did not land shows as a pad that is still
-/// green — the truth, and better than an error state invented for the
-/// surface.
+/// Errors are printed and dropped ([`tally::act`]).
 fn perform(
     ctx: &Context<'_>,
     gesture: Gesture,
@@ -426,9 +415,8 @@ fn next_art(reel: &mut Option<Reel>) {
 ///
 /// `►` is the way out, and the only one. It is read here, before the
 /// corner's double-tap clock and before `chords.feed`, which is what
-/// keeps a press in this mode from reaching either of them: `feed`
-/// answers `None` for a held modifier, so routing on the gesture instead
-/// would let `CC19` toggle Stop/Move behind a plasma field.
+/// keeps a press in this mode from reaching either of them
+/// ([`Grip::feel`]).
 fn art_press(reel: &mut Option<Reel>, repaint: &mut bool, button: Button, down: bool) -> bool {
     if !down || reel.is_none() {
         return false;
@@ -721,8 +709,6 @@ struct Waiting {
 /// Lifted out of `main` to keep it inside its complexity budget. `grid`
 /// is **last tick's** resolution — the same one that lit the button, so
 /// the press and the preview cannot disagree about what the row holds.
-/// The preview said so first: `None` is a dark button, and a dark button
-/// does nothing.
 fn launch(
     abs: u8,
     sessions: &[tally::anchor::Session],
@@ -788,10 +774,8 @@ fn scroll(gesture: Gesture, offset: &mut u8) {
 /// The top-row gestures: move the window ([`scroll`]), or move you.
 ///
 /// Lifted out of `main` because none of them touches anchord. `head` and
-/// `queued` are deliberately **stale** -- they are what the finger was
-/// looking at when it landed, and recomputing here would act on a grid
-/// the eye never saw. Only `►` and `◄` read them, which is the whole
-/// reason [`scroll`] is a separate name.
+/// `queued` are deliberately **stale** ([`Waiting`]); only `►` and `◄`
+/// read them, which is the whole reason [`scroll`] is a separate name.
 fn navigate(
     gesture: Gesture,
     offset: &mut u8,
@@ -890,15 +874,11 @@ fn main() -> ExitCode {
     let anchor = Client::new(Client::default_path());
     eprintln!("tallyd: anchord at {}", anchor.path().display());
 
-    // No device is a normal state, not a failure. `tallyd` is started by
-    // launchd and may well come up before the Launchpad is plugged in --
-    // and the thing it is watching is anchord, which it can do blind.
+    // No device is a normal state, not a failure ([`Link`]).
     let mut link = Link::new();
 
     // A broken config is reported and then ignored, for the reason
-    // `tally::config`'s module header gives in full: the watching is the
-    // half that is load-bearing, and refusing to start would take it away
-    // to punish a mistake in the spawning.
+    // `tally::config`'s module header gives in full.
     let config_path = config::default_path();
     let pages = config::load(&config_path).unwrap_or_else(|e| {
         eprintln!("tallyd: {}: {e}", config_path.display());
@@ -913,14 +893,10 @@ fn main() -> ExitCode {
 
     let mut chords = Chords::default();
     let watchers = Watchers::new(anchor.clone());
-    // Best effort: a grid that lights up matters more than a log. If it
-    // cannot be opened, say so once and carry on.
+    // Best effort ([`tally::journal::Sink`]), and read back from disk, so
+    // a restart does not write a second rising edge for a slot that never
+    // stopped asking (`tally::journal`).
     let journal_path = journal::default_path();
-    // Read back who was already asking when we last stopped. Without this
-    // a restart writes a second rising edge for a slot that never stopped
-    // asking, and times it from the restart rather than from the question
-    // (`docs/04-signals.md`). The one number M1 exists to produce is a
-    // count of these, so it has to count them once.
     let mut journal = Journal::open(&journal_path, &pages);
     let mut sessions = Vec::new();
     let mut reachable = false;
@@ -934,7 +910,6 @@ fn main() -> ExitCode {
     // The art, if one is playing (`docs/05-interaction.md`). `None` is the
     // working grid, and it is where the reel starts and ends.
     let mut reel: Option<Reel> = None;
-    // Art advances every other wake: ~31 fps off a 16 ms tick.
     let mut art_wake = false;
     let tmux = Tmux::default();
     if tmux.server_running() {
@@ -942,9 +917,7 @@ fn main() -> ExitCode {
         // config; a tab closed before the first press would renumber it.
         tmux.hold_indexes();
     } else {
-        // Said plainly, not fatal. A missing server is the normal state at
-        // login; the grid is still truthful without one, and the jump
-        // starts a server when it has to.
+        // Said plainly, not fatal ([`Tmux::server_running`]).
         eprintln!("tallyd: tally's tmux server is not up yet; a jump will start one");
     }
     // The drift sweep runs after anchord first answers, not here.
@@ -1051,8 +1024,7 @@ fn main() -> ExitCode {
                             let ctx = Context {
                                 client: &anchor,
                                 // Last tick's grid: what the pad the
-                                // finger landed on was showing, which
-                                // is the only honest thing to act on.
+                                // finger landed on was showing.
                                 pads: model::Pads::new(&grid, &purgeable, grip.hand),
                             };
                             perform(
@@ -1178,11 +1150,8 @@ fn main() -> ExitCode {
         // built and dropped. `frame_from` walks every resolved pad and
         // `launchable` is seven `row_launch` calls over the session list;
         // behind a piece neither is ever drawn, so on a 16 ms tick that
-        // was ~62 wasted boards a second for the length of the piece.
-        // Same shape as c85b141, "the tick does what the tick is for" --
-        // this is the one it missed. The arts read `reachable` and
-        // `waiting.queued` and nothing else, and both are already up
-        // there (review w2 F3).
+        // was ~62 wasted boards a second for the length of the piece
+        // (review w2 F3).
         let frame = if let Some(r) = reel.as_ref() {
             art_surface(r, reachable, waiting.queued)
         } else {
@@ -1219,18 +1188,14 @@ fn main() -> ExitCode {
         link.paint(&frame);
 
         // Hand this tick's resolution to `grid`, which is what the next
-        // tick's press will act on: the pad as it was drawn when the
-        // finger landed, which is the only honest thing to act on. A
-        // swap rather than a clone -- `resolved` is finished with here,
-        // and `Resolved` owns up to three `String`s per pad, so copying
-        // it a second time cost a second full allocation of the board
-        // every 16 ms.
+        // tick's press will act on. A swap rather than a clone --
+        // `resolved` is finished with here, and `Resolved` owns up to
+        // three `String`s per pad, so copying it a second time cost a
+        // second full allocation of the board every 16 ms.
         std::mem::swap(&mut grid, &mut resolved);
 
-        // One departure, one response, wherever this tick it happened:
-        // the release for anything held went out with the cable, and
-        // without this the first tap after a replug is a kill -- a
-        // modifier still down, or a pad still in the hand.
+        // One departure, one response, wherever this tick it happened
+        // ([`Link::take_departed`]).
         if link.take_departed() {
             grip.unplugged(&mut chords);
         }

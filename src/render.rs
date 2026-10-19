@@ -15,25 +15,18 @@
 //! somebody sits beside all day, and a hard 50% flash reads as urgent for
 //! a minute and as stressful by the afternoon.
 //!
-//! Both of those are claims about the surface **at rest**, and at rest
-//! amber is the only thing moving. The one exemption is the pad in your
-//! hand under a held Move, which does blink: one pad, for as long as
-//! your thumb is down, on a grid amber has been painted off of. Nothing
-//! sits beside it all day, so nothing it costs is anything the rules
-//! above were buying (`docs/05-interaction.md#picking-something-up-flips-the-question-not-the-board`).
+//! Both of those are claims about the surface **at rest**. The one
+//! exemption is the pad in your hand under a held Move, which does blink
+//! for as long as your thumb is down — nothing sits beside *that* all day
+//! (`docs/05-interaction.md#picking-something-up-flips-the-question-not-the-board`).
 //!
-//! Green used to move too: a pulse meant *producing output*. That cost
-//! more than it bought and was reported as **tiring** after a day beside
-//! it, which is the same measurement that killed the hard amber flash and
-//! the only one that can be taken by sitting there. Five working agents
-//! put five pads in motion carrying something nobody acts on, and the
-//! surface was busiest exactly when nothing needed anything. Worse, the
-//! tempo is one global clock, so an unrelated pad waiting fifteen minutes
-//! drove every green pulse to 140 bpm -- urgency broadcast onto pads with
-//! none.
+//! Green used to move too: a pulse meant *producing output*, and it was
+//! reported as **tiring** after a day beside it. Worse, the tempo is one
+//! global clock ([`crate::tempo`]), so an unrelated pad waiting fifteen
+//! minutes drove every green pulse to 140 bpm — urgency broadcast onto
+//! pads with none.
 //!
-//! **Motion now means one thing: something wants you.** Which is what
-//! this module always claimed and, until green went still, was not true.
+//! **Motion now means one thing: something wants you.**
 
 use crate::chord::Action;
 use crate::effect::{Consequence, Effect};
@@ -49,11 +42,7 @@ pub fn slot(state: SlotState) -> Cell {
         // signal and the queue's ranking -- they just stopped being
         // *shown*; the module header says what that bought.
         SlotState::Working | SlotState::Quiet => Cell::Static(GREEN),
-        // Breathing, not blinking. A hard 50% flash reads as urgent for
-        // about a minute and as stressful for an afternoon, and this is a
-        // surface someone sits next to all day. The pulse is a two-beat
-        // ramp against the flash's one-beat chop, so it still moves while
-        // the amber does the work of saying which pad.
+        // Breathing, not blinking (module header).
         SlotState::NeedsAnswer { .. } => Cell::Pulse(AMBER),
         SlotState::Failed { .. } => Cell::Static(RED),
         // Dark red wherever the daemon had a problem — the same colour the
@@ -83,11 +72,9 @@ pub fn arrow(movable: bool) -> Cell {
 
 /// How a `>` launcher is lit.
 ///
-/// Dim when it would spawn something, dark when it would not — the rule
-/// the whole surface now runs on. A row with no session has no directory
-/// to inherit and a full row has nowhere to put one, and in both cases a
-/// lit button would be a promise it cannot keep
-/// (`docs/05-interaction.md`).
+/// Dim when it would spawn something, dark when it would not ([`arrow`]).
+/// A row with no session has no directory to inherit and a full row has
+/// nowhere to put one; lit either way would be a promise it cannot keep.
 pub fn launch(ready: bool) -> Cell {
     if ready {
         Cell::Static(DARK_GREY)
@@ -99,10 +86,8 @@ pub fn launch(ready: bool) -> Cell {
 /// How `Drums` is lit: dim at rest, white while an art is playing.
 ///
 /// It is never dark, because unlike the rest of the row it never has
-/// nothing to do — there is always a reel to start
-/// (`docs/05-interaction.md`). White is the same white the right column
-/// uses while a modifier is held, and says the same thing: *this is what
-/// you are doing right now*. Getting back out is `►`, not this button.
+/// nothing to do — there is always a reel to start ([`arrow`]). The white
+/// is [`back`]'s white. Getting back out is `►`, not this button.
 pub fn arts(playing: bool) -> Cell {
     if playing {
         Cell::Static(WHITE)
@@ -114,19 +99,17 @@ pub fn arts(playing: bool) -> Cell {
 /// How `►` is lit while an art is playing: white, always.
 ///
 /// It is the only button in that mode that returns you to the working
-/// grid, so it is never dark — the top row's rule is *dark does nothing*,
-/// and this always does exactly one thing (`docs/05-interaction.md`). The
-/// same white as `◄` and as a held modifier, saying the same thing: this
-/// is live right now.
+/// grid, so it always does exactly one thing and is never dark
+/// ([`arrow`], [`back`]).
 pub fn leave() -> Cell {
     Cell::Static(WHITE)
 }
 
 /// How `◄` is lit: white when there is somewhere to go back to.
 ///
-/// One of the two control colours, and the same white the right column
-/// uses while a modifier is held — it says *this button is live right
-/// now*, which is exactly what it means here.
+/// The canonical white: the same one the right column wears while a
+/// modifier is held, and it says the same thing — *this is live right
+/// now*.
 pub fn back(available: bool) -> Cell {
     if available {
         Cell::Static(WHITE)
@@ -159,16 +142,14 @@ pub fn next(waiting: bool) -> Cell {
 /// **The colour is the mode**, and it is the only thing that says which
 /// mode you are in — which is what makes a latched corner honest
 /// (`docs/05-interaction.md#changing-the-mode`). Red for *Stop*, the
-/// colour of what it does and the word on the silkscreen; turquoise for
-/// *Move*, which touches nothing that is running.
+/// colour of what it does; turquoise for *Move*, which touches nothing
+/// that is running.
 ///
 /// White while held, unchanged: it is the only feedback that the
-/// modifier is actually down, and it does not need to repeat the mode,
-/// because holding repaints the whole grid in the mode's colour.
+/// modifier is actually down, and it need not repeat the mode, because
+/// holding repaints the whole grid in the mode's colour.
 ///
-/// `CC49`-`CC79` carry no gesture and are dark: a button lit like a live
-/// one that does nothing when you press it is worse than an unlit button,
-/// because you press it twice.
+/// `CC49`-`CC79` carry no gesture and are dark ([`arrow`]).
 pub fn action(button: Option<Action>, held: bool) -> Cell {
     match (button, held) {
         (None, _) => Cell::Off,
@@ -188,21 +169,17 @@ pub fn action(button: Option<Action>, held: bool) -> Cell {
 ///
 /// Each colour is the colour of the **consequence**, not of the button —
 /// and it takes no [`Action`] at all, which is that sentence stated in
-/// the type. One button now carries two consequences
-/// (`docs/05-interaction.md`), so a colour derived from the button
-/// would have to be wrong about one of them.
+/// the type: one button carries two consequences, so a colour derived
+/// from the button would have to be wrong about one of them.
 ///
 /// Nothing here pulses — a preview lasts as long as your thumb does, and
 /// motion on sixty pads for two seconds is noise. The pad in your hand
 /// is the one exemption, and it flashes rather than pulses.
 ///
 /// **Dim is not always the skipped level.** Under a held Stop, bright is
-/// the target and dim is what will be spared. Under a held Move with a
-/// pad in hand it inverts: most of the grid is a legal destination, so
-/// dim is the target and bright is what is in the way. The two readings
-/// cannot collide; the [`Consequence::Dropped`] arm below says why, and
-/// names the test that pins it
-/// (`docs/05-interaction.md#picking-something-up-flips-the-question-not-the-board`).
+/// the target and dim is what will be spared; with a pad in hand it
+/// inverts. The two readings cannot collide
+/// ([`crate::effect::effect`]).
 #[expect(
     clippy::match_same_arms,
     reason = "skipped and droppable are the same pixel for different reasons, \
@@ -229,32 +206,22 @@ pub fn preview(effect: Effect) -> Cell {
         // argued, and it is also the entry's canonical home.
         //
         // The same value means *this gesture will not touch it* under a
-        // held Stop — two meanings for one entry, and they never share a
-        // frame: with a hand full, `Effect::Skips` is unreachable
-        // (`effect::effect`), which
-        // `a_full_hand_never_dims_for_the_other_reason` pins.
+        // held Stop. The two never share a frame; [`crate::effect::effect`]
+        // says why.
         Effect::Acts(Consequence::Dropped) => Cell::Static(DARK_GREY),
-        // The pad in your hand: turquoise, like every other occupied
-        // pad, and the only one that moves. It is one of them, and it
-        // is the one you are carrying — hue says the first, motion says
-        // the second.
+        // The pad in your hand: one of the occupied pads, and the one
+        // you are carrying — hue says the first, motion says the second.
         //
-        // **Flash, not pulse**, and the difference is the point. Both
-        // run on the one clock ([`crate::tempo`]), so the only way to
-        // make this pad faster than amber without dragging amber along
-        // is to pick the shorter figure: a pulse is a two-beat ramp, a
-        // flash is one beat. Twice the rate, on the one pad that is
-        // allowed to be impatient.
+        // **Flash, not pulse.** Both run on the one clock
+        // ([`crate::tempo`]), so picking the shorter figure — one beat
+        // against a pulse's two — is the only way to make this pad
+        // faster than amber without dragging amber along.
         //
-        // It flashes against [`OFF`] rather than another colour. Dark
-        // is the one thing on this grid that cannot be misread here —
-        // an occupied pad is turquoise and a destination is a dim grey
-        // that never goes fully out, so the gap says *nothing*, which
-        // is what a pad that is no longer anywhere should say half the
-        // time.
+        // Against [`OFF`] rather than another colour: an occupied pad is
+        // turquoise and a destination is a grey that never goes fully
+        // out, so dark is the one gap here that cannot be misread.
         //
-        // The single exemption to both *only amber animates* and
-        // *nothing blinks*; the module header is where that is argued.
+        // The single exemption to *nothing blinks* (module header).
         Effect::Holds => Cell::Flash {
             b: TURQUOISE,
             a: OFF,
@@ -323,15 +290,10 @@ mod tests {
         );
     }
 
-    /// Nothing blinks, anywhere -- among the things that are *there* when
-    /// you are not touching the surface. A hard 50% flash is legible and
-    /// tiring, and this is a surface somebody sits beside all day, so
-    /// urgency is carried by hue, which does not wear out.
-    ///
-    /// The pad in your hand is the one exemption and is not covered here
-    /// by design: it is a preview, it lasts as long as your thumb, and
-    /// `the_pad_in_your_hand_is_the_fastest_thing_on_the_grid` is where
-    /// it is pinned.
+    /// Nothing blinks among the things that are *there* when you are not
+    /// touching the surface (module header). The pad in your hand is the
+    /// one exemption and is pinned by
+    /// `the_pad_in_your_hand_is_the_fastest_thing_on_the_grid` instead.
     #[test]
     fn nothing_on_the_surface_blinks() {
         let blinking: Vec<_> = ALL
@@ -442,12 +404,9 @@ mod tests {
     /// Every state is visually distinct from every other, with **one
     /// deliberate exception**.
     ///
-    /// `Working` and `Quiet` are both plain green now. The distinction is
-    /// still known — it is what the attention signal is derived from —
-    /// but it stopped being drawn, because drawing it cost a pulse on
-    /// every busy pad all day and that was reported as tiring (the module
-    /// header). The exception is written here rather than removed from
-    /// the invariant, so that collapsing a *second* pair still fails.
+    /// `Working` and `Quiet` are both plain green (module header). The
+    /// exception is written here rather than removed from the invariant,
+    /// so that collapsing a *second* pair still fails.
     #[test]
     fn no_two_states_share_a_cell() {
         let collapsed = [SlotState::Working, SlotState::Quiet];
@@ -544,9 +503,8 @@ mod tests {
         }
     }
 
-    /// A preview lasts as long as your thumb. Motion on sixty pads for
-    /// two seconds is noise, not information — so **at most one pad in
-    /// any preview moves**, and it is the one in your hand.
+    /// **At most one pad in any preview moves**, and it is the one in
+    /// your hand ([`preview`]).
     #[test]
     fn at_most_one_pad_in_a_preview_moves() {
         let moving: Vec<Effect> = EFFECTS
@@ -580,9 +538,8 @@ mod tests {
         );
     }
 
-    /// The mode is the only thing that says which mode you are in, so
-    /// the two must not look alike. This is what makes a latched corner
-    /// honest (`docs/05-interaction.md#changing-the-mode`).
+    /// The colour is the only thing that says which mode you are in
+    /// ([`action`]), so the two must not look alike.
     #[test]
     fn the_corner_says_which_verb_it_is_carrying() {
         let stop = action(Some(Action::Stop), false);
@@ -601,10 +558,8 @@ mod tests {
         }
     }
 
-    /// Turquoise is *a session is here*, in both halves of a move: it
-    /// is what you can pick up with an empty hand, and it is every
-    /// occupied pad once your hand is full. The pad being carried wears
-    /// it too and is the only thing on the grid that moves.
+    /// Turquoise is *a session is here*, in both halves of a move
+    /// ([`preview`]).
     #[test]
     fn turquoise_means_a_session_is_here_in_both_halves() {
         assert_eq!(
@@ -621,11 +576,8 @@ mod tests {
         );
     }
 
-    /// Both rules it is exempt from -- *only amber animates* and
-    /// *nothing blinks* -- were measured on a surface at rest. This pad
-    /// is not at rest: it is the thing you are holding, and it is the
-    /// fastest figure the device offers, because a flash is one beat
-    /// where amber's pulse is two.
+    /// The rules it is exempt from were measured on a surface at rest,
+    /// and this pad is the thing in your hand ([`preview`]).
     #[test]
     fn the_pad_in_your_hand_is_the_fastest_thing_on_the_grid() {
         let hand = preview(Effect::Holds);
@@ -649,9 +601,7 @@ mod tests {
         }
     }
 
-    /// With a pad in hand, most of the grid is a legal destination — so
-    /// room is drawn at the **dimmest** level the language has, and the
-    /// two things that are not room stay the only bright things. It
+    /// Room is drawn at the **dimmest** level the language has, but it
     /// still has to be tellable from unlit, or "most of the grid" and
     /// "none of it" look the same.
     #[test]
@@ -673,12 +623,10 @@ mod tests {
         assert_eq!(action(Some(Action::Stop), true), Cell::Static(WHITE));
     }
 
-    /// The rule this replaces was *exactly one page button is bright and
-    /// it is the one you are on*, learned when white for "you are here"
-    /// and turquoise for "has sessions" proved equally bright and
-    /// unreadable. The row no longer says where you are — but the thing
-    /// that made the old row fail is still forbidden: **at most one bright
-    /// button, and the bright one is not competing with another.**
+    /// Two brights side by side is what made the old page row unreadable
+    /// — white for "you are here" against turquoise for "has sessions".
+    /// The row no longer says where you are, but the rule survives it:
+    /// **no bright button is ever competing with another.**
     #[test]
     fn at_most_one_top_row_button_is_bright() {
         let bright = |c: Cell| {

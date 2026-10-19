@@ -35,9 +35,9 @@ pub const SOCKET: &str = "tally";
 /// The macOS app [`terminal_app`] names when nothing overrides it.
 ///
 /// Unset `TALLY_TERMINAL` means *use this*, never *raise nothing*: a jump
-/// that switched tmux and then left the terminal behind a browser is the
-/// one failure the grid cannot show you. `TALLY_RAISE_CMD` is what turns
-/// the raise off, and the suite sets it.
+/// that switched tmux and left the terminal behind a browser is invisible
+/// ([`Tmux::ensure_terminal`]). `TALLY_RAISE_CMD` turns the raise off, and
+/// the suite sets it.
 const DEFAULT_TERMINAL: &str = "Alacritty";
 
 /// The session the terminal window lands on when no agent is in front of
@@ -78,8 +78,7 @@ pub const PANE_OPTION: &str = "@tally_session";
 /// conversation, and a view of an agent has none until its first turn
 /// (`docs/06-views.md`).
 ///
-/// Pane-scoped for the same reason [`PANE_OPTION`] is: a window option is
-/// inherited by every pane in the window.
+/// Pane-scoped for the same reason [`PANE_OPTION`] is.
 ///
 /// **Only ever written, never cleared.** There is no clear-it path
 /// because *not knowing* is the ordinary state, and a jump that blanked
@@ -110,8 +109,7 @@ pub enum Error {
     /// A tmux command failed.
     Tmux {
         /// The tmux command that failed, read off the arguments rather
-        /// than passed alongside them. It used to be a `&'static str`
-        /// hand-copied from `args[0]` at 24 call sites: 24 chances to
+        /// than passed alongside them: a copy of `args[0]` is a chance to
         /// name the wrong command in an error nothing can check.
         what: String,
         /// What tmux said.
@@ -135,17 +133,12 @@ pub trait Jump {
     /// Focus the view for `session`, creating or reviving it if it is gone.
     ///
     /// `claude` is the conversation that session is running, when tally
-    /// knows one. `None` means *not known*, never *none any more*: the
-    /// tag is left alone rather than cleared, so a view created by
-    /// `tally spawn` — before the agent has had a turn — keeps whatever
-    /// it had rather than having its dead line blanked.
+    /// knows one; `None` means *not known*, never *none any more*
+    /// ([`CLAUDE_OPTION`]).
     ///
     /// `at` is the slot address the pad carries — `page:row:col` — and is
     /// what a view this creates is labelled with. `where_` is the same
-    /// address as geometry, and says which row session and which column
-    /// the pane belongs in (`docs/06-views.md`). Both are
-    /// passed rather than derived because this module knows about tmux and
-    /// nothing else.
+    /// address as geometry ([`Place`]).
     ///
     /// # Errors
     /// Whatever stopped it.
@@ -161,9 +154,7 @@ pub trait Jump {
     ///
     /// `want` is every session that holds a pad, with the [`Place`] its
     /// view belongs in and the address string to report it by — both
-    /// passed rather than derived, because turning an address into a
-    /// `Place` needs the page table and this module does not have one
-    /// (`docs/06-views.md`).
+    /// passed rather than derived ([`Place`]).
     ///
     /// **Reports; moves nothing.** A session with no view is not drift,
     /// and is not reported.
@@ -226,12 +217,11 @@ pub trait Jump {
 /// Position holds because nothing tally writes into a line can contain
 /// this: a ULID is alphanumeric, and a `page:row:col` address is fenced
 /// at the source — `src/config.rs::resolve_pages` refuses a page name
-/// containing `|` for exactly this reason. That fence was missing until
-/// review w7 F1, and a page named `a|b` shifted every field after the
-/// slot tag silently, because the session id is read *before* the
-/// damage. The one field tally does not own is `session_name`, which is
-/// why [`row`] refuses a line with a seventh field rather than reading a
-/// shifted one.
+/// containing `|` for exactly this reason. The one field tally does not
+/// own is `session_name`, which is why [`row`] refuses a line with a
+/// seventh field rather than reading a shifted one: a `|` in a value
+/// shifts everything after the slot tag, and the session id is read
+/// *before* the damage, so the jump still looks right.
 const FIELD: char = '|';
 
 /// Args listing every pane, whether it is dead, the two things tally
@@ -256,9 +246,10 @@ fn list_panes_args() -> Vec<String> {
 /// Where on the grid a view belongs: the **absolute** row (1-64, the
 /// stacked row space `Slot::absolute_row` produces) and the column.
 ///
-/// Passed in rather than derived because this module knows about tmux and
-/// nothing else — a page *name* is config, and config does not get to
-/// rename sixty-four tmux sessions when it changes.
+/// **Passed in rather than derived**, here and everywhere in this module:
+/// turning an address into one needs the page table, a page *name* is
+/// config, and config does not get to rename sixty-four tmux sessions
+/// when it changes. This module knows about tmux and nothing else.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Place {
     /// 1-64, the absolute row. Names the session.
@@ -273,10 +264,7 @@ pub struct Place {
 /// **Above the addressable column range**, which is 1-8, so no pad can
 /// ever name it. A view parked here cannot wedge anything, is still
 /// reachable by id, and is brought home by the lazy path the next time
-/// its own pad is pressed.
-///
-/// `u16` because nothing stores a park index in a column's width, and
-/// every use of it was converting.
+/// its own pad is pressed — so it is a `u16`, not a column's `u8`.
 const PARK: u16 = 90;
 
 /// The session name for an absolute row: `r07`.
@@ -291,9 +279,9 @@ fn row_session(row: u8) -> String {
 /// The window an address names: the row session, then the index in it.
 ///
 /// **The window index *is* the column** — the central claim of this
-/// module, written out at four call sites and named at none of them
-/// until now. `u16` and not a [`Place`] because a parked squatter gets an
-/// index that is deliberately not a column ([`PARK`]).
+/// module, and the home for it. `u16` and not a [`Place`], because a
+/// parked squatter gets an index that is deliberately not a column
+/// ([`PARK`]).
 fn window_target(row: u8, index: u16) -> String {
     format!("{}:{index}", row_session(row))
 }
@@ -322,12 +310,10 @@ fn new_row_session_args(place: Place, session: &str, anchor_bin: &str) -> Vec<St
 
 /// Args opening a view as a new **window** in an existing row.
 ///
-/// The window index *is* the column, so a row reads left to right in
-/// tmux's own status line with no insertion order to maintain: tab 3 is
-/// column 3 whether or not 1 and 2 exist yet. That is the whole reason a
-/// column is a window and not a pane — eight agents side by side are
-/// eight unreadable 23-column slivers, and the thing you actually do with
-/// a row is look at one of them at a time (`docs/24`).
+/// A column is a window and not a pane ([`window_target`]) because eight
+/// agents side by side are eight unreadable 23-column slivers, and the
+/// thing you actually do with a row is look at one of them at a time
+/// (`docs/24`).
 ///
 /// `-d` because creating a view must not move anybody: the switch is a
 /// separate, deliberate step.
@@ -362,8 +348,7 @@ fn new_window_args(place: Place, session: &str, anchor_bin: &str, replace: bool)
 /// deliberately not a column.
 ///
 /// `replace` passes `-k`, and only ever after the occupant has been seen
-/// dead. It goes **before** the `-s` it is aimed with, which is where it
-/// was when it was an `insert(1, …)`.
+/// dead. It goes **before** the `-s` it is aimed with.
 fn move_window_args(pane: &str, row: u8, index: u16, replace: bool) -> Vec<String> {
     let mut args: Vec<String> = vec!["move-window".into()];
     if replace {
@@ -384,8 +369,7 @@ fn move_window_args(pane: &str, row: u8, index: u16, replace: bool) -> Vec<Strin
 /// tmux resolves a pane id to the window holding it, which is what keeps
 /// an index out of the source half of the command.
 ///
-/// `-d` because a relocation must not move anybody: the active window is
-/// unchanged, and the switch is a separate, deliberate step.
+/// `-d` for [`new_window_args`]'s reason.
 ///
 /// Measured, tmux 3.6b: a pane id as `-s` works, the two windows may be
 /// in different sessions, and a destination index holding **no** window
@@ -481,9 +465,8 @@ fn automatic_rename_off_args(pane: &str) -> Vec<String> {
 /// Args naming a view's window, which is what a tab reads as.
 ///
 /// Takes the title rather than deriving one, so the window name and the
-/// pane title cannot drift apart — [`Tmux::tag`] computes it once and
-/// hands the same string to both. Neither held that by construction when
-/// each called [`pane_title`] itself.
+/// pane title cannot drift apart: [`Tmux::tag`] computes it once and
+/// hands the same string to both.
 fn rename_window_args(pane: &str, title: &str) -> Vec<String> {
     vec![
         "rename-window".into(),
@@ -507,13 +490,10 @@ fn new_home_session_args() -> Vec<String> {
 
 /// Args setting one **pane** option.
 ///
-/// **`-p` is load-bearing.** With `-w` this sets a *window* option, which
-/// every pane in the window inherits — so splitting a view would give two
-/// panes claiming one session, and a jump would confidently land on
-/// either. Measured on tmux 3.6b, not theorised (`docs/06-views.md`).
+/// **`-p` is load-bearing**: with `-w` this sets a *window* option, which
+/// every pane in the window inherits ([`PANE_OPTION`]).
 ///
-/// Five callers in [`Tmux::tag`] used to be five functions with this
-/// argument written out five times. What each option is *for* lives on
+/// What each option is *for* lives on
 /// its name: [`PANE_OPTION`], [`SLOT_OPTION`], [`CLAUDE_OPTION`],
 /// [`REMAIN_ON_EXIT`], [`REMAIN_ON_EXIT_FORMAT`].
 fn set_pane_option_args(pane: &str, name: &str, value: &str) -> Vec<String> {
@@ -552,18 +532,14 @@ fn pane_title_args(pane: &str, title: &str) -> Vec<String> {
 /// stale the moment the pane is rebound to another session; `#{@…}`
 /// expands at draw time, so the line is right by construction.
 ///
-/// The id goes early because the line is truncated at pane width — a
-/// narrow split loses the tail, never the payload. `attach exit` is named
-/// for what it is: the pane runs `anchor attach`, so the status is the
-/// attach client's, not the agent's.
+/// `attach exit` is named for what it is: the pane runs `anchor attach`,
+/// so the status is the attach client's, not the agent's.
 ///
-/// **The conversation goes first, ahead of the anchor id**
-/// (`docs/06-views.md`). The rule is *payload early, because
-/// the tail is what truncation eats*. Measured at 80 columns with the
-/// conversation second,
-/// the cut landed mid-UUID — `claude --resume c1567a67-d7e0` — and half
-/// an id resumes nothing, while half an anchor id costs nothing: it names
-/// a PTY that is gone by the time you are reading this line.
+/// **Payload early, because the tail is what truncation eats**
+/// (`docs/06-views.md`). Measured at 80 columns with the conversation
+/// second, the cut landed mid-UUID — `claude --resume c1567a67-d7e0` —
+/// and half an id resumes nothing, while half an anchor id costs
+/// nothing: it names a PTY that is already gone.
 fn dead_pane_format() -> String {
     // The conversation is conditional on itself: an **unset** user option
     // takes the false branch, so a view of a plain shell keeps exactly
@@ -611,10 +587,8 @@ fn kill_pane_args(pane: &str) -> Vec<String> {
 
 /// Args listing every attached client and the pane it is looking at.
 ///
-/// In a function like every other command here. It was the one whose
-/// arguments were inlined at the call site, and therefore the one
-/// nothing pinned — an unmarked exception to the rule this section is
-/// named for.
+/// In a function like every other command here, so the arguments are
+/// pinned by a test like every other command's.
 fn list_clients_args() -> Vec<String> {
     vec![
         "list-clients".into(),
@@ -654,10 +628,9 @@ fn pane_title(place: Place, at: &str, session: &str) -> String {
 
 /// The pane a view is in, as one `list-panes` line describes it.
 ///
-/// **Was `View`**, which collided with [`crate::model::View`] — the 8-row
-/// window onto the address space — in a crate where both senses of the
-/// word are load-bearing (`docs/08-daemon.md`). A view is the
-/// concept ([15](../docs/06-views.md)); this is the pane holding one.
+/// Not `View`: that is [`crate::model::View`], the 8-row window onto the
+/// address space. A view is the concept (`docs/06-views.md`); this is the
+/// pane holding one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Pane<'a> {
     /// tmux's id for it, `%N`.
@@ -730,9 +703,9 @@ fn view_for<'a>(listing: &'a str, session: &str) -> Option<Pane<'a>> {
 /// Find a **dead** pane holding the window that address `at` names.
 ///
 /// The second lookup, and the one that keeps a corpse from locking a pad:
-/// a column is a window *index*, so while the previous session's dead
-/// view sits there, no new window can be made at that address
-/// (`docs/06-views.md`).
+/// a column is a window *index* ([`window_target`]), so while the
+/// previous session's dead view sits there, no new window can be made at
+/// that address.
 ///
 /// Dead only, by decision: a live `anchor attach` at this address is a
 /// view somebody is reading, and this is not the gesture that closes it.
@@ -908,16 +881,10 @@ pub struct Tmux {
     /// started rather than three agents deep.
     ///
     /// ⚠️ **It used to refuse to record a view, and that was wrong.**
-    /// `docs/16` assumed the place you jump *from* is nvim — a pane that
-    /// is not a view. It is not: every pane this user works in is an
-    /// anchor session, so every candidate origin was a view and `◄` never
-    /// had anywhere to go. Measured within an hour of shipping, from the
-    /// `kind:"nav"` lines written for exactly this purpose: two
-    /// `{"via":"back","ok":false}` in a row.
-    ///
-    /// What that rule was protecting — walking back through agents one at
-    /// a time — is held by *first jump wins* instead, which does not care
-    /// what kind of pane you started in.
+    /// Every pane this user works in is an anchor session, so every
+    /// candidate origin was a view and `◄` never had anywhere to go
+    /// (`docs/16`). What that rule was protecting — walking back through
+    /// agents one at a time — is held by *first jump wins* instead.
     ///
     /// In memory, so a `tallyd` restart loses it — and the degradation is
     /// that `◄` goes dark until you jump again, which is honest.
@@ -1171,11 +1138,10 @@ impl Tmux {
             return Ok(found.id.to_owned());
         }
         // Not found by id, so this is a new session for the slot — and the
-        // slot's window may still be held by the previous one's corpse.
-        // The column is a window index, so there is nothing to create
-        // while that is true; the corpse is also exactly the pane we
-        // want, keeping its id, its tab and its place in the row across a
-        // respawn (`docs/06-views.md`).
+        // slot's window may still be held by the previous one's corpse
+        // ([`dead_view_at`]). That corpse is also exactly the pane we
+        // want: it keeps its id, its tab and its place in the row across
+        // a respawn.
         if let Some(stale) = dead_view_at(&listing, at) {
             let args = respawn_pane_args(stale.id, session, &self.anchor_bin);
             let _reclaimed = self.run(&args)?;
@@ -1192,12 +1158,10 @@ impl Tmux {
     /// Put a new view window in its row, creating the row if it is not
     /// there.
     ///
-    /// The column is the **window index**, so there is nothing to order:
-    /// `new-window -t r07:3` lands at 3 whatever else the row holds.
     /// Creating the session *around* the first view is what keeps a stray
-    /// shell from appearing; `new-session -d` on a dead server also
-    /// starts one, which is why a missing tally server is not a startup
-    /// failure.
+    /// shell from appearing ([`new_row_session_args`]); `new-session -d`
+    /// on a dead server also starts one, which is why a missing tally
+    /// server is not a startup failure.
     fn make_view(&self, session: &str, place: Place) -> Result<String, Error> {
         if !self.session_exists(&row_session(place.row)) {
             let args = new_row_session_args(place, session, &self.anchor_bin);
@@ -1269,7 +1233,7 @@ impl Tmux {
     /// a terminal is attached to it.
     ///
     /// A jump that lands on a server nobody is looking at succeeds
-    /// invisibly, which is the one failure the grid cannot show you. So
+    /// invisibly, which is the one failure the grid cannot show you — so
     /// zero clients means open the window (`docs/06-views.md`).
     fn ensure_terminal(&self) {
         if !self.client_panes().is_empty() {
@@ -1352,9 +1316,6 @@ fn terminal_app() -> String {
 
 /// The command that brings the terminal forward.
 ///
-/// Split out from the running of it for the reason every other command in
-/// this module is: the arguments are the part worth testing.
-///
 /// Overridable as `TALLY_RAISE_CMD`, the twin of `TALLY_TERMINAL_CMD`,
 /// and the suite sets it. It has to: leaving `TALLY_TERMINAL` unset does
 /// **not** leave [`raise`] with nothing to raise — [`terminal_app`] falls
@@ -1391,9 +1352,6 @@ fn raise() {
 }
 
 /// The command that opens the window looking at tally's server.
-///
-/// Split out from the running of it for the reason every other command in
-/// this module is: the arguments are the part worth testing.
 ///
 /// `-na` forces a **new** window even though the app is already running,
 /// which is the difference between this and [`raise`]: that one focuses
@@ -1446,20 +1404,16 @@ impl Jump for Tmux {
         where_: Place,
     ) -> Result<(), Error> {
         let pane = self.view_pane(session, claude, where_, at)?;
-        // Before the clients are listed, not after: a jump with nothing
-        // attached used to succeed invisibly, and the window it opens is
-        // a client by the time the switch runs.
+        // Before the clients are listed, not after: the window it opens
+        // is a client by the time the switch runs.
         self.ensure_terminal();
         let clients = self.client_panes();
         self.record_origins(&clients, &pane);
 
-        // Switch **every** client — but every client is now one of
-        // tally's, because they are the only ones on this socket. Your
-        // personal server cannot be listed from here and so cannot be
-        // moved (`docs/06-views.md`).
-        //
-        // Zero clients is not an error: the view exists and is correct,
-        // and it is there the next time you attach.
+        // Switch **every** client: they are all tally's, because they are
+        // the only ones on this socket ([`SOCKET`]). Zero of them is not
+        // an error — the view exists and is there the next time you
+        // attach.
         for (client, _) in &clients {
             self.run(&switch_args(client, &pane))?;
         }
@@ -1515,10 +1469,8 @@ impl Jump for Tmux {
         let live = self.panes();
         let mut moved = false;
         for (client, pane) in taken {
-            // Through `row`, like every other read of this listing: the
-            // fields are `|`-separated and a hand-rolled split here went
-            // stale the moment that changed
-            // (`docs/06-views.md`).
+            // Through [`row`], like every other read of this listing: a
+            // hand-rolled split goes stale the day [`FIELD`] changes.
             if !live.lines().filter_map(row).any(|r| r.pane.id == pane) {
                 continue; // the origin closed while you were away
             }
@@ -1610,8 +1562,7 @@ mod tests {
         assert_eq!(row_session(64), "r64");
     }
 
-    /// Creating a view must not move anybody: the switch is a separate,
-    /// deliberate step.
+    /// Creating a view must not move anybody ([`new_window_args`]).
     #[test]
     fn opening_a_view_in_a_row_does_not_steal_focus() {
         let args = new_window_args(PLACE, SESSION, "anchor", false);
@@ -1623,10 +1574,8 @@ mod tests {
         );
     }
 
-    /// The column *is* the window index, so a row reads left to right
-    /// whatever order its tabs arrived in — and with nothing to order,
-    /// there is no insertion rule left to get wrong
-    /// (`docs/06-views.md`).
+    /// The column *is* the window index ([`window_target`]), so there is
+    /// no insertion rule left to get wrong.
     #[test]
     fn a_column_is_the_window_index() {
         let args = new_window_args(Place { row: 7, col: 3 }, SESSION, "anchor", false);
@@ -1915,9 +1864,7 @@ mod tests {
     }
 
     /// Aimed at the pane, never at a bare `rNN:`, and `-d` so that a
-    /// relocation moves nobody. Measured against tmux 3.6b in
-    /// `docs/06-views.md`; this pins the arguments that measurement
-    /// was made with.
+    /// relocation moves nobody ([`swap_window_args`]).
     #[test]
     fn a_swap_names_the_pane_and_does_not_follow_it() {
         let args = swap_window_args("%7", MOVED_TO);
@@ -1929,10 +1876,9 @@ mod tests {
         assert_eq!(args[target + 1], "r02:1", "{args:?}");
     }
 
-    /// `dead_view_at` asks *"is there a corpse claiming this address"*,
-    /// so a corpse claiming a **different** one is invisible to it and
-    /// wedged the pad forever (`docs/06-views.md`). This one asks
-    /// about the window instead, which is the question that was missing.
+    /// A corpse claiming a **different** address is invisible to
+    /// [`dead_view_at`] and wedged the pad forever; this one asks about
+    /// the window instead.
     #[test]
     fn the_occupant_is_found_by_its_window_whatever_it_claims() {
         let listing = "%8|1|01DEAD|1:9:9|r02|1\n";
@@ -2042,11 +1988,10 @@ mod tests {
         assert_eq!(dead.id, "%4");
     }
 
-    /// The bug a window option would reintroduce: every pane in the
-    /// window inherits it, so a split of a view claims the same session
-    /// — and `remain-on-exit` is pane-scoped for a second reason, that an
-    /// adopted view sits among panes that are yours. One function now, so
-    /// one test: every option [`Tmux::tag`] writes goes through it.
+    /// The bug a window option would reintroduce ([`PANE_OPTION`]), and
+    /// `remain-on-exit` is pane-scoped for a second reason: an adopted
+    /// view sits among panes that are yours. One function, so one test —
+    /// every option [`Tmux::tag`] writes goes through it.
     #[test]
     fn every_tag_is_a_pane_option_not_a_window_one() {
         for name in [
@@ -2144,10 +2089,9 @@ mod tests {
         );
     }
 
-    /// The one command whose arguments used to be inlined, and so the
-    /// one nothing pinned. [`clients`] reads the two fields back out by
-    /// splitting on the space between them, so the format is half of a
-    /// contract the parser holds the other half of.
+    /// [`clients`] reads the two fields back out by splitting on the
+    /// space between them, so the format is half of a contract the parser
+    /// holds the other half of.
     #[test]
     fn a_client_is_listed_with_the_pane_it_is_on() {
         let args = list_clients_args();
@@ -2351,10 +2295,8 @@ mod tests {
         assert_eq!(o.get("/dev/ttys003").map(String::as_str), Some("%5"));
     }
 
-    /// The bug the journal caught an hour after shipping. `docs/16`
-    /// assumed you jump *from* nvim; every pane this grid is used from is
-    /// an anchor session, so every candidate origin was a view and `◄`
-    /// never had anywhere to go.
+    /// The bug the journal caught an hour after shipping
+    /// ([`Tmux::origin`]).
     #[test]
     fn standing_in_a_view_still_counts_as_somewhere_to_come_back_to() {
         let t = Tmux::default();
@@ -2366,8 +2308,7 @@ mod tests {
     }
 
     /// `next → next → next → back` must land where you started, not three
-    /// agents deep. Held by *first jump wins* rather than by refusing to
-    /// record views, which is what made `◄` useless.
+    /// agents deep ([`Tmux::origin`]).
     #[test]
     fn a_chained_jump_does_not_overwrite_where_you_started() {
         let t = Tmux::default();

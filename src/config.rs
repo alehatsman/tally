@@ -266,9 +266,8 @@ name = "wo\nrk"
     }
 
     /// Nine pages is a ninth page's worth of addresses that cannot be
-    /// written. The limit used to be the eight buttons in the top row;
-    /// since `docs/02-model.md` it is the depth of the address space
-    /// itself, which is the thing it was always really about.
+    /// written. The limit is the depth of the address space, not the top
+    /// row (`docs/02-model.md`).
     #[test]
     fn more_pages_than_the_address_space_is_refused() {
         let text = (1..=9).fold(String::new(), |mut acc, n| {

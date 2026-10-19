@@ -29,12 +29,10 @@ pub const OFF: Entry = 0;
 /// a held Move — every pad it could land on.
 ///
 /// That last one is the only place this value means *the target* rather
-/// than *not the target*, and it is safe because the two can never share
-/// a frame: with a full hand `Effect::Skips` is unreachable. It reads
-/// right for the same reason it reads right everywhere else, though —
-/// most of the grid is a legal destination, and a surface that lights
-/// two thirds of itself brightly has said nothing
-/// (`docs/05-interaction.md#picking-something-up-flips-the-question-not-the-board`).
+/// than *not the target*, and the two can never share a frame
+/// ([`crate::effect::effect`]). It reads right anyway: most of the grid
+/// is a legal destination, and a surface that lights two thirds of itself
+/// brightly has said nothing.
 ///
 /// Brightness answers "where am I" before hue answers anything, which is
 /// why the top row spends exactly one bright colour and this carries
@@ -54,8 +52,8 @@ pub const DARK_GREY: Entry = 1;
 pub const WHITE: Entry = 3;
 /// Red. A session that exited non-zero, the corner resting in Stop, and a
 /// pad that hold is about to terminate — the colour of what is about to
-/// happen. Grid and corner never confuse, because one is the 8×8 and the
-/// other is the right-column corner the silkscreen labels *Stop*.
+/// happen. Grid and corner never confuse: one is the 8×8 and the other is
+/// the right-column corner.
 pub const RED: Entry = 5;
 /// A deeper red, clearly distinct from [`RED`].
 ///
@@ -95,10 +93,9 @@ pub const DARK_GREEN: Entry = 23;
 /// ([`crate::render::action`], [`crate::render::preview`]).
 ///
 /// It was retired once, as a page button lit beside a white current page:
-/// both were legible and neither said which was which, the same way the
-/// three greens failed. One button is not a row, so the failure mode does
-/// not reach the corner, which is why the entry came back
-/// (`docs/05-interaction.md#picking-something-up-flips-the-question-not-the-board`).
+/// both were legible and neither said which was which. One button is not
+/// a row, so that failure does not reach the corner, which is why the
+/// entry came back.
 pub const TURQUOISE: Entry = 37;
 /// Blue. Unused: it *was* the action button at rest, until the kill
 /// button took the colour of its own consequence.

@@ -200,12 +200,9 @@ pub struct Claim {
     pub args: Vec<String>,
     /// Spawn it and open no view for it.
     ///
-    /// It used to mean *do not hand this pane over*, and that is no
-    /// longer a thing that can happen: views live on tally's own tmux
-    /// server and your shell is never handed over
-    /// (`docs/06-views.md`). What is left to decline is the
-    /// **view** — the session runs, the pad lights, and nothing opens
-    /// until you press it.
+    /// What it declines is the **view**, never the pane you typed in —
+    /// views live on tally's own tmux server (`docs/06-views.md`). The
+    /// session runs, the pad lights, and nothing opens until you press it.
     ///
     /// `--count N` above 1 implies it, because one shell cannot be shown
     /// N views and picking one of them is a guess.
@@ -227,9 +224,7 @@ impl Claim {
     /// consumes is this module's parser's — a count that would run past
     /// the last column is refused at parse time
     /// (`tests::a_count_that_leaves_the_row_is_refused`), so `at.col + n`
-    /// cannot leave the row and cannot overflow a `u8`. The function that *relies* on a
-    /// rule belongs next to the one that *enforces* it; it used to assert
-    /// the invariant in a doc comment from a file with no tests.
+    /// cannot leave the row and cannot overflow a `u8`.
     ///
     /// `None` is a page with no declared name, which is a grid the
     /// address cannot be spelled on.

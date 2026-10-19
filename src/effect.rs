@@ -17,13 +17,10 @@ use crate::slot::Slot;
 ///
 /// **This is read twice**: once to colour the pad while the modifier is
 /// held, once to decide what the tap actually does. One function, so the
-/// preview cannot promise something the press does not deliver — which is
-/// the whole claim `docs/05` makes for putting a destructive action on a
-/// button with no label.
+/// preview cannot promise something the press does not deliver.
 ///
-/// One function is only half of it, and the half that is easy to see.
-/// [`crate::model::Pads`] is the other half: one function handed two differently-built
-/// [`Pad`]s tells the same lie as two functions.
+/// [`crate::model::Pads`] is the other half: one function handed two
+/// differently-built [`Pad`]s tells the same lie as two functions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Effect {
     /// It will act on this pad, and this is what happens.
@@ -116,6 +113,12 @@ impl Pad {
 /// because the *preview* is the point: a destructive button with no label
 /// has to answer "what happens if I press this" before you press it, and
 /// it has to answer with the same predicate the press uses.
+///
+/// **With a hand full, [`Effect::Skips`] is unreachable** — every pad is
+/// `Holds`, `Occupied` or `Dropped`. That is what lets
+/// [`crate::surface::palette::DARK_GREY`] carry two meanings without them
+/// ever sharing a frame, and
+/// `a_full_hand_never_dims_for_the_other_reason` pins it.
 pub fn effect(action: Action, pad: Pad, hand: Option<Slot>) -> Effect {
     match action {
         // Alive wins over purgeable, and the order is the rule: a pad can
@@ -299,13 +302,8 @@ mod tests {
         );
     }
 
-    /// Dark grey carries two meanings — *this gesture will not touch
-    /// it* under a held Stop, and *you can put it down here* with a
-    /// full hand — and the only thing keeping them apart is that they
-    /// can never share a frame. That is this: **with a pad in hand,
-    /// every pad is Holds, Occupied or Dropped**, and `Skips` is
-    /// unreachable. If an arm is ever added that breaks this, the dim
-    /// level starts lying (`docs/05-interaction.md#picking-something-up-flips-the-question-not-the-board`).
+    /// The claim [`effect`] makes about a full hand. If an arm is ever
+    /// added that breaks it, the dim level starts lying.
     #[test]
     fn a_full_hand_never_dims_for_the_other_reason() {
         let held = Slot {

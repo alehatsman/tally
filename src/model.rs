@@ -54,9 +54,7 @@ pub struct View<'a> {
     /// The pad picked up under a held [`Action::Move`], if any.
     ///
     /// Only ever `Some` while [`Self::held`] is [`Action::Move`]: letting
-    /// go empties the hand, because a pick-up you did not put down must
-    /// leave the board exactly as it was
-    /// (`docs/05-interaction.md#move-is-the-missing-verb`).
+    /// go empties the hand ([`crate::act::Done::Picked`]).
     pub hand: Option<Slot>,
     /// Every action button physically down — which is **not** the same as
     /// [`Self::held`]: two buttons down lights both white and previews
@@ -67,11 +65,9 @@ pub struct View<'a> {
     /// knows about it: the daemon paints the 64 pads itself while this is
     /// true (`docs/05-interaction.md`).
     pub art: bool,
-    /// Which verb `CC19` is carrying
-    /// (`crate::chord::Chords::mode`). **The colour of that corner is
-    /// the only thing that says which mode you are in**, which is what
-    /// makes a latched mode honest — so it is read here rather than
-    /// assumed (`docs/05-interaction.md#changing-the-mode`).
+    /// Which verb `CC19` is carrying (`crate::chord::Chords::mode`).
+    /// Read here rather than assumed, because the corner's colour is the
+    /// only thing that says it ([`render::action`]).
     pub mode: Action,
 }
 
@@ -272,13 +268,10 @@ pub struct Inherit {
 /// whose agent has already exited. `None` when the pad has never held
 /// anything, or when the row anchord has for it recorded no directory.
 ///
-/// **Arguments are not here**, for the reason `row_launch` gives: a pad
-/// running `claude --resume <id>` describes one conversation, and copying
-/// its argv would put a second agent on it.
+/// **Arguments are not here**, for [`row_launch`]'s reason.
 #[must_use]
 pub fn inherit(sessions: &[Session], pages: &Pages, at: Slot) -> Option<Inherit> {
-    // Newest first, which is the order anchord lists in and the order
-    // `resolve` already depends on.
+    // Newest first ([`row_launch`]).
     let newest = sessions
         .iter()
         .find(|s| s.slot_label().and_then(|l| slot::parse(l, pages)) == Some(at))?;
@@ -295,12 +288,8 @@ pub fn inherit(sessions: &[Session], pages: &Pages, at: Slot) -> Option<Inherit>
 /// **The one place a [`Pad`] is built.** The preview asks it 64 times a
 /// frame and [`crate::act::Context`] asks it once per press, and because
 /// it is the same function and not two copies of the same four lines,
-/// they cannot answer differently. They used to: the renderer counted any
-/// `tl.spec` label, the press counted only one that resolved to a
-/// declared `[[spec]]`, and a pad whose spec had been renamed went green
-/// under a held respawn and then did nothing. The spec system is cut
-/// (#40) and that particular disagreement is gone with it; the rule it
-/// cost is not.
+/// they cannot answer differently. They used to, and
+/// `the_preview_and_the_press_agree_about_a_dead_pad` is what that cost.
 #[derive(Debug, Clone, Copy)]
 pub struct Pads<'a> {
     grid: &'a BTreeMap<Slot, Resolved>,
@@ -466,8 +455,7 @@ pub fn frame_from(pads: &Pads<'_>, view: &View<'_>) -> Frame {
     }
 
     // The top row: `▲ ▼ ◄ ► · · · ·` (`docs/05-interaction.md`). Every
-    // button here is self-describing — dark does nothing, lit does exactly
-    // one thing — so there is no state to remember and no mode to be in.
+    // button here is self-describing ([`render::arrow`]).
     frame.set(Button::Top(1), render::arrow(view.offset > 0));
     frame.set(
         Button::Top(2),
@@ -476,12 +464,10 @@ pub fn frame_from(pads: &Pads<'_>, view: &View<'_>) -> Frame {
     frame.set(Button::Top(3), render::back(view.can_go_back));
     frame.set(Button::Top(4), render::next(view.queued > 0));
     frame.set(Button::Top(6), render::arts(view.art));
-    // `Session` held the overview up until #41. It is dark now rather
-    // than carrying a new verb: an inert button that lights up like a
-    // live one is an invitation to press it.
+    // `Session` held the overview up until #41 ([`crate::chord::top`]).
+    // Dark rather than carrying a new verb: an unassigned button is
+    // better than a strained one.
     for index in [5].into_iter().chain(7..=crate::surface::TOP_BUTTONS) {
-        // Carries nothing, and stays dark. An unassigned button is better
-        // than a strained one.
         frame.set(Button::Top(index), crate::surface::Cell::Off);
     }
 
@@ -495,11 +481,9 @@ pub fn frame_from(pads: &Pads<'_>, view: &View<'_>) -> Frame {
     }
     frame.set(
         Button::Action(8),
-        // Held is asked of the **button**, not of the verb the mode
-        // names: both verbs live on `CC19`, and a double-tap flips the
-        // mode on the release, so a press can go down under one verb and
-        // come up under another. `pressed` holds whichever verb was live
-        // when it went down (`docs/05-interaction.md`).
+        // Held is asked of the **button**, not of the verb the mode names
+        // ([`crate::chord::Chords::feed`]). `pressed` holds whichever
+        // verb was live when it went down.
         render::action(Some(view.mode), !view.pressed.is_empty()),
     );
 

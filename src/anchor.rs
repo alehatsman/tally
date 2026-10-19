@@ -189,10 +189,8 @@ impl std::error::Error for Error {}
 
 impl From<std::io::Error> for Error {
     /// Every io failure in this module is the same fact: anchord would
-    /// not talk. The conversion was written out at seventeen call sites
-    /// before it was written once here; a site that ever wants an io
-    /// error to mean something else has to say so with `map_err`, which
-    /// is the right way round.
+    /// not talk. A site that ever wants an io error to mean something
+    /// else has to say so with `map_err`, which is the right way round.
     fn from(e: std::io::Error) -> Self {
         Self::Unreachable(e.to_string())
     }
@@ -249,15 +247,9 @@ pub struct Session {
 /// A `Session` for tests: the two fields anchord always sends, and the
 /// defaults for the eight that carry `#[serde(default)]`.
 ///
-/// Five test modules hand-wrote this ten-field literal — `anchor`, `model`,
-/// `attention`, `watch` and `queue` — which declared the defaults twice:
-/// once on the field, once in every fixture. Adding a field meant editing
-/// five unrelated files, and a fixture that drifted from the struct was a
-/// test passing against a session anchord would never send.
-///
-/// The local `session(..)` helpers stay. They read well at the call site
-/// and each takes the arguments its own module varies; what they no longer
-/// do is restate what a default is.
+/// One home, so a `#[serde(default)]` is declared once rather than once
+/// per fixture. The local `session(..)` helpers stay: each takes the
+/// arguments its own module varies, and none of them restates a default.
 #[cfg(test)]
 impl Session {
     pub(crate) fn fixture(id: &str, state: &str) -> Self {
@@ -701,11 +693,10 @@ impl Client {
 
     /// A socket to anchord, bounded in both directions.
     ///
-    /// Shared by [`Self::call`] and [`Self::attach`] because the two
-    /// opened it identically and the six lines drifting apart would be
-    /// the attach quietly losing its handshake bound. `attach` lifts the
-    /// read bound again once it is past the handshake, which is the one
-    /// difference and is argued there.
+    /// Shared by [`Self::call`] and [`Self::attach`], so neither can lose
+    /// its handshake bound. [`Self::attach`] lifts the read bound again
+    /// once it is past the handshake, which is the one difference and is
+    /// argued there.
     fn connect(&self) -> Result<UnixStream, Error> {
         let stream = UnixStream::connect(&self.path)?;
         stream.set_read_timeout(Some(TIMEOUT))?;
@@ -763,9 +754,8 @@ mod tests {
         assert_eq!(s.slot_label(), None);
     }
 
-    /// A session with only the two fields these tests are about. The
-    /// other eight carried no meaning in either test and were written out
-    /// twice; `src/watch.rs::tests` already does it this way.
+    /// A session with only the two fields these tests are about
+    /// ([`Session::fixture`]).
     fn session(state: &str, labels: BTreeMap<String, String>) -> Session {
         Session::fixture("x", state).with_labels(labels)
     }
