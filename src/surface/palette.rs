@@ -22,11 +22,10 @@ pub const OFF: Entry = 0;
 /// The only dim level in the language, and it says one thing in every
 /// place it appears: *present, and not what you are being asked about*
 /// — a navigation button with somewhere to go ([`crate::render::arrow`],
-/// [`crate::render::overview_button`], [`crate::render::arts`]), a `>`
+/// `Drums` at rest with a reel to start [`crate::render::arts`]), a `>`
 /// that would launch ([`crate::render::launch`]), a pad a held modifier
-/// will skip ([`crate::render::preview`]), the empty run that marks where
-/// the window is standing ([`crate::render::overview`]), and — with a pad
-/// in hand under a held Move — every pad it could land on.
+/// will skip ([`crate::render::preview`]), and — with a pad in hand under
+/// a held Move — every pad it could land on.
 ///
 /// That last one is the only place this value means *the target* rather
 /// than *not the target*, and it is safe because the two can never share
@@ -43,8 +42,9 @@ pub const DARK_GREY: Entry = 1;
 /// White. The brightest thing on the surface, spent on roles that all
 /// mean *this button is live right now*: `◄` when there is somewhere to
 /// go back to ([`crate::render::back`]), a modifier while it is held
-/// ([`crate::render::action`]), and `Session` while the overview is up
-/// ([`crate::render::overview_button`]).
+/// ([`crate::render::action`]), `►` on the way out of an art
+/// ([`crate::render::leave`]), and `Drums` while one is playing
+/// ([`crate::render::arts`]).
 ///
 /// It used to light *the page you are on* as well. That went with the
 /// page buttons themselves when the top row became a queue
