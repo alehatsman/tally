@@ -28,9 +28,59 @@ use crate::signal::SessionState;
 pub const PREFIX: &str = "tl.";
 /// Which pad a session is bound to: `page:row:col`.
 pub const LABEL_SLOT: &str = "tl.slot";
+/// What a session is waiting for, as the rising hook named it.
+///
+/// **A human reading the grid wants recall** — never miss a session that
+/// wants me, and a false amber costs a glance. **A program reading it
+/// wants precision** — act only on *blocked*, because a false positive
+/// costs a wrong action. One bit cannot serve both, and the bit is the
+/// one that was measured, so what splits is the word
+/// (`docs/04-signals.md`, #23).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Wants {
+    /// A `Notification` hook: an answer, or the agent cannot proceed.
+    Blocked,
+    /// A `Stop` hook: the turn ended and it is at its prompt. The common
+    /// case by a wide margin, and the one `wants an answer` was false
+    /// about.
+    Finished,
+    /// A rising hook that did not say, including every label written
+    /// before this distinction existed (`"1"`).
+    ///
+    /// **Unknown values land here, deliberately.** A reader on an older
+    /// build meeting a word a newer hook writes must degrade to *wants
+    /// you* and not to *nothing*.
+    Unstated,
+}
+
+impl Wants {
+    /// The label value, which is what a hook writes.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Blocked => "blocked",
+            Self::Finished => "finished",
+            Self::Unstated => "1",
+        }
+    }
+
+    /// Read a label value. Anything unrecognised is [`Self::Unstated`].
+    #[must_use]
+    pub fn of(value: &str) -> Self {
+        match value {
+            "blocked" => Self::Blocked,
+            "finished" => Self::Finished,
+            _ => Self::Unstated,
+        }
+    }
+}
+
 /// Set to suppress attention for this session.
 pub const LABEL_MUTE: &str = "tl.mute";
-/// Set by a `Notification` hook to declare the agent is waiting.
+/// Set by a rising hook to declare the agent is waiting.
+///
+/// The **value** names which hook fired ([`Wants`]); presence alone is
+/// what raises the amber, and that has not changed (#23).
 pub const LABEL_ATTENTION: &str = "tl.attention";
 /// The Claude Code session id, as that agent's own hook reported it.
 ///
@@ -178,8 +228,20 @@ impl Session {
     }
 
     /// Whether a hook has declared this session is waiting on a human.
+    ///
+    /// **Presence, not value.** Every value means amber, including one
+    /// this build has never heard of — a vocabulary that grows must not
+    /// be able to put out a light.
     pub fn declared_attention(&self) -> bool {
         self.labels.contains_key(LABEL_ATTENTION)
+    }
+
+    /// *Which* hook declared it, if one did.
+    ///
+    /// `None` is *no attention at all*, not *unstated*: the two are
+    /// different answers and [`Wants::Unstated`] is the second one.
+    pub fn attention_wants(&self) -> Option<Wants> {
+        self.labels.get(LABEL_ATTENTION).map(|v| Wants::of(v))
     }
 
     /// Did this row become `lost` because anchord itself restarted?
