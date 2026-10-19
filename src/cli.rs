@@ -35,7 +35,7 @@ ls      Print the grid, and mark the pad you are on.
   1:1  #  #  #  @  .  .  .  .
   1:3  !  .  .  .  .  .  .  .
 
-  @ you   # running   ? waiting   ! failed   x lost   . free
+  @ you   # running   ? wants you   ! failed   x lost   . free
 
 A row label and a column heading joined is the address: row 1:1, column
 5, is 1:1:5. Under the picture is a line per occupied pad with its
@@ -570,7 +570,7 @@ pub fn address(text: &str, pages: &Pages) -> Result<Slot, Error> {
 
 fn coordinate(text: &str, what: &str) -> Result<u8, Error> {
     match text.parse::<u8>() {
-        Ok(n) if (1..=8).contains(&n) => Ok(n),
+        Ok(n) if (1..=slot::COLS).contains(&n) => Ok(n),
         _ => Err(Error::Address(format!("{what} {text:?} is not 1-8"))),
     }
 }
@@ -585,6 +585,24 @@ fn declared(pages: &Pages) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `USAGE` printed `? waiting` while `tally ls` printed `? wants you`,
+    /// and both are user-facing in the same program. #23 removed the word
+    /// *waiting* because it claims a question is pending, which is false in
+    /// the common case; the usage string never got the change, and nothing
+    /// asserted anything about its contents.
+    ///
+    /// This is the binding. The legend has one home —
+    /// [`crate::listing::KEY`] — and a copy that does not match it fails
+    /// here rather than in front of a first-time reader.
+    #[test]
+    fn the_usage_legend_is_the_listings() {
+        assert!(
+            USAGE.contains(crate::listing::KEY),
+            "USAGE has drifted from listing::KEY:\n  listing: {:?}",
+            crate::listing::KEY
+        );
+    }
 
     fn named() -> Pages {
         Pages::new(["work".to_owned(), "infra".to_owned()])
