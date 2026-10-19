@@ -120,6 +120,18 @@ impl Scanner {
                         );
                     }
                     b';' => self.state = State::Payload(Some(code)),
+                    // The sequence's own terminator, arriving before any
+                    // payload: `ESC ] 112 BEL` (reset cursor colour, which
+                    // vim and tmux emit on exit) has no `;` and no title.
+                    // Abandoning here would consume the terminator and
+                    // leave the scanner believing a closed sequence was
+                    // still open, so the next real bell would be eaten as
+                    // its end.
+                    BEL => self.ground(),
+                    // The `ESC \` form of the same thing: hold the ESC so
+                    // the `\` closes the sequence rather than being read
+                    // as payload.
+                    ESC => self.state = State::PayloadEsc(None),
                     // Malformed. Stop guessing at the parameter, but keep
                     // reading as a sequence to its end: the BEL that closes
                     // it is still a terminator, however badly formed what
@@ -320,6 +332,31 @@ mod tests {
         assert!(bogus.titles.is_empty(), "{:?}", bogus.titles);
         assert_eq!(s.feed(b"ping\x07").last_bell, None, "still terminating");
         assert_eq!(s.feed(b"ready?\x07").last_bell, Some(6));
+    }
+
+    /// The malformed-param test above never makes the terminator the byte
+    /// that breaks the parameter, which is how this survived. `ESC ] 112
+    /// BEL` — reset cursor colour, emitted by vim and tmux — closed a
+    /// sequence the scanner then believed was open, so the next real bell
+    /// was eaten as its end and the pad never went amber.
+    #[test]
+    fn a_parameter_only_osc_closed_by_bel_does_not_eat_the_next_bell() {
+        let mut s = Scanner::default();
+        let got = s.feed(b"\x1b]112\x07");
+        assert_eq!(got.last_bell, None, "its BEL is a terminator, not a ring");
+        assert!(got.titles.is_empty(), "{:?}", got.titles);
+        assert_eq!(s.feed(b"what next?\x07").last_bell, Some(10));
+    }
+
+    /// The `ESC \` spelling of the same case: the `\` must close the
+    /// sequence, not be swallowed as payload with the sequence left open.
+    #[test]
+    fn a_parameter_only_osc_closed_by_st_does_not_eat_the_next_bell() {
+        let mut s = Scanner::default();
+        let got = s.feed(b"\x1b]104\x1b\\");
+        assert_eq!(got.last_bell, None);
+        assert!(got.titles.is_empty(), "{:?}", got.titles);
+        assert_eq!(s.feed(b"what next?\x07").last_bell, Some(10));
     }
 
     /// OSC 52 is the reachable one: base64 of anything over ~384 bytes
