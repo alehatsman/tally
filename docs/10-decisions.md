@@ -443,6 +443,33 @@ are different facts.
 
 → [01](01-scope.md#teleport-is-a-sibling-not-a-dependency)
 
+### D27 — The bridge, specified on a Mac and answered on the desk
+
+**Specified** (`docs/30-the-bridge.md`, deleted in `17a5b23`): `tallyd`
+listens and the bridge connects, because WSL forwards Windows'
+`localhost` into the VM and not the reverse; `Device` becomes a trait
+with a `Remote` implementation and `poll` changes signature; the raise is
+`powershell.exe` `AppActivate`, unverified.
+
+**Found**, 2026-10-19 and 20, by running each claim on the Windows desk:
+under mirrored networking loopback reaches **both ways**, so the reason
+for the direction was gone; `AppActivate` from WSL **returns `True` and
+raises nothing**, three times of three; and a systemd unit — the obvious
+way to run `tallyd` in WSL — launches Windows programs that **exit 0 and
+never reach the desktop**.
+
+**Now:** the bridge listens, because then a bridge that is not running is
+a refused connect, which is the `NotFound` `Link` already retries on the
+reconcile clock — and a stranger on the socket can reach the device but
+never the daemon. `Device` stays **one type** with two ways of moving
+bytes, which is all the second implementation ever was; `poll` did not
+change and nothing above `Link` can tell. The raise presses Alt first and
+lands three times in four. `tallyd` on that desk runs under a `wsl.exe`
+started at logon. **The cost**, named: the device itself has not been
+plugged in, so everything that needs it is still a checklist.
+
+→ [13](13-bridge.md)
+
 ---
 
 ## Architecture — reversals with the cost named

@@ -369,6 +369,7 @@ if it is ever specced.
 | anchor client | **ours, ported** | anchor's socket is newline-JSON plus a 13-byte binary frame header. teleport's `anchor_client.rs` is the reference; port it rather than inventing a second dialect of the same protocol, which is a second place for the offset arithmetic to be subtly wrong |
 
 Three hundred lines of hardware code we own beats a crate that abstracts a
-product line. Total: `libc`, `midir`, `serde`, `serde_json`, `toml`. No
-async runtime — the 16 ms polling loop the device needs is the only clock
+product line. Total: `libc`, `midir`, `serde`, `serde_json`, `toml` — and
+`tallybridge`, which is ours: the bridge's wire, std-only, in this
+repository ([13](13-bridge.md)). No async runtime — the 16 ms polling loop the device needs is the only clock
 this program has.

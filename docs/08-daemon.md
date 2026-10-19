@@ -37,6 +37,13 @@ So `tally` is a second binary over the same two sources of truth, and tallyd
 notices config changes on its reconcile tick. **No IPC between our own two
 binaries.**
 
+> **The bridge is a socket between two of our binaries, and not an
+> exception to this.** On a Windows desk `tallyd` talks to `tallybridge`
+> over loopback TCP ([13](13-bridge.md)) — but what crosses it is the
+> Launchpad's own MIDI, one message per frame, and nothing about the
+> grid. Nothing asks `tallyd` a question over it and `tallyd` accepts no
+> connection on it. It is the USB cable, extended across a VM boundary.
+
 The rule generalises past our own binaries, and the test case is the
 attention hook. A `Notification` hook needs to tell tallyd that an agent is
 waiting, and the obvious shape is a FIFO — a path, a reader task, EOF and
