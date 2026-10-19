@@ -407,6 +407,95 @@ fn a_corpse_claiming_another_address_does_not_wedge_the_pad() {
     });
 }
 
+/// The other direction, and the one nothing pressed: the pad the corpse
+/// **claims**, while it sits somewhere else.
+///
+/// `dead_view_at` used to match on the tag alone, so the corpse was
+/// reclaimed, respawned where it stood and tagged with the address it was
+/// not at — the new session's pad jumping to the wrong window, and the
+/// window it really held wedged for its own pad
+/// ([#19](https://github.com/alehatsman/tally/issues/19) again, by a
+/// different door). It heals on a second press, which is not the same as
+/// not happening.
+#[test]
+fn a_corpse_claiming_a_pad_from_elsewhere_does_not_take_the_new_session() {
+    each_config("corpse claiming the pressed pad", |s| {
+        // S2 belongs at 1:1:5, is drifted onto 1:1:2's window, and dies
+        // there. Its tag still says 1:1:5.
+        press(s, "S2", 1, 5);
+        let corpse = s.view("S2").id;
+        let _drifted = s.sh(&["move-window", "-s", &corpse, "-t", "r01:2"]);
+        let _respawned = s.sh(&["respawn-pane", "-k", "-t", &corpse, "true"]);
+        s.wait_until_dead(&corpse);
+        assert_eq!(
+            s.view("S2").slot,
+            addr(1, 5),
+            "claims 1:1:5 from r01:2 — {}",
+            s.dump()
+        );
+
+        // A new session on the pad the corpse only *claims*.
+        press(s, "S10", 1, 5);
+
+        let fresh = s.view("S10");
+        assert!(fresh.at("r01", 5), "S10 is at the pad — {}", s.dump());
+        assert_ne!(fresh.id, corpse, "not the corpse — {}", s.dump());
+        // The corpse is left where it is: it is not in the way of 1:1:5,
+        // and 1:1:2's own press is what reclaims it
+        // (`a_corpse_claiming_another_address_does_not_wedge_the_pad`).
+        press(s, "S11", 1, 2);
+        assert!(s.view("S11").at("r01", 2), "and 1:1:2 works — {}", s.dump());
+    });
+}
+
+/// You split a view, the agent dies, and the corpse is no longer the
+/// first pane tmux lists in that window.
+///
+/// The premise the unit fixture asserts, measured rather than assumed:
+/// `split-window -b` puts the new pane ahead of the one it split, and the
+/// sibling carries no tag of its own because `@tally_session` is
+/// pane-scoped. A corpse lookup that asked only the first pane at the
+/// index would miss this one and leave the pad wedged on `index N in
+/// use`, since the sibling is untagged and so not `jump`'s to move.
+#[test]
+fn a_corpse_behind_a_split_sibling_still_gives_its_pad_up() {
+    each_config("corpse behind a split", |s| {
+        press(s, "S2", 1, 5);
+        let corpse = s.view("S2").id;
+        // Split it the way you would, putting the sibling first.
+        let _split = s.sh(&["split-window", "-b", "-d", "-t", &corpse, "sleep", "100000"]);
+        let _respawned = s.sh(&["respawn-pane", "-k", "-t", &corpse, "true"]);
+        s.wait_until_dead(&corpse);
+
+        let first = s
+            .panes()
+            .into_iter()
+            .find(|p| p.at("r01", 5))
+            .expect("something is at r01:5");
+        assert_ne!(
+            first.id,
+            corpse,
+            "arranged: the sibling is listed first — {}",
+            s.dump()
+        );
+        assert_eq!(first.session, "", "and it carries no tag — {}", s.dump());
+
+        // The same press as `a_press_after_a_close_does_not_meet_index_in
+        // _use`, with a sibling in the way.
+        press(s, "S12", 1, 5);
+
+        let fresh = s.view("S12");
+        assert!(fresh.at("r01", 5), "S12 is at the pad — {}", s.dump());
+        assert_eq!(
+            fresh.id,
+            corpse,
+            "reclaimed in place, sibling and scrollback kept — {}",
+            s.dump()
+        );
+        assert_eq!(fresh.slot, addr(1, 5), "and it claims it — {}", s.dump());
+    });
+}
+
 /// A **live** squatter is parked out of the address space rather than
 /// closed or sent home: it does not have to go home to stop being in the
 /// way, and `jump` cannot work out where home is anyway
