@@ -34,7 +34,9 @@ use crate::slot::{Pages, Slot};
 /// rather than at each call site (`docs/08-daemon.md`).
 #[derive(Debug, Default)]
 pub struct Journal {
-    /// slot -> (session id, when it started asking)
+    /// slot -> (session id, when it started asking). Keyed by slot because
+    /// the queue and the replay read it by pad, but **identity is the
+    /// session**: [`Self::transitions`] carries an entry across a move.
     asking: BTreeMap<Slot, (String, i64)>,
     /// Is [`Self::asking`] a memory of the last daemon that anchord has
     /// not confirmed yet?
@@ -208,11 +210,18 @@ impl Journal {
                 continue;
             };
             match entry.to.as_str() {
+                // Keyed by session as well as slot: a move writes no line
+                // ([`Self::transitions`]), so the file can hold a rise at
+                // an address the session has since left. A session asks
+                // once, so a later line about it supersedes the earlier
+                // address — otherwise the answer at the new pad leaves a
+                // ghost at the old one, asking forever.
                 "needs_answer" => {
+                    asking.retain(|_, (session, _): &mut (String, i64)| *session != entry.session);
                     let _rise = asking.insert(slot, (entry.session, entry.ms));
                 }
                 "answered" => {
-                    let _fall = asking.remove(&slot);
+                    asking.retain(|_, (session, _): &mut (String, i64)| *session != entry.session);
                 }
                 // A verb written by a newer binary. Leaving the slot as it
                 // was is the conservative answer: the worst case is one
@@ -300,19 +309,50 @@ impl Journal {
         if replayed {
             return Ok(());
         }
+        // A session is what asks; a slot is only where it is standing.
+        // `Action::Move` is the one gesture that changes a live session's
+        // slot, so matching by address alone reads a moved amber as an
+        // answer at the old pad and a fresh question at the new one: a
+        // phantom `answered`, a second `needs_answer`, and a wait clock
+        // restarted from zero — which `queue::head` and the tempo both
+        // read. So the session id is matched first, and a session already
+        // asking keeps its **original** moment wherever it now stands. A
+        // move is not a transition and writes nothing; no new verb is
+        // needed, because the session id on every line already says who.
+        let mut before: BTreeMap<&str, (Slot, i64)> = asking_now
+            .iter()
+            .map(|(slot, (session, since))| (session.as_str(), (*slot, *since)))
+            .collect();
+        let mut after = BTreeMap::new();
+        let mut rises = Vec::new();
         for (slot, r) in resolved {
             let SlotState::NeedsAnswer { source } = r.state else {
                 continue;
             };
-            if asking_now.contains_key(slot) {
-                continue; // still asking; not a transition
+            if let Some((_, since)) = before.remove(r.session.as_str()) {
+                let _kept = after.insert(*slot, (r.session.clone(), since));
+            } else {
+                let _rise = after.insert(*slot, (r.session.clone(), now));
+                rises.push((*slot, r, source));
             }
-            let _previous = asking_now.insert(*slot, (r.session.clone(), now));
+        }
+        // Whatever is left stopped asking: answered, exited, muted, or the
+        // pad went empty.
+        let mut falls: Vec<(Slot, String, i64)> = before
+            .into_iter()
+            .map(|(session, (slot, since))| (slot, session.to_owned(), since))
+            .collect();
+        falls.sort_by_key(|(slot, ..)| *slot);
+        // The map is settled before anything is written, so a failed write
+        // retires the sink without leaving the queue half-updated.
+        *asking_now = after;
+
+        for (slot, r, source) in rises {
             let source = match source {
                 Source::Derived => "derived",
                 Source::Declared => "declared",
             };
-            let at = address(*slot, pages);
+            let at = address(slot, pages);
             write_line(
                 out,
                 &Asked {
@@ -325,35 +365,18 @@ impl Journal {
                 },
             )?;
         }
-
-        // Stopped asking: answered, exited, muted, or the pad went empty.
-        //
-        // Collected rather than iterated because the loop below mutates
-        // `asking_now`.
-        let done: Vec<Slot> = asking_now
-            .keys()
-            .filter(|s| {
-                !matches!(
-                    resolved.get(s).map(|r| r.state),
-                    Some(SlotState::NeedsAnswer { .. })
-                )
-            })
-            .copied()
-            .collect();
-        for slot in done {
-            if let Some((session, since)) = asking_now.remove(&slot) {
-                let at = address(slot, pages);
-                write_line(
-                    out,
-                    &Answered {
-                        ms: now,
-                        session: &session,
-                        slot: &at,
-                        to: "answered",
-                        after_ms: now.saturating_sub(since),
-                    },
-                )?;
-            }
+        for (slot, session, since) in falls {
+            let at = address(slot, pages);
+            write_line(
+                out,
+                &Answered {
+                    ms: now,
+                    session: &session,
+                    slot: &at,
+                    to: "answered",
+                    after_ms: now.saturating_sub(since),
+                },
+            )?;
         }
         Ok(())
     }
@@ -1097,6 +1120,84 @@ mod tests {
             .expect("write");
 
         assert_eq!(lines(&out).len(), 3);
+    }
+
+    /// The bug: a Move changes the slot and nothing else. The session is
+    /// still asking, so there is no line, and the clock is the original.
+    #[test]
+    fn moving_an_asking_session_is_not_a_transition() {
+        let (from, to) = (at(1, 3, 4), at(1, 1, 1));
+        let mut j = Journal::default();
+        let pages = Pages::default();
+        let mut out = Vec::new();
+
+        j.record(&asking_at(from, "A"), &pages, T0, &mut out)
+            .expect("write");
+        j.record(&asking_at(to, "A"), &pages, T0 + 1_200_000, &mut out)
+            .expect("write");
+
+        assert_eq!(lines(&out).len(), 1, "a move wrote: {:?}", lines(&out));
+        assert_eq!(j.asking(), 1);
+        assert!(j.waiting().get(&from).is_none(), "left a ghost behind");
+        let (_, since) = j.waiting().get(&to).expect("asking at the new pad");
+        assert_eq!(*since, T0, "the move restarted the wait");
+
+        // And the eventual answer is measured from the first question.
+        j.record(&BTreeMap::new(), &pages, T0 + 1_500_000, &mut out)
+            .expect("write");
+        let line = lines(&out).pop().expect("a fall");
+        assert!(line.contains(r#""slot":"1:1:1""#), "{line}");
+        assert!(line.contains(r#""after_ms":1500000"#), "{line}");
+    }
+
+    /// Two ambers trading places is two moves in one tick; each keeps its
+    /// own clock rather than inheriting whatever the pad had.
+    #[test]
+    fn two_asking_sessions_swapping_pads_keep_their_own_clocks() {
+        let (x, y) = (at(1, 1, 1), at(1, 1, 2));
+        let pages = Pages::default();
+        let mut j = Journal::default();
+        let mut out = Vec::new();
+        j.record(&asking_at(x, "A"), &pages, T0, &mut out)
+            .expect("write");
+        let mut both = asking_at(x, "A");
+        both.extend(asking_at(y, "B"));
+        j.record(&both, &pages, T0 + 1_000, &mut out)
+            .expect("write");
+        let mut late = asking_at(y, "A");
+        late.extend(asking_at(x, "B"));
+        j.record(&late, &pages, T0 + 5_000, &mut out)
+            .expect("write");
+        assert_eq!(lines(&out).len(), 2, "{:?}", lines(&out));
+        assert_eq!(j.waiting().get(&y).map(|v| v.1), Some(T0), "A's clock");
+        assert_eq!(j.waiting().get(&x).map(|v| v.1), Some(T0 + 1_000), "B's");
+        assert_eq!(j.waiting().get(&x).map(|v| v.0.as_str()), Some("B"));
+        assert_eq!(j.waiting().get(&y).map(|v| v.0.as_str()), Some("A"));
+    }
+
+    /// A restart after a move reads a rise at an address the session left.
+    /// The first tick reconciles it by session id, keeping the moment, and
+    /// an answer at the new pad leaves no ghost at the old one.
+    #[test]
+    fn a_restart_after_a_move_keeps_the_original_moment() {
+        let pages = Pages::default();
+        let written = r#"{"ms":1000,"session":"A","slot":"1:3:4","to":"needs_answer"}"#;
+        let mut j = Journal::replay(written, &pages);
+        j.saw_listing();
+        let mut out = Vec::new();
+        j.record(&asking_at(at(1, 1, 1), "A"), &pages, 9_000, &mut out)
+            .expect("write");
+        assert!(lines(&out).is_empty(), "{:?}", lines(&out));
+        let (_, since) = j.waiting().get(&at(1, 1, 1)).expect("moved");
+        assert_eq!(*since, 1000);
+
+        let after = concat!(
+            r#"{"ms":1000,"session":"A","slot":"1:3:4","to":"needs_answer"}"#,
+            "\n",
+            r#"{"ms":9500,"session":"A","slot":"1:1:1","to":"answered","after_ms":8500}"#,
+            "\n",
+        );
+        assert_eq!(Journal::replay(after, &pages).asking(), 0, "a ghost");
     }
 
     #[test]
