@@ -184,15 +184,39 @@ pub trait Jump {
     /// closed, has no honest destination, and landing somewhere arbitrary
     /// is worse than not moving (`docs/05-interaction.md`).
     ///
+    /// **Closed origins are not its job**: it trusts the map, and
+    /// [`Jump::prune_origins`] is what keeps the map true. A pane that
+    /// closed since the last prune is a failed switch, reported.
+    ///
     /// # Errors
     /// Whatever stopped it.
     fn back(&self) -> Result<bool, Error>;
+
+    /// Forget every origin whose pane has since closed.
+    ///
+    /// **Called on the reconcile tick, never on the frame.** This is what
+    /// makes [`Jump::can_go_back`] and [`Jump::back`] one predicate: the
+    /// liveness question costs a `tmux` fork, the renderer asks the
+    /// predicate ~62 times a second, and the only honest way to have both
+    /// is to answer the expensive half on the 2 s clock and let the cheap
+    /// half read what it left (`src/bin/tallyd.rs`).
+    ///
+    /// **Best effort, and silent.** A tmux it cannot ask is not the same
+    /// fact as every pane being gone, so an unanswerable prune leaves the
+    /// map alone: the cost of the stale half of that guess is one press
+    /// that reports nowhere to go, and the cost of the other is `◄`
+    /// going dark on a server that is merely busy.
+    fn prune_origins(&self);
 
     /// Is there anywhere for [`Jump::back`] to go, for any client?
     ///
     /// Read by the renderer to decide whether `◄` is lit, and by the press
     /// to decide whether it does anything — one predicate, two readers,
     /// which is the rule `src/act.rs` already holds for the chords.
+    ///
+    /// True of the map as [`Jump::prune_origins`] last left it, which is
+    /// why that runs: the map is the predicate, and nothing else may
+    /// quietly hold a second opinion about it.
     fn can_go_back(&self) -> bool;
 
     /// Close the view pane for `session`, if there is one.
@@ -1352,6 +1376,27 @@ impl Tmux {
             let _kept = origin.entry(client.clone()).or_insert_with(|| pane.clone());
         }
     }
+
+    /// Drop every origin whose pane is not in `listing`.
+    ///
+    /// Split from [`Jump::prune_origins`] so the rule is testable against
+    /// a fixture, like every other read of a pane listing in this module.
+    ///
+    /// An **empty** listing prunes nothing. `list-panes` on a live server
+    /// always has at least the pane you are reading this from, so empty
+    /// means tmux could not be asked — and wiping the map on that would
+    /// darken `◄` for a server that is merely busy.
+    fn keep_live_origins(&self, listing: &str) {
+        if listing.is_empty() {
+            return;
+        }
+        let Ok(mut origin) = self.origin.lock() else {
+            return;
+        };
+        // Through [`row`], like every other read of this listing: a
+        // hand-rolled split goes stale the day [`FIELD`] changes.
+        origin.retain(|_, pane| listing.lines().filter_map(row).any(|r| r.pane.id == pane));
+    }
 }
 
 /// Tell the pads where the view for `session` goes, without looking at it.
@@ -1556,21 +1601,32 @@ impl Jump for Tmux {
         if taken.is_empty() {
             return Ok(false);
         }
-        let live = self.panes();
         let mut moved = false;
+        // No `?` in the loop. The origins of every client were taken up
+        // front, so a return here spends the ones not reached yet and
+        // leaves those clients stranded with `◄` dark — one detached
+        // client must not cost the others their way home. The first
+        // failure is carried out instead.
+        let mut failed = None;
         for (client, pane) in taken {
-            // Through [`row`], like every other read of this listing: a
-            // hand-rolled split goes stale the day [`FIELD`] changes.
-            if !live.lines().filter_map(row).any(|r| r.pane.id == pane) {
-                continue; // the origin closed while you were away
+            match self.run(&switch_args(&client, &pane)) {
+                Ok(_switched) => moved = true,
+                Err(e) => {
+                    let _first = failed.get_or_insert(e);
+                }
             }
-            self.run(&switch_args(&client, &pane))?;
-            moved = true;
         }
         if moved {
             raise();
         }
-        Ok(moved)
+        match failed {
+            Some(e) => Err(e),
+            None => Ok(moved),
+        }
+    }
+
+    fn prune_origins(&self) {
+        self.keep_live_origins(&self.panes());
     }
 
     fn can_go_back(&self) -> bool {
@@ -2504,5 +2560,52 @@ mod tests {
         assert!(!t.can_go_back());
         t.record_origins(&[("c".to_owned(), "%1".to_owned())], "%3");
         assert!(t.can_go_back());
+    }
+
+    /// The lit button that did nothing. The agent you jumped to finished
+    /// and its pane closed; `◄` stayed white because the map was still
+    /// non-empty, and the press reported *nowhere to go*. The top row is
+    /// built on dark does nothing, so the going-dark has to happen on the
+    /// tick, before the press ([`Jump::prune_origins`]).
+    #[test]
+    fn an_origin_that_closed_goes_dark_on_the_tick_not_on_the_press() {
+        let t = Tmux::default();
+        t.record_origins(&[("c".to_owned(), "%3".to_owned())], "%4");
+        assert!(t.can_go_back(), "it was somewhere to go when you jumped");
+        // %3 is gone; %4, the view you are looking at, is not.
+        t.keep_live_origins("%1|0|||tally|1\n%4|0|01LIVE|work:4:2|r04|2\n");
+        assert!(!t.can_go_back(), "the origin closed while you were away");
+    }
+
+    /// A prune is not a reset: the clients whose origins are still open
+    /// keep them.
+    #[test]
+    fn a_prune_keeps_the_origins_still_standing() {
+        let t = Tmux::default();
+        t.record_origins(
+            &[
+                ("/dev/ttys000".to_owned(), "%1".to_owned()),
+                ("/dev/ttys003".to_owned(), "%5".to_owned()),
+            ],
+            "%3",
+        );
+        t.keep_live_origins("%1|0|||tally|1\n%3|0|01LIVE|work:4:2|r04|2\n");
+        let o = t.origin.lock().expect("lock");
+        assert_eq!(o.get("/dev/ttys000").map(String::as_str), Some("%1"));
+        assert_eq!(o.get("/dev/ttys003"), None, "%5 closed");
+    }
+
+    /// An empty listing is tmux failing to answer, not every pane being
+    /// gone — and `◄` must not go dark because the server was busy
+    /// ([`Tmux::keep_live_origins`]).
+    #[test]
+    fn a_listing_tmux_could_not_answer_prunes_nothing() {
+        let t = Tmux::default();
+        t.record_origins(&[("c".to_owned(), "%1".to_owned())], "%3");
+        t.keep_live_origins("");
+        assert!(
+            t.can_go_back(),
+            "an unanswerable prune leaves the map alone"
+        );
     }
 }
