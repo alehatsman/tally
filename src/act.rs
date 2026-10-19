@@ -1,7 +1,7 @@
 //! Gestures, carried out.
 //!
 //! The decision of *whether* a gesture applies is
-//! [`crate::model::effect`], and it is read twice — once to colour the
+//! [`crate::effect::effect`], and it is read twice — once to colour the
 //! pad, once here. This module never second-guesses it: if the preview
 //! said a pad was a target, the press acts on it, and if it said dim,
 //! nothing happens. Two predicates would eventually disagree, and the one

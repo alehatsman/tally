@@ -252,6 +252,23 @@ impl Grip {
         }
         false
     }
+
+    /// The cable came out. Everything a finger was holding went with it.
+    ///
+    /// One function rather than a line per field, because the chord state
+    /// is split across two types and the halves drifted: the departure
+    /// branch cleared [`Chords`] and left the hand behind, so a hold-tap
+    /// that was interrupted by a replug put the carried pad down wherever
+    /// the next finger landed. A pick-up that is never put down is already
+    /// specified to leave anchord untouched (`docs/05-interaction.md`,
+    /// chord rule 4); a departure is one of the ways it is never put down.
+    fn unplugged(&mut self, chords: &mut Chords) {
+        chords.clear();
+        self.hand = None;
+        // `▲` down when the cable went leaves a hold that would fire a
+        // spurious `⌂` on the replug. Same event, same answer.
+        self.home = None;
+    }
 }
 
 /// What a press did to the hand under a held `Move`.
@@ -273,7 +290,7 @@ impl Hand {
     /// Fold this into the loop's hand.
     ///
     /// A method rather than a `match` at the call site for the same
-    /// reason [`corner_event`] exists: `main` is at the
+    /// reason [`Grip::feel`] exists: `main` is at the
     /// cognitive-complexity cap and this is the kind of three-arm
     /// bookkeeping that belongs next to the enum it is about.
     fn apply(self, hand: &mut Option<Slot>) {
@@ -930,6 +947,10 @@ fn main() -> ExitCode {
     // the only way to see or clear it.
     let mut purgeable: std::collections::BTreeMap<Slot, Vec<String>> =
         std::collections::BTreeMap::new();
+    // The anchor sessions a tmux client is looking at, as of the last
+    // reconcile. Asking costs two `tmux` fork+execs, so it is asked on
+    // the same clock as every other outside-world fact here.
+    let mut viewed: Vec<String> = Vec::new();
     let started = std::time::Instant::now();
 
     let signum = loop {
@@ -989,15 +1010,27 @@ fn main() -> ExitCode {
                         | Gesture::PageDown
                         | Gesture::Home
                         | Gesture::Next
-                        | Gesture::Back => navigate(
-                            gesture,
-                            &mut offset,
-                            waiting.head.as_ref(),
-                            waiting.queued,
-                            &pages,
-                            &tmux,
-                            &mut journal,
-                        ),
+                        | Gesture::Back => {
+                            navigate(
+                                gesture,
+                                &mut offset,
+                                waiting.head.as_ref(),
+                                waiting.queued,
+                                &pages,
+                                &tmux,
+                                &mut journal,
+                            );
+                            // `►` and `◄` move the tmux client, and which
+                            // panes are being viewed is what `queue::head`
+                            // skips on. Pull the reconcile forward, the
+                            // same way a press on a pad does, rather than
+                            // offering the same head again for two
+                            // seconds. The three scrolls move no client
+                            // and need nothing.
+                            if matches!(gesture, Gesture::Next | Gesture::Back) {
+                                last_reconcile = Duration::ZERO;
+                            }
+                        }
                         Gesture::Tap { row, col } | Gesture::Chord { row, col, .. } => {
                             // The window turns a pad into an address.
                             // Past the end of the address space there
@@ -1072,24 +1105,49 @@ fn main() -> ExitCode {
                     reachable = false;
                 }
             }
+            // Both of these are pure functions of state that only moves
+            // in this branch, and both are expensive: `purgeable` walks
+            // the session list allocating a `Vec<String>` per occupied
+            // pad, and `viewing` forks two `tmux` processes. On the tick
+            // they ran ~62 times a second each to produce a value that
+            // changes at most twice (review w8 F2, review w4 F3).
+            //
+            // `purgeable` is recomputed on the error arm too, which is
+            // free: `sessions` is deliberately kept on a failed list, so
+            // the answer is the one it already had.
+            purgeable = model::purgeable(&sessions, &pages);
+            viewed = tmux.viewing();
         }
 
-        purgeable = model::purgeable(&sessions, &pages);
         let pressed: std::collections::BTreeSet<Action> = Action::all()
             .into_iter()
             .filter(|&a| chords.is_held(a))
             .collect();
         let now = tally::now_ms();
-        let resolved = model::resolve(&sessions, &watchers.snapshot(), &pages, now);
-        grid.clone_from(&resolved);
+        // `resolve` and `journal.tick` stay on the fast clock while the
+        // listing above does not, and the reason is `now`: amber, the
+        // journal's rising edges and the tempo are all functions of it,
+        // and the one number this project is measuring is a count of
+        // those edges and how long each waited (`docs/04-signals.md`).
+        //
+        // `snapshot()` stays with them for the same reason, though it is
+        // the one expensive call left here -- it locks and deep-clones
+        // the signal map every wake (review w5). Moving it to the
+        // reconcile would delay a hook-raised amber, and mistime the
+        // edge the journal writes for it, by up to two seconds. The fix
+        // belongs in `watch.rs` -- a generation counter, so a snapshot
+        // that has not moved is not cloned -- not here.
+        let mut resolved = model::resolve(&sessions, &watchers.snapshot(), &pages, now);
         journal.tick(&resolved, &pages, now);
 
         // The queue, after the journal has been brought up to date: the
         // map it keeps *is* the queue, ordered by when each slot started
         // asking (`docs/05-interaction.md`).
         let pads = model::Pads::new(&resolved, &purgeable, grip.hand);
-        let viewing: std::collections::BTreeSet<Slot> = tmux
-            .viewing()
+        // The list of viewed sessions is the reconcile's; turning it into
+        // pads is this tick's, so a session that moved pad since is drawn
+        // where it is now rather than where it was.
+        let viewing: std::collections::BTreeSet<Slot> = viewed
             .iter()
             .filter_map(|id| resolved.values().find(|r| &r.session == id))
             .map(|r| r.slot)
@@ -1147,11 +1205,21 @@ fn main() -> ExitCode {
             .map_or(frame, |r| art_surface(r, reachable, waiting.queued));
         link.paint(&frame);
 
+        // Hand this tick's resolution to `grid`, which is what the next
+        // tick's press will act on: the pad as it was drawn when the
+        // finger landed, which is the only honest thing to act on. A
+        // swap rather than a clone -- `resolved` is finished with here,
+        // and `Resolved` owns up to three `String`s per pad, so copying
+        // it a second time cost a second full allocation of the board
+        // every 16 ms.
+        std::mem::swap(&mut grid, &mut resolved);
+
         // One departure, one response, wherever this tick it happened:
         // the release for anything held went out with the cable, and
-        // without this the first tap after a replug is a kill.
+        // without this the first tap after a replug is a kill -- a
+        // modifier still down, or a pad still in the hand.
         if link.take_departed() {
-            chords.clear();
+            grip.unplugged(&mut chords);
         }
 
         beat.pulse(link.device(), elapsed);
@@ -1366,5 +1434,40 @@ mod tests {
         grip.aim(Button::Top(1), true, Duration::ZERO);
         grip.aim(Button::Top(1), false, Duration::from_millis(10));
         assert!(!grip.home_due(HOME_HOLD * 10));
+    }
+
+    /// **A departure forgets the whole grip, not half of it.** The
+    /// release for everything a finger was holding went out with the
+    /// cable, so the modifier, the carried pad and the `▲` hold all have
+    /// to go -- otherwise the first grid tap after a replug is a
+    /// `Consequence::Dropped`, one `tl.slot` write moving a session to
+    /// wherever the finger happened to land (review w3 F1).
+    #[test]
+    fn a_departure_empties_the_hand_as_well_as_the_modifier() {
+        let mut chords = Chords::default();
+        chords.toggle_mode();
+        assert_eq!(chords.mode(), Action::Move);
+        let _held = chords.feed(Action::Move.button(), true);
+        assert!(chords.is_held(Action::Move), "the modifier is down");
+
+        let mut grip = Grip {
+            hand: Slot::at_absolute(1, 1),
+            ..Grip::default()
+        };
+        grip.aim(Button::Top(1), true, Duration::ZERO);
+
+        grip.unplugged(&mut chords);
+
+        assert!(!chords.is_held(Action::Move), "the modifier went too");
+        assert_eq!(grip.hand, None, "the pad was never put down");
+        assert!(
+            !grip.home_due(HOME_HOLD * 10),
+            "no `⌂` from a `▲` that was released by the cable"
+        );
+        assert_eq!(
+            chords.mode(),
+            Action::Move,
+            "the mode is not a button that can be stuck down, and survives"
+        );
     }
 }
