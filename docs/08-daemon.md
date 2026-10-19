@@ -182,9 +182,12 @@ correct** — the device repaints its own Live-mode lighting either way. Step
 we chose rather than whatever our last frame happened to be.
 
 **Step 2 says *81* for a reason.** An implementation that clears the 8×8
-grid and the control rows but skips index 99 leaves the health light burning
-— and a lit logo means *anchord unreachable*. Exiting while asserting a
-fault that is not happening is worse than exiting messily. This is not
+grid and the control rows but skips index 99 leaves the health light
+burning, and the health light is a claim about a process that is in the
+middle of not existing — green asserting *the stack is up*, or dark red
+asserting a fault nobody is watching for any more. **Dark is what says
+tallyd is not running** ([05](05-interaction.md#the-logo-is-the-health-light)),
+so index 99 is the one LED whose clearing carries information. This is not
 hypothetical; the first harness had exactly that bug.
 
 **Step 4 is the one that is easy to skip and worth keeping.** The restore is
@@ -260,9 +263,14 @@ look:
 
 | anchord | logo | pads | says |
 |---|---|---|---|
-| healthy | dark | **green** | these are alive |
+| healthy | dark¹ | **green** | these are alive |
 | **killed** | **dark red** | **still green** | I cannot tell |
-| restarted | dark | **dark red** | the daemon lost these |
+| restarted | dark¹ | **dark red** | the daemon lost these |
+
+¹ As observed. These runs predate the health light gaining a lit idle; a
+healthy anchord now reads **green**, not dark
+([05](05-interaction.md#the-logo-is-the-health-light)). The dark red rows —
+the ones this test existed to prove — are unchanged.
 
 The middle row is the one worth the trouble. `tallyd` knew its watchers had
 died and its session list was stale, and it kept showing the last truth it
@@ -294,8 +302,9 @@ case this document admits to. Then the world was changed underneath it: one
 session terminated, another created, while nothing was watching. On restart
 `tallyd` rebuilt all three pads correctly — the survivor green, the
 terminated one red, the new one green — and repainted all 81 LEDs so no
-ghost of the old frame survived. The logo was dark, which is its own small
-confirmation.
+ghost of the old frame survived. The logo was dark, which under the
+behaviour of the day was its own small confirmation — today the same run
+would end on green.
 
 **Nothing was carried across the kill.** The grid was reconstructed entirely
 from `anchor list`, which is the whole argument for putting the binding in a

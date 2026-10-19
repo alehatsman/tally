@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::anchor::Session;
 use crate::chord::Action;
 use crate::effect::{effect, Pad};
-use crate::render::{self, Health};
+use crate::render;
 use crate::signal::{slot_state, Derived, SessionState, SlotState};
 use crate::slot::{self, Pages, Slot};
 use crate::surface::{Button, Frame};
@@ -425,13 +425,11 @@ pub fn frame(sessions: &[Session], derived: &BTreeMap<String, Derived>, view: &V
 pub fn frame_from(pads: &Pads<'_>, view: &View<'_>) -> Frame {
     let resolved = pads.grid();
     let mut frame = Frame::dark();
-    let mut offscreen = false;
 
     for r in resolved.values() {
+        // Off the window. `►` is what reports what you cannot see
+        // (`view.queued`); nothing here needs to know.
         let Some(row) = view.display_row(r.slot) else {
-            // Off the window. It still counts for the logo, which is the
-            // only thing that reports what you cannot see.
-            offscreen |= matches!(r.state, SlotState::NeedsAnswer { .. });
             continue;
         };
         if view.held.is_none() {
@@ -497,14 +495,9 @@ pub fn frame_from(pads: &Pads<'_>, view: &View<'_>) -> Frame {
         render::action(Some(view.mode), !view.pressed.is_empty()),
     );
 
-    // Attention you cannot see, because it is scrolled off the window.
-    frame.set(
-        Button::Logo,
-        render::logo(Health {
-            anchord_reachable: view.anchord_reachable,
-            offscreen_attention: offscreen,
-        }),
-    );
+    // Health, and nothing else. It does not move when the window does
+    // (D26 in `docs/10-decisions.md`).
+    frame.set(Button::Logo, render::logo(view.anchord_reachable));
 
     frame
 }
@@ -581,11 +574,7 @@ mod tests {
         let pages = Pages::default();
         let sessions = [session("teleport-owned", "running", None)];
         let f = frame(&sessions, &BTreeMap::new(), &view(&pages));
-        assert_eq!(f, {
-            let mut empty = frame(&[], &BTreeMap::new(), &view(&pages));
-            empty.set(Button::Logo, f.get(Button::Logo));
-            empty
-        });
+        assert_eq!(f, frame(&[], &BTreeMap::new(), &view(&pages)));
     }
 
     /// Reclaimable changes what a press does, never what the eye sees.
@@ -930,14 +919,21 @@ mod tests {
             // Only the controls. Named rather than counted, so a button
             // that starts lighting up says which one it is instead of
             // moving a number: `▼` (there is somewhere to scroll),
-            // `Drums` (always lit, there is always an art to start) and
-            // `CC19` (kill, at rest). Every `>` is dark because an
-            // unparseable label puts nothing in any row, and the rest of
-            // the top row has nowhere to go and nothing to offer.
+            // `Drums` (always lit, there is always an art to start),
+            // `CC19` (kill, at rest) and the logo (green: the stack is
+            // up, and it is lit whenever tallyd is painting at all).
+            // Every `>` is dark because an unparseable label puts nothing
+            // in any row, and the rest of the top row has nowhere to go
+            // and nothing to offer.
             let lit: Vec<Button> = Button::all().filter(|&b| f.get(b) != Cell::Off).collect();
             assert_eq!(
                 lit,
-                vec![Button::Action(8), Button::Top(2), Button::Top(6)],
+                vec![
+                    Button::Action(8),
+                    Button::Top(2),
+                    Button::Top(6),
+                    Button::Logo
+                ],
                 "{bad:?} lit a pad"
             );
         }
@@ -1131,12 +1127,14 @@ mod tests {
         assert_eq!(View::offset_showing(at(1, 1), 10), 0);
     }
 
-    /// Attention scrolled off the window still reaches the logo — that is
-    /// the only thing reporting what you cannot see. The top row does not
-    /// say *which* page: `►` crosses pages, so you do not navigate to
-    /// attention any more (`docs/05-interaction.md`).
+    /// Attention scrolled off the window leaves the health light alone.
+    /// It used to pulse it, and that read from the desk as the scroll
+    /// button leaking into the logo (D26 in `docs/10-decisions.md`). `►` is
+    /// what reports what you cannot see, and it does not say *which*
+    /// page: `►` crosses pages, so you do not navigate to attention any
+    /// more (`docs/05-interaction.md`).
     #[test]
-    fn attention_scrolled_off_the_window_reaches_the_logo() {
+    fn attention_scrolled_off_the_window_leaves_the_logo_alone() {
         let pages = Pages::default();
         let mut derived = BTreeMap::new();
         let mut d = Derived::starting_at(NOW);
@@ -1149,7 +1147,11 @@ mod tests {
             ..view(&pages)
         };
         let f = frame(&sessions, &derived, &v);
-        assert_eq!(f.get(Button::Logo), Cell::Pulse(AMBER), "logo must say so");
+        assert_eq!(
+            f.get(Button::Logo),
+            Cell::Static(GREEN),
+            "health is all the logo says"
+        );
     }
 
     /// Dark does nothing: at the top there is nothing above, at the bottom
@@ -1199,6 +1201,8 @@ mod tests {
         assert_eq!(f.get(Button::Top(4)), Cell::Pulse(AMBER), "next is waiting");
     }
 
+    /// The other half of the same rule: on-window attention never
+    /// touched the logo, and now neither half does.
     #[test]
     fn attention_on_the_page_you_are_looking_at_does_not_light_the_logo() {
         let pages = Pages::default();
@@ -1215,8 +1219,8 @@ mod tests {
         let f = frame(&sessions, &derived, &v);
         assert_eq!(
             f.get(Button::Logo),
-            Cell::Off,
-            "you are already looking at it"
+            Cell::Static(GREEN),
+            "the stack is up; that is the whole message"
         );
     }
 

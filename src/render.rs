@@ -229,28 +229,31 @@ pub fn preview(effect: Effect) -> Cell {
     }
 }
 
-/// The health of the stack behind the surface.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Health {
-    /// `anchord` answered the last `list`.
-    pub anchord_reachable: bool,
-    /// Attention on a page that is not on the grid.
-    pub offscreen_attention: bool,
-}
-
-/// `CC99` is not a slot — it is the status of everything behind it.
+/// `CC99` is not a slot — it is the status of everything behind it, and
+/// **nothing else**.
 ///
-/// Unreachable **wins**. With no session list there is nothing that could
-/// be known to want you, and a logo doing both at once would have to
-/// alternate — a third animation, on the one light whose entire job is
-/// being unambiguous.
-pub fn logo(h: Health) -> Cell {
-    if !h.anchord_reachable {
-        Cell::Static(DARK_RED)
-    } else if h.offscreen_attention {
-        Cell::Pulse(AMBER)
+/// Green up, dark red for an unreachable `anchord`, and off for *there is
+/// no daemon* — which this function cannot return, because a process that
+/// is gone paints nothing. Off is what [`crate::surface`] leaves behind on
+/// the way out (`docs/08-daemon.md`), and that is the whole argument for a
+/// **lit** idle: dark used to mean *healthy* as well, so a working stack
+/// and a dead one were the same picture.
+///
+/// It carried a third meaning once — amber for attention scrolled off the
+/// window — and that is gone. A light whose other state is a fault cannot
+/// be lent out; the change was read from the desk as the scroll button
+/// leaking into the logo. `►` pulses for the same fact and is the one you
+/// press ([`next`], D26 in `docs/10-decisions.md`).
+///
+/// Green 21 is the grid's own *alive*, spent here on something that is not
+/// a slot. Legal for the reason the Stop corner is red: the logo is off
+/// the grid and alone where it sits, so position disambiguates before hue
+/// has to.
+pub fn logo(anchord_reachable: bool) -> Cell {
+    if anchord_reachable {
+        Cell::Static(GREEN)
     } else {
-        Cell::Off
+        Cell::Static(DARK_RED)
     }
 }
 
@@ -302,10 +305,8 @@ mod tests {
             .collect();
         assert!(blinking.is_empty(), "{blinking:?}");
         for control in [
-            logo(Health {
-                anchord_reachable: true,
-                offscreen_attention: true,
-            }),
+            logo(true),
+            logo(false),
             next(true),
             back(true),
             arrow(true),
@@ -394,11 +395,7 @@ mod tests {
     /// Dark red means "the daemon had a problem" wherever it appears.
     #[test]
     fn lost_slots_match_the_unreachable_logo() {
-        let unreachable = logo(Health {
-            anchord_reachable: false,
-            offscreen_attention: false,
-        });
-        assert_eq!(slot(SlotState::Lost { reclaimable: false }), unreachable);
+        assert_eq!(slot(SlotState::Lost { reclaimable: false }), logo(false));
     }
 
     /// Every state is visually distinct from every other, with **one
@@ -421,37 +418,22 @@ mod tests {
         }
     }
 
+    /// The health light answers one question, so it has one input and
+    /// never moves. Anything that needs a third state needs its own
+    /// light (D26 in `docs/10-decisions.md`).
     #[test]
-    fn an_unreachable_anchord_outranks_attention_on_the_logo() {
-        let both = Health {
-            anchord_reachable: false,
-            offscreen_attention: true,
-        };
-        assert_eq!(logo(both), Cell::Static(DARK_RED));
-        assert!(
-            !animated(logo(both)),
-            "the health light must not alternate two meanings"
-        );
+    fn the_logo_says_health_and_only_health() {
+        assert_eq!(logo(true), Cell::Static(GREEN));
+        assert_eq!(logo(false), Cell::Static(DARK_RED));
+        assert!(!animated(logo(true)) && !animated(logo(false)));
     }
 
+    /// A lit idle is the point. Dark is what shutdown leaves behind, so a
+    /// logo that rests dark cannot tell *working* from *not running*.
     #[test]
-    fn a_healthy_quiet_stack_says_nothing() {
-        assert_eq!(
-            logo(Health {
-                anchord_reachable: true,
-                offscreen_attention: false
-            }),
-            Cell::Off
-        );
-    }
-
-    #[test]
-    fn the_logo_flashes_for_attention_you_cannot_see() {
-        let h = Health {
-            anchord_reachable: true,
-            offscreen_attention: true,
-        };
-        assert!(animated(logo(h)));
+    fn a_healthy_stack_is_never_dark() {
+        assert_ne!(logo(true), Cell::Off);
+        assert_ne!(logo(false), Cell::Off);
     }
 
     /// Every top-row button is self-describing: dark does nothing, lit
