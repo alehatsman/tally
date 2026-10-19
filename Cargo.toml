@@ -1,10 +1,13 @@
 [package]
 name = "tally"
-version = "0.0.0"
+version = "0.9.0"
 edition = "2021"
 license = "MIT"
 description = "A hardware grid that spawns, watches and jumps to agent sessions"
 repository = "https://github.com/alehatsman/tally"
+# Not crates.io. It drives one USB device on one OS, so the distribution
+# is a tag and `cargo install --git` -- which is the size this is
+# (ROADMAP.md, F3; docs/12-install.md).
 publish = false
 
 # tally is one crate, so it is its own workspace root -- which is what

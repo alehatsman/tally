@@ -93,23 +93,24 @@ Two ways of reporting that run were refused, and both are the same mistake:
 ## The gate, and what the journal already answered
 
 **55 hours, 1,162 lines, 544 rising edges, 78 navigation presses**, read on
-2026-10-18. The journal is at **2.3 days of the seven** F0 asks for. Three
-of the five questions below are closed by what is already in it, and the
-headline one turns out not to be measurable at all yet.
+2026-10-18. Three of the five questions below are closed by what was
+already in it, the headline one turned out not to be measurable at all,
+and fixing that is what started the clock.
 
-### The instrument does not record the gesture it is measuring
+### The instrument did not record the gesture it is measuring. It does now.
 
 F0 asks *how many ambers sent you to a session that wanted nothing.*
-`Journal` logs a nav line for `next`, `back` and `overview`
-(`jumped_next`, `jumped_back`, `jumped_to`). **A plain pad tap logs
-nothing** — and that is the gesture the product exists for, running at a
-reported 341/day against **62** `next` presses in 55 hours.
+`Journal` logged a nav line for `next`, `back` and the overview, and **a
+plain pad tap logged nothing** — the gesture the product exists for,
+running at a reported 341/day against **62** `next` presses in 55 hours.
+So the file held the ambers that were raised and almost none of the
+answers, and waiting four more days would have finished nothing.
 
-So the file records the ambers that were raised and almost none of the
-answers. **Waiting four more days finishes nothing**; one
-`journal.jumped_pad()` beside the existing three is the whole fix, and it
-has to land before the week runs rather than after
-([#43](https://github.com/alehatsman/tally/issues/43)).
+**`journal.jumped_pad()` shipped on 2026-10-19**
+([#43](https://github.com/alehatsman/tally/issues/43)), the daemon
+carrying it has been running since, and **the seven days run from there**
+— not from the 2.3 that preceded it, which can answer the navigation
+questions and nothing about the amber.
 
 ### And the question itself needs restating
 
@@ -158,12 +159,14 @@ written spec is built":
 The phases are not milestones. F0 runs in the background of all of them, and
 F3 is the one that will be skipped if nobody writes it down.
 
-### F0 — Measure the amber
+### F0 — Measure the amber ⏳
 
-**Blocked on a five-line change, not on time.** Log a nav line for a plain
-pad jump ([#43](https://github.com/alehatsman/tally/issues/43)), *then*
-seven days, and read it against the restated question above: how many
-ambers you went to, and how many aged out.
+**Running. Started 2026-10-19, readable 2026-10-26.** The five-line
+change it was blocked on is in
+([#43](https://github.com/alehatsman/tally/issues/43)); what is left is
+time, which is the one thing on this file no amount of building closes.
+Read it against the restated question above: how many ambers you went to,
+and how many aged out.
 
 **Exit:** a dated paragraph with those two numbers in it. **If most ambers
 age out, the signal is noise and the fix is in
@@ -171,9 +174,9 @@ age out, the signal is noise and the fix is in
 turn is the hook that makes the amber frequent, and dropping it is a real
 option the data has not yet earned.
 
-### F1 — Close the jump subsystem ✅
+### F1 — Close the jump subsystem
 
-Done. [#21](https://github.com/alehatsman/tally/issues/21),
+**Code done; the gate is not.** [#21](https://github.com/alehatsman/tally/issues/21),
 [#20](https://github.com/alehatsman/tally/issues/20),
 [#19](https://github.com/alehatsman/tally/issues/19) and both shipped
 halves of [#22](https://github.com/alehatsman/tally/issues/22) are in. The
@@ -188,16 +191,24 @@ on `tl.attention`, and what that bit means is
 
 **What remains:** re-run M18's gate on the live grid. Four ⬜ and two ❌,
 and the ❌ were caused by the renumbering, which is now pinned and has
-never been re-tested against them.
+never been re-tested against them. **The checklist is back in
+[09](docs/09-testing.md#the-jump-subsystems-own-gate-and-what-is-still-owed-on-it)**
+— the restructure deleted it along with the document that held it, and a
+gate nobody can read is a gate nobody runs. It needs hands on the device
+and is the only item here that does.
 
-### F2 — Make the documents true
+### F2 — Make the documents true ✅
 
-- **[#23](https://github.com/alehatsman/tally/issues/23)** is now the
-  **keystone**, and it has acquired a second dependant. It already blocked
-  the agents-read-the-grid workflow; it now also blocks #13's real fix,
-  because *noticing a pad that consumed no input* would be a third origin
-  for a bit that already carries two. **The amber does not change; the word
-  does.**
+- **[#23](https://github.com/alehatsman/tally/issues/23)** — ✅ **the
+  keystone is in.** The amber did not change and the word did: presence
+  still raises it, and the label's **value** now names the hook —
+  `blocked` from `Notification`, `finished` from `Stop`, `1` from one that
+  did not say. `tally ls --json` reports it as `wants`, and `state` still
+  says `wants you` for all three, because the picture is for a human and a
+  human wants recall. **This unblocked
+  [#13](https://github.com/alehatsman/tally/issues/13)**, which needed a
+  third origin on a bit that carried two meanings in one string; it can be
+  a fourth word now ([04](docs/04-signals.md#one-bit-two-states--and-the-word-that-split))
 - **[#14](https://github.com/alehatsman/tally/issues/14)** — ✅ fixed in
   the restructure: [07](docs/07-cli.md#it-is-exactly-a-pad-press-with-a-folder)
   takes its predicate from `frees_the_pad` rather than from the stale
@@ -205,61 +216,94 @@ never been re-tested against them.
 - **The restructure** — thirty-five numbered documents became eleven
   stating current truth, plus [the record](docs/10-decisions.md).
 
-### F3 — Release engineering
+### F3 — Release engineering ✅
 
 **CI shipped** ([#35](https://github.com/alehatsman/tally/pull/35)):
 `cargo test`, `clippy -D warnings`, `fmt --check`, `cargo deny`, and the
 tmux suite runs rather than skips.
 
-What is left, and it is the half that decides product-or-personal-rig:
+**And the half that decides product-or-personal-rig is now in too.**
 
-- a version, and a decision: crates.io, or a tag plus
-  `cargo install --git`. It drives one USB device on one OS, so the second
-  is probably the right size
-- an install story that **includes the `settings.json` hook lines**. The
-  attention half of this product does not exist without them, and today
-  they live only in prose ([04](docs/04-signals.md#4-a-hook--it-told-us)).
-  This is the single largest correctness gap in shipping it to anyone
+- **a version and a channel** — `0.9.0`, and **a tag plus
+  `cargo install --git`** rather than crates.io. One USB device, one OS;
+  `publish = false` stays, and says why in `Cargo.toml` rather than only
+  here
+- **an install story carrying the hook lines** —
+  [12](docs/12-install.md). This was the single largest correctness gap in
+  shipping it to anyone: the attention half of this product does not exist
+  without four lines in `settings.json`, and they lived only in prose in
+  [04](docs/04-signals.md#4-a-hook--it-told-us). The document also carries
+  how to **check** the hooks arrived, which is the part a stranger cannot
+  work out — a pad that never goes amber looks exactly like a pad with
+  nothing to say
 
-### F4 — Close scope
+**What is left is the tag itself**, and it waits on F0's number, because
+the version this ships as is `1.0` and [F5](#f5--v10) says what has to be
+in the README first.
+
+### F4 — Close scope ✅
 
 | | verdict |
 |---|---|
 | [#8](https://github.com/alehatsman/tally/issues/8) — the layout | **Closed on data.** `queued==1` is 35%, not "almost always 1". The flat grid is final and grouping does not get a second look |
 | the squad | **Closed.** Superseded by `tally ls` ([10](docs/10-decisions.md#the-squad)) |
 | [the level](docs/11-unbuilt.md#the-level) | Held on F0, and **expected to close**: the pad it guards has never been observed in 544 rises, and it cannot see the one case that bit |
+| the words on `tl.attention` | **Closed by #23**, and in the direction that costs least: the bit is untouched and the *value* carries the origin |
 | [the bridge](docs/11-unbuilt.md#the-bridge) | **Cut to a seam and five questions**, deferred until hardware. M17 is not a pending milestone |
 | peek, teleport-URL, squatter-resolution | **Closed** ([11](docs/11-unbuilt.md#the-graveyard)) |
 | the acting sweep | Held on its own week of `sweep:` lines |
-| **three open scope questions** | the dead spec system, 512 slots for four rows, and nine art pieces — [11](docs/11-unbuilt.md#open-scope-questions), issues [#40](https://github.com/alehatsman/tally/issues/40)–[#42](https://github.com/alehatsman/tally/issues/42). Each removes something that *works*, so each is a decision about what this product is |
+| [#40](https://github.com/alehatsman/tally/issues/40) — the spec system | **Cut.** `~/.config/tally/` was empty and `tallyd` loaded *8 pages, 0 slots*, so `[[slot]]`, `[[spec]]`, `tl.spec` and spawn-from-a-dark-pad were code nothing could reach. Scope bullet 2 is **reworded rather than kept** — both spawns in daily use were outside it as written ([01](docs/01-scope.md)) |
+| [#41](https://github.com/alehatsman/tally/issues/41) — 512 slots | **Half cut, and the half the evidence actually reached.** The overview is gone: `lit` sat at **4** on all nine presses and the map never once crossed the empty middle its design argues from. `▲▼` and hold-`▲` home **stay** — they are how you move through the space and they are used. The address space is still 64 rows, and that question is still open at one feature's cost instead of three |
+| [#42](https://github.com/alehatsman/tally/issues/42) — nine art pieces | **Kept, closed on taste.** 2,157 lines of pure, zero-coupling leaf code with its own tests, in nobody's way. Three pieces cover both stated jobs and six do not, and that is not a reason to delete something that works and that someone enjoys |
+
 ### F5 — v1.0
 
-Tag it. The README's Status section becomes *shipped, measured and closed*,
-**with the two numbers in it** — how many ambers you went to, and how many
-aged out. That is the sentence this project has owed since M1, and the only
-one that was never a matter of effort.
+Tag it `v1.0.0`. The README's Status section becomes *shipped, measured
+and closed*, **with the two numbers in it** — how many ambers you went to,
+and how many aged out. That is the sentence this project has owed since
+M1, and the only one that was never a matter of effort.
+
+Two gates, and both are waiting rather than working:
+
+| | |
+|---|---|
+| **F0's number** | 2026-10-26 at the earliest. Nothing can be built to make it arrive sooner |
+| **F1's live re-run** | four ⬜ and two ❌ on a real device ([09](docs/09-testing.md#the-jump-subsystems-own-gate-and-what-is-still-owed-on-it)). Twenty minutes, and only the owner's desk has the hardware |
+
+**The tracker holds no undecided design**, which is the fourth statement,
+and it is true as of this file: #40 cut, #41 half cut and the remainder
+restated, #42 kept, #23 shipped. What is open is
+[#22](https://github.com/alehatsman/tally/issues/22) — the acting sweep,
+held on its own week of `sweep:` lines — and that is a *measurement* that
+has not finished, not a decision nobody has made.
 
 ### Sequencing
 
 ```
-#43 log pad jumps       ◀── five lines, and F0 cannot start without it
-F0  measure the amber   ─────────────────────────────────▶  (7 days, after #42)
-F1  the jump subsystem  ✅ — M18's live re-run is all that remains
-F2  the documents       #23 is the keystone; #14 ✅
-F3  release eng         CI ✅ → version → install (with the hook lines)
-F4  close scope         three open questions, #40-#42, gated on nothing
-F5  v1.0                needs all four
+#43 log pad jumps       ✅ 2026-10-19 — the clock could not start without it
+F0  measure the amber   ⏳ ───────────────────────▶ readable 2026-10-26
+F1  the jump subsystem  ✅ code — M18's live re-run is all that remains,
+                           and it needs hands on the device (docs/09)
+F2  the documents       ✅ #23 the keystone, #14, the restructure
+F3  release eng         ✅ CI, version 0.9.0, install story with the hooks
+                           — the v1.0 tag itself waits on F0
+F4  close scope         ✅ #40 cut, #41 half cut, #42 kept
+F5  v1.0                needs F0's number and F1's gate run
 ```
 
-**Two honest risks in this ordering.**
+**Two things stand between here and the tag, and neither is code:** seven
+days of journal, and twenty minutes with the device.
 
-**F3** is the one that decides whether this is a product or a personal rig,
-and nothing about using it every day will ever make it urgent. CI landing
-is the easy half; the install story carrying the `settings.json` hook lines
-is the half that makes the attention signal exist for anybody else.
+**One honest risk is left, and it is the original one.**
 
 **F0 can report that the amber is noise**, and nine milestones are stacked
 on the assumption it is not. Ten rises an hour is a lot of light for a
-surface whose whole claim is that you can ignore it until it speaks. If the
-number says most of them age out, the fix is upstream of everything in this
-file.
+surface whose whole claim is that you can ignore it until it speaks. If
+the number says most of them age out, the fix is upstream of everything in
+this file — in [04](docs/04-signals.md#4-a-hook--it-told-us), where
+dropping `Stop` is a real option the data has not yet earned.
+
+**The F3 risk is retired.** It was the one that decided
+product-or-personal-rig, and nothing about using it every day was ever
+going to make it urgent; it is closed by a document rather than by a
+feeling that it mattered enough.
