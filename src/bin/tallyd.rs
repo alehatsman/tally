@@ -14,7 +14,7 @@ use tally::act::{Context, Done};
 use tally::anchor::Client;
 use tally::art::{Piece, Reel};
 use tally::chord::{Action, Chords, Gesture};
-use tally::config::Config;
+use tally::config;
 use tally::device::{Device, Error, Event};
 use tally::journal::{self, Journal};
 use tally::jump::{Jump, Tmux};
@@ -899,18 +899,17 @@ fn main() -> ExitCode {
     // `tally::config`'s module header gives in full: the watching is the
     // half that is load-bearing, and refusing to start would take it away
     // to punish a mistake in the spawning.
-    let config_path = Config::default_path();
-    let config = Config::load(&config_path).unwrap_or_else(|e| {
+    let config_path = config::default_path();
+    let pages = config::load(&config_path).unwrap_or_else(|e| {
         eprintln!("tallyd: {}: {e}", config_path.display());
         eprintln!("tallyd: running on defaults; pages are named 1-8");
-        Config::default()
+        Pages::default()
     });
     eprintln!(
         "tallyd: {} pages from {}",
-        config.pages().len(),
+        pages.len(),
         config_path.display()
     );
-    let pages = config.pages().clone();
 
     let mut chords = Chords::default();
     let watchers = Watchers::new(anchor.clone());

@@ -544,18 +544,9 @@ mod tests {
         if let Some(s) = slot {
             let _previous = labels.insert(crate::anchor::LABEL_SLOT.to_owned(), s.to_owned());
         }
-        Session {
-            id: id.to_owned(),
-            state: state.to_owned(),
-            exit_code: None,
-            lost_reason: None,
-            labels,
-            output_bytes: 10,
-            pid: None,
-            cwd: None,
-            command: None,
-            login_shell: false,
-        }
+        Session::fixture(id, state)
+            .with_labels(labels)
+            .with_output(10)
     }
 
     /// The resting view: nothing held, nothing pressed. Tests that care

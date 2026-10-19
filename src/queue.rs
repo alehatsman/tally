@@ -153,23 +153,13 @@ mod tests {
 
     /// A session asking on `slot`, optionally muted.
     fn asking(id: &str, slot: &str, muted: bool) -> Session {
-        let mut labels = BTreeMap::new();
-        let _slot = labels.insert(anchor::LABEL_SLOT.to_owned(), slot.to_owned());
-        let _att = labels.insert(anchor::LABEL_ATTENTION.to_owned(), "1".to_owned());
+        let s = Session::fixture(id, "running")
+            .labelled(anchor::LABEL_SLOT, slot)
+            .labelled(anchor::LABEL_ATTENTION, "1");
         if muted {
-            let _m = labels.insert(anchor::LABEL_MUTE.to_owned(), "1".to_owned());
-        }
-        Session {
-            id: id.to_owned(),
-            state: "running".to_owned(),
-            exit_code: None,
-            lost_reason: None,
-            labels,
-            output_bytes: 0,
-            pid: None,
-            cwd: None,
-            command: None,
-            login_shell: false,
+            s.labelled(anchor::LABEL_MUTE, "1")
+        } else {
+            s
         }
     }
 
