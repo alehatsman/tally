@@ -241,7 +241,6 @@ mod tests {
             held: Some(Action::Stop),
             hand: None,
             pressed,
-            art: false,
             mode: Action::Stop,
         }
     }
