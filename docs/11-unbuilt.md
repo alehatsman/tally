@@ -244,14 +244,12 @@ re-proposed as new.
 
 ## Open scope questions
 
-**One cut the evidence suggests and nobody has decided, and one held
-open at a smaller size.** They are larger
-than the graveyard above because each removes something that *works*, and
-that is a decision about what this product is rather than a cleanup.
+**One question left open, and two answered.** They are larger than the
+graveyard above because each removes something that *works*, and that is
+a decision about what this product is rather than a cleanup.
 
-The third is **decided and done**: the spec system is cut. `[[slot]]`,
-`[[spec]]`, `tl.spec` and spawn-from-a-dark-pad are gone, `slots.toml` is
-one table, and [01](01-scope.md)'s second bullet is reworded to describe
+**The spec system is cut.** `[[slot]]`, `[[spec]]`, `tl.spec` and
+spawn-from-a-dark-pad are gone, `slots.toml` is one table, and [01](01-scope.md)'s second bullet is reworded to describe
 the spawning that actually happens
 ([#40](https://github.com/alehatsman/tally/issues/40),
 [D8](10-decisions.md#d8--slotstoml-as-the-spawn-path)).
@@ -289,6 +287,19 @@ button that did nothing. Its two jobs are *demo* and *all-64-pads pixel
 test*, and three pieces already do both — Plasma exercises every pad every
 frame, Claude is the photograph, Uprising is the joke.
 
-Cutting the other six saves ~1,000 lines of zero-coupling leaf code and
-costs nothing operationally. It is taste rather than architecture, which is
-why it is last. [#42](https://github.com/alehatsman/tally/issues/42).
+> ✅ **Verdict, 2026-10-19: kept.** The other six are **not** cut. This
+> was always the one of the three that was taste rather than
+> architecture, and taste answered: the code is pure, has its own tests,
+> couples to nothing, and is in nobody's way. The case for cutting was
+> *three pieces cover both stated jobs*, which is true and is not a reason
+> to delete something that works.
+>
+> The findings each piece carries stay where they are — Life reseeds
+> because a frozen grid is indistinguishable from a crashed daemon,
+> Rain's drop moves at most 15/16 of a pad so it can never skip one, Fire
+> propagates into a fresh board, Pacman rotates the ghost because it is
+> the detail that makes somebody look twice
+> ([05](05-interaction.md#the-nine-pieces)). They would have survived the
+> deletion only if someone remembered to keep the prose, which is one
+> more argument against deleting.
+> [#42](https://github.com/alehatsman/tally/issues/42).

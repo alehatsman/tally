@@ -223,6 +223,43 @@ with its rows upside down. A written checklist, run before each milestone:
 is swallowed, and a swallowed press looks exactly like a broken jump — two
 sessions have already lost time to it.
 
+### The jump subsystem's own gate, and what is still owed on it
+
+M18's exit criteria were run against the live grid on 2026-10-18, and
+**four of them did not run and two failed.** The restructure deleted the
+checklist along with the document that held it, which is its own small
+lesson: a gate nobody can read is a gate nobody runs. It is restored here
+because it is the last open item in
+[F1](../ROADMAP.md#f1--close-the-jump-subsystem-).
+
+Run on the **live grid**, not a scratch socket — the distinction is the
+whole point, and three of these had only ever seen one:
+
+```text
+[✅] a move within a row leaves the view at the window its label names
+[✅] a move to another row that already exists (1:3:1 -> 1:2:1)
+[✅] no `index N in use` caused by any of those moves
+[⬜] a move to a row that does NOT exist -- the placeholder-session
+     branch, the riskiest thing in the change, because tmux cannot adopt
+     a pane into a session it creates
+[⬜] a move onto a corpse, on purpose
+[⬜] a spawn onto a pad a move vacated, on the live grid
+[❌] a press of a pad whose window a drifted view holds: `index 2 in use`
+     twice, then healed by pressing the view that was out of place
+[❌] a move onto a live pane -- not tried; it happened anyway, and the
+     view was re-tagged where it stood
+```
+
+**Both ❌ have had their cause removed and neither has been re-run.** They
+were caused by `renumber-windows on` leaking in from the owner's
+`~/.tmux.conf` — tally's server is a separate *server* but not a separate
+*config* — which is now pinned
+([D10](10-decisions.md#d10--a-measurement-that-was-a-config)), and by the
+live-occupant branch, which now swaps
+([D19](10-decisions.md#d19--a-live-pane-at-a-views-destination-was-left-alone)).
+**A fix that has never met the case it fixes is a fix in one of the two
+senses only.**
+
 ## What a green suite does not prove
 
 Borrowed wholesale from anchor's testing doc, because it applies here
@@ -261,16 +298,19 @@ correct, and wrong.
 
 ## The honest gap today
 
-**A week of `attention.jsonl`, and a number out of it.** It is the criterion
-the first milestone shipped with, the one the hooks made possible by giving
-the signal a source that fires, and the only thing on the roadmap that no
-amount of building can close.
+**A week of `attention.jsonl`, and a number out of it.** It is the
+criterion the first milestone shipped with, the one the hooks made
+possible by giving the signal a source that fires, and the only thing on
+the roadmap that no amount of building can close.
 
-The journal is at **2.3 days**, and reading it found something worse than
-being short: **it does not log a plain pad jump**, so the answers to the
-ambers it records are mostly absent, and the gate cannot be computed from
-it at any length ([04](04-signals.md#what-the-instrument-cannot-see-and-what-the-signal-now-means),
-[#43](https://github.com/alehatsman/tally/issues/43)).
+**It is running, and it was not running before 2026-10-19.** Reading 55
+hours of the journal found something worse than being short: **it did not
+log a plain pad jump**, so the answers to the ambers it recorded were
+mostly absent, and the gate could not be computed from it at any length.
+That was five lines ([#43](https://github.com/alehatsman/tally/issues/43),
+shipped), and the seven days run from the build that carries them —
+**not** from the 2.3 days that preceded it, which can answer the questions
+about navigation and nothing about the amber.
 
 **That belongs in this file rather than only in the roadmap**, because it
 is the same failure as everything in the section above, one level up: the
@@ -278,6 +318,14 @@ suite was green, the journal was correct, every line it wrote was true —
 and the instrument could not answer the question it was built for. **A
 measurement that records the stimulus and not the response is not a
 measurement**, and nothing about running it longer reveals that.
+
+**Three of the five questions the journal was given are already closed**
+by the 2.3 days, because they were about navigation rather than about the
+amber: the queue's depth, whether `►` is reached for, and whether the
+overview earned its address space. The last of those closed it
+([05](05-interaction.md#the-overview-cut)). What the week is for is the
+two numbers that are left — **how many ambers you went to, and how many
+aged out** — and `jumped_pad` is what makes the first of them exist.
 
 Everything else that was ever open here is not. The first draft of this file
 ended *"nothing in the surface document has been executed against hardware"*
