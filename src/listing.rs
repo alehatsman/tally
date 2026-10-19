@@ -72,19 +72,18 @@ pub enum Caller<'a> {
 pub fn pads(drawn: &BTreeMap<Slot, Resolved>, sessions: &[Session]) -> Vec<Pad> {
     drawn
         .values()
-        .map(|held| Pad {
-            at: held.slot,
-            session: held.session.clone(),
-            state: held.state,
-            cwd: sessions
-                .iter()
-                .find(|s| s.id == held.session)
-                .and_then(|s| s.cwd.clone()),
-            claude: held.claude.clone(),
-            wants: sessions
-                .iter()
-                .find(|s| s.id == held.session)
-                .and_then(Session::attention_wants),
+        .map(|held| {
+            // One scan for both fields. It was two identical ones, which
+            // is how a third gets added.
+            let found = sessions.iter().find(|s| s.id == held.session);
+            Pad {
+                at: held.slot,
+                session: held.session.clone(),
+                state: held.state,
+                cwd: found.and_then(|s| s.cwd.clone()),
+                claude: held.claude.clone(),
+                wants: found.and_then(Session::attention_wants),
+            }
         })
         .collect()
 }
@@ -96,16 +95,12 @@ pub fn pads(drawn: &BTreeMap<Slot, Resolved>, sessions: &[Session]) -> Vec<Pad> 
 /// spawn is described the same way in both places.
 ///
 /// **`NeedsAnswer` is `wants you`, and the vagueness is the accurate
-/// part.** `tl.attention` is raised by two hooks and the write is
-/// label's **value** names which fired, so the one bit still carries two
-/// states: *blocked* on a dialog (`Notification`) and *finished with its
-/// turn* (`Stop`). `Stop` fires every turn and `Notification` rarely, so a
-/// finished turn is the common case and "waiting for an answer" -- what
-/// this said until `ls` acquired readers that are programs -- was false
-/// most of the times it appeared (`docs/04-signals.md`,
-/// <https://github.com/alehatsman/tally/issues/23>). Whether the two
-/// should be told apart at all is that issue's question; until it is
-/// answered, this says only what the label actually means.
+/// part.** One bit carries two states and the grid is not meant to tell
+/// them apart; the word that does is on [`crate::anchor::Wants`], which
+/// is where the recall-against-precision argument lives, and it reaches a
+/// program through the `wants` key of [`json`] (`docs/04-signals.md`).
+/// Saying "waiting for an answer" here was false most of the times it
+/// appeared, which is why it does not.
 ///
 /// `Working` and `Quiet` are both `running`, which is what the device
 /// says too — one green for alive (`crate::render::slot`). Here it is
@@ -303,15 +298,7 @@ pub fn json(pads: &[Pad], caller: Caller<'_>, pages: &Pages) -> String {
             // already tells a program to branch on a key and never on the
             // sentence (`docs/07-cli.md`), so the fix is another key.
             if let Some(wants) = pad.wants {
-                let _set = map.insert(
-                    "wants".to_owned(),
-                    match wants {
-                        Wants::Blocked => "blocked",
-                        Wants::Finished => "finished",
-                        Wants::Unstated => "unstated",
-                    }
-                    .into(),
-                );
+                let _set = map.insert("wants".to_owned(), wants.json_word().into());
             }
             Some(entry)
         })
