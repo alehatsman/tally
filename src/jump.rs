@@ -189,8 +189,17 @@ pub trait Jump {
 /// **Not a space.** An unset option prints as an empty string, and
 /// whitespace-splitting swallows it — which was survivable while only the
 /// *last* field could be empty, and is not now that the address can be
-/// too (`docs/06-views.md`). Neither a ULID nor a
-/// `page:row:col` address can contain this, so position holds.
+/// too (`docs/06-views.md`).
+///
+/// Position holds because nothing tally writes into a line can contain
+/// this: a ULID is alphanumeric, and a `page:row:col` address is fenced
+/// at the source — `src/config.rs::resolve_pages` refuses a page name
+/// containing `|` for exactly this reason. That fence was missing until
+/// review w7 F1, and a page named `a|b` shifted every field after the
+/// slot tag silently, because the session id is read *before* the
+/// damage. The one field tally does not own is `session_name`, which is
+/// why [`row`] refuses a line with an eighth field rather than reading a
+/// shifted one.
 const FIELD: char = '|';
 
 /// Args listing every pane, its window, whether it is dead, the two
@@ -700,6 +709,14 @@ fn row(line: &str) -> Option<Row<'_>> {
     let slot = f.next()?;
     let tmux_session = f.next()?;
     let index = f.next()?;
+    // An eighth field means a [`FIELD`] got into a value, so the seven
+    // above are not the seven they are named as. Tally's own fields are
+    // fenced (see [`FIELD`]); a tmux session somebody named `a|b` is not,
+    // and a line that cannot be trusted positionally is dropped rather
+    // than misread.
+    if f.next().is_some() {
+        return None;
+    }
     Some(Row {
         pane: Pane {
             id: pane,
@@ -1575,7 +1592,10 @@ mod tests {
 
     const SESSION: &str = "01M52GEKED8ZEJPMT2KCJ35ZWT";
     /// The slot the pad lives on, as `page:row:col`.
-    const AT: &str = "1:4:4";
+    // A **non-numeric** page name on purpose: every fixture here was
+    // `1:row:col` until review w7 F1, which is why nothing noticed that a
+    // page name reaches the listing unfenced.
+    const AT: &str = "work:4:4";
     /// The same slot as geometry: absolute row 4, column 4.
     const PLACE: Place = Place { row: 4, col: 4 };
 
@@ -1586,9 +1606,9 @@ mod tests {
     /// at another address, and `%1` is one of yours — neither tag set.
     const LISTING: &str = "\
 %1|@1|0|||tally|1\n\
-%2|@2|0|other-session|1:4:1|r04|1\n\
-%3|@2|0|01M52GEKED8ZEJPMT2KCJ35ZWT|1:4:2|r04|2\n\
-%4|@3|1|01M52MXB4WQTA79K5FTHMXZ8YN|1:4:4|r04|4\n\
+%2|@2|0|other-session|work:4:1|r04|1\n\
+%3|@2|0|01M52GEKED8ZEJPMT2KCJ35ZWT|work:4:2|r04|2\n\
+%4|@3|1|01M52MXB4WQTA79K5FTHMXZ8YN|work:4:4|r04|4\n\
 %5|@3|0|||r04|4\n";
 
     #[test]
@@ -1741,6 +1761,21 @@ mod tests {
         assert_eq!(view_for(LISTING, ""), None, "an empty tag matches nothing");
     }
 
+    /// A page named `a|b` used to shift every field after the slot tag,
+    /// and the jump still *looked* right because the session id is field
+    /// four, ahead of the damage (review w7 F1).
+    /// `src/config.rs::resolve_pages` now refuses such a name; this pins
+    /// the other half, that a line carrying one is unparseable rather
+    /// than quietly misparsed.
+    #[test]
+    fn a_pipe_in_the_address_does_not_shift_the_fields() {
+        assert_eq!(
+            row("%4|@3|1|01M52MXB4WQTA79K5FTHMXZ8YN|a|b:4:4|r04|4").map(|r| r.pane.id),
+            None,
+            "eight fields: the seven read would be the wrong seven"
+        );
+    }
+
     /// Two fields can be empty now, so neither may be positional-by-luck:
     /// an untagged pane must still parse as itself rather than shifting
     /// the fields after it (`docs/06-views.md`).
@@ -1790,7 +1825,7 @@ mod tests {
     /// somebody is reading, and a spawn is not the gesture that closes it.
     #[test]
     fn a_live_view_at_the_address_is_left_alone() {
-        let live = "%7|@7|0|other-session|1:4:4|r04|4\n";
+        let live = "%7|@7|0|other-session|work:4:4|r04|4\n";
         assert_eq!(dead_view_at(live, AT), None);
     }
 
@@ -1800,7 +1835,11 @@ mod tests {
     fn an_untagged_pane_holds_no_address() {
         assert_eq!(dead_view_at("%9|@9|1|||tally|1\n", ""), None);
         assert_eq!(dead_view_at(LISTING, ""), None);
-        assert_eq!(dead_view_at(LISTING, "9:9:9"), None, "nothing at that slot");
+        assert_eq!(
+            dead_view_at(LISTING, "nowhere:9:9"),
+            None,
+            "nothing at that slot"
+        );
     }
 
     /// The view for [`SESSION`] after a Move to row 2, column 1: tagged
@@ -2174,7 +2213,7 @@ mod tests {
     /// address follows, because that is where your finger goes.
     #[test]
     fn a_pane_is_titled_after_the_pad_it_belongs_to() {
-        assert_eq!(pane_title(PLACE, AT, SESSION), "c4 · 1:4:4 · 5ZWT");
+        assert_eq!(pane_title(PLACE, AT, SESSION), "c4 · work:4:4 · 5ZWT");
         assert_eq!(
             pane_title(Place { row: 19, col: 5 }, "work:3:5", SESSION),
             "c5 · work:3:5 · 5ZWT"
@@ -2195,7 +2234,7 @@ mod tests {
     fn a_nameless_pad_still_produces_a_usable_title() {
         assert_eq!(pane_title(PLACE, "", "ab"), "c4 · ab");
         assert_eq!(pane_title(PLACE, "", ""), "c4 · ");
-        assert_eq!(pane_title(PLACE, AT, ""), "c4 · 1:4:4 · ");
+        assert_eq!(pane_title(PLACE, AT, ""), "c4 · work:4:4 · ");
     }
 
     /// The home session is the one stray shell that is wanted: it is
