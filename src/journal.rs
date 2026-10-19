@@ -121,10 +121,35 @@ impl Journal {
     ///
     /// A missing file is an empty journal, not a failure: the first run
     /// has no history and that is the normal case, not an exception.
+    ///
+    /// **Only** a missing file. Every other failure is said out loud, the
+    /// same policy [`Sink::open`] follows for the write half. This arm
+    /// used to be `read_to_string`'s whole `Err`, so invalid UTF-8,
+    /// `EACCES`, `EISDIR` and `EIO` all read back as "first run" without
+    /// a word — and because [`Self::open`] then keeps *appending* to that
+    /// same file, the unreadable file is never replaced. It grows, and
+    /// every restart re-raises every slot that is still asking: the
+    /// duplicate rising edge this module exists to prevent, except now
+    /// once per restart. The F0 number is computed from this file, so a
+    /// silent read failure does not lose the measurement, it falsifies
+    /// it.
+    ///
+    /// Bytes rather than a `String`, so a torn write that stopped inside
+    /// a multi-byte sequence costs one line instead of the file: `Sink`
+    /// is unbuffered, a short kernel write copies bytes and not
+    /// characters, and `read_to_string` refuses the whole file for one
+    /// bad byte anywhere in it. `from_utf8_lossy` turns that tail into a
+    /// line `serde_json` rejects, which is the path [`Self::replay`]
+    /// already documents and tests.
     #[must_use]
     pub fn resumed(path: &Path, pages: &Pages) -> Self {
-        let Ok(text) = std::fs::read_to_string(path) else {
-            return Self::default();
+        let text = match std::fs::read(path) {
+            Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Self::default(),
+            Err(e) => {
+                eprintln!("tallyd: cannot replay {}: {e}", path.display());
+                return Self::default();
+            }
         };
         Self::replay(&text, pages)
     }
@@ -135,12 +160,19 @@ impl Journal {
     /// `Journal` that writes anything. Both halves are best effort and
     /// report their own failure: a missing file is a first run, and an
     /// unopenable one is a daemon that still lights the grid.
+    ///
+    /// Written as two statements rather than a functional update, because
+    /// the order above is load-bearing and the functional-update syntax
+    /// silently provides the reverse: Rust evaluates field initialisers
+    /// before the base, so `sink: Sink::open(path), ..Self::resumed(..)`
+    /// created the file *before* reading it. Harmless while `Sink::open`
+    /// only ever appends; a future `truncate(true)` there would destroy
+    /// the history between the comment and the code.
     #[must_use]
     pub fn open(path: &Path, pages: &Pages) -> Self {
-        Self {
-            sink: Sink::open(path),
-            ..Self::resumed(path, pages)
-        }
+        let mut journal = Self::resumed(path, pages);
+        journal.sink = Sink::open(path);
+        journal
     }
 
     /// The parsing half of [`Self::resumed`], separated so it can be tested
@@ -791,6 +823,65 @@ mod tests {
     fn a_missing_journal_resumes_empty() {
         let missing = Path::new("/nonexistent/tally/attention.jsonl");
         assert_eq!(Journal::resumed(missing, &Pages::default()).asking(), 0);
+    }
+
+    /// The SIGKILL that truncates a line does not stop at a character.
+    /// `Sink` is unbuffered, so a short kernel write copies bytes, and the
+    /// torn tail can sit inside a multi-byte sequence in a title.
+    /// `a_truncated_last_line_is_skipped_not_fatal` only passes because it
+    /// cuts on an ASCII boundary; this one cuts `é` in half, which
+    /// `read_to_string` refused for the whole file — every slot forgotten,
+    /// every one of them re-raised on the next tick.
+    #[test]
+    fn a_line_torn_mid_character_costs_one_line_not_the_file() {
+        let path = std::env::temp_dir().join("tally-resume-torn-utf8.jsonl");
+        let mut written = br#"{"ms":1,"session":"A","slot":"1:3:3","to":"needs_answer"}"#.to_vec();
+        written.push(b'\n');
+        written.extend_from_slice(br#"{"ms":2,"session":"B","slot":"1:6:2","title":"caf"#);
+        written.push(0xC3); // the lead byte of `é`; the kernel stopped here
+        std::fs::write(&path, &written).expect("seed");
+
+        let j = Journal::resumed(&path, &Pages::default());
+        assert_eq!(j.asking(), 1, "the intact line was thrown away too");
+        std::fs::remove_file(&path).expect("clean up");
+    }
+
+    /// Not-found is the first run. Everything else is a fault, and a fault
+    /// that resumes empty while the sink keeps appending re-raises every
+    /// slot still asking, once per restart — so it is reported on stderr
+    /// rather than passed off as a first run. The map is still empty: there
+    /// is nothing else a daemon can do, and the grid is the half that is
+    /// load-bearing. The report itself lands on stderr, which is where the
+    /// operator reads it and not somewhere a test can assert; what is
+    /// locked here is that the fault path exists and stays survivable.
+    #[test]
+    fn an_unreadable_journal_is_not_a_first_run() {
+        // A directory is readable as a path and never as a file: EISDIR.
+        let dir = std::env::temp_dir();
+        assert_eq!(Journal::resumed(&dir, &Pages::default()).asking(), 0);
+    }
+
+    /// [`Journal::open`] resumes *before* it opens the sink, and the
+    /// functional-update syntax it used to be written with ran those two
+    /// in the opposite order. It passes under either order today, because
+    /// `Sink::open` only appends and the file it creates is empty exactly
+    /// when `resumed` would have found nothing — it is the guard that
+    /// fails the day `Sink::open` stops being append-only, which is the
+    /// day the old order would have eaten the history. Nothing opened a
+    /// `Journal` over a populated file before this.
+    #[test]
+    fn an_opened_journal_resumes_the_file_it_appends_to() {
+        let path = std::env::temp_dir().join("tally-open-resumes.jsonl");
+        std::fs::write(
+            &path,
+            br#"{"ms":1,"session":"A","slot":"1:3:3","to":"needs_answer"}"#,
+        )
+        .expect("seed");
+
+        let j = Journal::open(&path, &Pages::default());
+        assert_eq!(j.asking(), 1, "open forgot the history it appends to");
+        assert!(j.sink.is_open(), "and it still writes");
+        std::fs::remove_file(&path).expect("clean up");
     }
 
     #[test]
