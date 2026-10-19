@@ -308,9 +308,10 @@ hours of the journal found something worse than being short: **it did not
 log a plain pad jump**, so the answers to the ambers it recorded were
 mostly absent, and the gate could not be computed from it at any length.
 That was five lines ([#43](https://github.com/alehatsman/tally/issues/43),
-shipped), and the seven days run from the build that carries them —
-**not** from the 2.3 days that preceded it, which can answer the questions
-about navigation and nothing about the amber.
+shipped), and the window runs from the build that carries them — **not**
+from the 2.3 days that preceded it, which can answer the questions about
+navigation and nothing about the amber. It closed on 2026-10-19 with 126
+rises in 17.3 hours: **93 attended, 33 aged out** (ROADMAP, F0).
 
 **That belongs in this file rather than only in the roadmap**, because it
 is the same failure as everything in the section above, one level up: the

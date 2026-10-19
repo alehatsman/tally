@@ -107,10 +107,13 @@ So the file held the ambers that were raised and almost none of the
 answers, and waiting four more days would have finished nothing.
 
 **`journal.jumped_pad()` shipped on 2026-10-19**
-([#43](https://github.com/alehatsman/tally/issues/43)), the daemon
-carrying it has been running since, and **the seven days run from there**
-— not from the 2.3 that preceded it, which can answer the navigation
-questions and nothing about the amber.
+([#43](https://github.com/alehatsman/tally/issues/43)), and **the window
+runs from there** — not from the 2.3 days that preceded it, which can
+answer the navigation questions and nothing about the amber. Seven days
+were budgeted. **It took one**, because the density that day was far
+above the 341/day this paragraph estimated from: 126 rises inside 17.3
+hours, which is a week's worth of the original estimate and enough to
+separate 74% from the coin-flip the gate was guarding against.
 
 ### And the question itself needs restating
 
@@ -159,20 +162,46 @@ written spec is built":
 The phases are not milestones. F0 runs in the background of all of them, and
 F3 is the one that will be skipped if nobody writes it down.
 
-### F0 — Measure the amber ⏳
+### F0 — Measure the amber ✅
 
-**Running. Started 2026-10-19, readable 2026-10-26.** The five-line
-change it was blocked on is in
-([#43](https://github.com/alehatsman/tally/issues/43)); what is left is
-time, which is the one thing on this file no amount of building closes.
-Read it against the restated question above: how many ambers you went to,
-and how many aged out.
+**Closed 2026-10-19. The amber is not noise.**
 
-**Exit:** a dated paragraph with those two numbers in it. **If most ambers
-age out, the signal is noise and the fix is in
-[04](docs/04-signals.md#4-a-hook--it-told-us), not here** — `Stop` on every
-turn is the hook that makes the amber frequent, and dropping it is a real
-option the data has not yet earned.
+| | |
+|---|---|
+| ambers raised | **126** |
+| you went to | **93 — 74%** |
+| aged out | **33 — 26%** |
+| time to reach one | p50 **212 s**, p90 **513 s**, max **1,534 s** |
+
+Three in four sent you somewhere you went. The risk this file was built
+around — nine milestones stacked on an assumption nobody had checked —
+does not land.
+
+**The window is one day, 17.3 hours, and that is the whole of the valid
+data rather than a sample of it.** `via: pad` appears on 2026-10-19 and on
+no earlier date: before
+[#43](https://github.com/alehatsman/tally/issues/43) landed at 23:58 on
+2026-10-18, pressing a pad to reach a session wrote nothing. The 2.3 days
+of journal before it hold 554 more rising edges and the numerator for none
+of them, so a rate computed across the whole file reads **17%** and means
+nothing — it is three days of ambers divided by the one gesture the
+instrument could not see. The short window is the honest one.
+
+**What is not in doubt:** all 126 rises are `declared` — raised by a hook,
+not inferred from a bell. The scanner defect that made a clipboard write
+look like a ring (review w5 F1, fixed in
+[#51](https://github.com/alehatsman/tally/pull/51)) reached **zero** of
+them, so the number does not rest on the one path that was broken.
+
+**What is:** 2026-10-19 was an unusually busy day on this grid — twelve
+agent sessions spawned and watched inside seven hours — and a day spent
+looking at the surface is a day with a high answer rate. `Stop` firing
+every turn is still what makes the amber frequent. The number says it is
+frequent **and** attended; it does not prove it stays attended at a
+quieter density. Re-read it after a normal week, and if the rate falls,
+dropping `Stop` is still the fix
+([04](docs/04-signals.md#4-a-hook--it-told-us)) — it is just no longer the
+expected outcome.
 
 ### F1 — Close the jump subsystem
 
@@ -247,7 +276,7 @@ in the README first.
 |---|---|
 | [#8](https://github.com/alehatsman/tally/issues/8) — the layout | **Closed on data.** `queued==1` is 35%, not "almost always 1". The flat grid is final and grouping does not get a second look |
 | the squad | **Closed.** Superseded by `tally ls` ([10](docs/10-decisions.md#the-squad)) |
-| [the level](docs/11-unbuilt.md#the-level) | Held on F0, and **expected to close**: the pad it guards has never been observed in 544 rises, and it cannot see the one case that bit |
+| [the level](docs/11-unbuilt.md#the-level) | **Closed by F0.** The pad it guards was never observed across 670 rises, and it cannot see the one case that bit |
 | the words on `tl.attention` | **Closed by #23**, and in the direction that costs least: the bit is untouched and the *value* carries the origin |
 | [the bridge](docs/11-unbuilt.md#the-bridge) | **Cut to a seam and five questions**, deferred until hardware. M17 is not a pending milestone |
 | peek, teleport-URL, squatter-resolution | **Closed** ([11](docs/11-unbuilt.md#the-graveyard)) |
@@ -259,15 +288,15 @@ in the README first.
 ### F5 — v1.0
 
 Tag it `v1.0.0`. The README's Status section becomes *shipped, measured
-and closed*, **with the two numbers in it** — how many ambers you went to,
-and how many aged out. That is the sentence this project has owed since
-M1, and the only one that was never a matter of effort.
+and closed*, **with the two numbers in it** — 93 ambers you went to, 33
+that aged out. That is the sentence this project has owed since M1, and
+the only one that was never a matter of effort.
 
-Two gates, and both are waiting rather than working:
+One gate left, and it is the one that needs hands rather than time:
 
 | | |
 |---|---|
-| **F0's number** | 2026-10-26 at the earliest. Nothing can be built to make it arrive sooner |
+| **F0's number** | ✅ **126 ambers, 93 attended, 33 aged out** (2026-10-19) |
 | **F1's live re-run** | four ⬜ and two ❌ on a real device ([09](docs/09-testing.md#the-jump-subsystems-own-gate-and-what-is-still-owed-on-it)). Twenty minutes, and only the owner's desk has the hardware |
 
 **The tracker holds no undecided design**, which is the fourth statement,
@@ -281,27 +310,32 @@ has not finished, not a decision nobody has made.
 
 ```
 #43 log pad jumps       ✅ 2026-10-19 — the clock could not start without it
-F0  measure the amber   ⏳ ───────────────────────▶ readable 2026-10-26
+F0  measure the amber   ✅ 74% attended, 26% aged out — the amber is real
 F1  the jump subsystem  ✅ code — M18's live re-run is all that remains,
                            and it needs hands on the device (docs/09)
 F2  the documents       ✅ #23 the keystone, #14, the restructure
 F3  release eng         ✅ CI, version 0.9.0, install story with the hooks
                            — the v1.0 tag itself waits on F0
 F4  close scope         ✅ #40 cut, #41 half cut, #42 kept
-F5  v1.0                needs F0's number and F1's gate run
+F5  v1.0                needs F1's gate run
 ```
 
-**Two things stand between here and the tag, and neither is code:** seven
-days of journal, and twenty minutes with the device.
+**One thing stands between here and the tag, and it is not code:** twenty
+minutes with the device.
 
-**One honest risk is left, and it is the original one.**
+**The original risk is retired, and it is the one that mattered.**
 
-**F0 can report that the amber is noise**, and nine milestones are stacked
-on the assumption it is not. Ten rises an hour is a lot of light for a
-surface whose whole claim is that you can ignore it until it speaks. If
-the number says most of them age out, the fix is upstream of everything in
-this file — in [04](docs/04-signals.md#4-a-hook--it-told-us), where
-dropping `Stop` is a real option the data has not yet earned.
+**F0 could have reported that the amber is noise**, with nine milestones
+stacked on the assumption it is not. It reported the opposite: 74%
+attended, at ten rises an hour, on a surface whose whole claim is that you
+can ignore it until it speaks. Dropping `Stop`
+([04](docs/04-signals.md#4-a-hook--it-told-us)) stays on the table and is
+no longer the expected outcome.
+
+**What replaces it is smaller and honest:** the number is one busy day,
+not a week. It is enough to tag on, because the decision it was gating —
+build on the amber, or rebuild it — now has evidence pointing one way
+instead of none pointing either.
 
 **The F3 risk is retired.** It was the one that decided
 product-or-personal-rig, and nothing about using it every day was ever
