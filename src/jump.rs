@@ -32,6 +32,14 @@ use std::sync::Mutex;
 /// therefore cannot move them — measured, `docs/24`.
 pub const SOCKET: &str = "tally";
 
+/// The macOS app [`terminal_app`] names when nothing overrides it.
+///
+/// Unset `TALLY_TERMINAL` means *use this*, never *raise nothing*: a jump
+/// that switched tmux and then left the terminal behind a browser is the
+/// one failure the grid cannot show you. `TALLY_RAISE_CMD` is what turns
+/// the raise off, and the suite sets it.
+const DEFAULT_TERMINAL: &str = "Alacritty";
+
 /// The session the terminal window lands on when no agent is in front of
 /// you.
 ///
@@ -46,7 +54,8 @@ pub const HOME_SESSION: &str = "tally";
 /// Read by the pane border and the pane title, and by the placement rule
 /// that keeps columns in order. Identity still lives in [`PANE_OPTION`] —
 /// this one is for the eye and for geometry, and a pane that lost it is
-/// still a findable view.
+/// still a findable view. The two also go stale at different times:
+/// identity changes when the pad is rebound, geometry changes never.
 pub const SLOT_OPTION: &str = "@tally_slot";
 
 /// The **pane** option carrying an anchor session id.
@@ -71,7 +80,27 @@ pub const PANE_OPTION: &str = "@tally_session";
 ///
 /// Pane-scoped for the same reason [`PANE_OPTION`] is: a window option is
 /// inherited by every pane in the window.
+///
+/// **Only ever written, never cleared.** There is no clear-it path
+/// because *not knowing* is the ordinary state, and a jump that blanked
+/// the tag would take the resume command off the dead line of a session
+/// that still has one.
 pub const CLAUDE_OPTION: &str = "@tally_claude";
+
+/// The pane option that makes a view outlive the command in it.
+///
+/// Without it, `anchor attach` exiting takes the pane, then the window,
+/// then the session, then your client — which is the detach in
+/// [#2](https://github.com/alehatsman/tally/issues/2).
+const REMAIN_ON_EXIT: &str = "remain-on-exit";
+
+/// The pane option holding the line a dead view leaves behind.
+/// [`dead_pane_format`] is what tally writes into it.
+///
+/// **Set long before any death.** Setting it on an already-dead pane does
+/// not repaint it — measured, tmux 3.6b — so it belongs with the other
+/// options in [`Tmux::tag`], not on the kill path.
+const REMAIN_ON_EXIT_FORMAT: &str = "remain-on-exit-format";
 
 /// Why a jump did not happen.
 #[derive(Debug)]
@@ -80,8 +109,11 @@ pub enum Error {
     NoTmux(String),
     /// A tmux command failed.
     Tmux {
-        /// What was asked for.
-        what: &'static str,
+        /// The tmux command that failed, read off the arguments rather
+        /// than passed alongside them. It used to be a `&'static str`
+        /// hand-copied from `args[0]` at 24 call sites: 24 chances to
+        /// name the wrong command in an error nothing can check.
+        what: String,
         /// What tmux said.
         stderr: String,
     },
@@ -198,13 +230,13 @@ pub trait Jump {
 /// review w7 F1, and a page named `a|b` shifted every field after the
 /// slot tag silently, because the session id is read *before* the
 /// damage. The one field tally does not own is `session_name`, which is
-/// why [`row`] refuses a line with an eighth field rather than reading a
+/// why [`row`] refuses a line with a seventh field rather than reading a
 /// shifted one.
 const FIELD: char = '|';
 
-/// Args listing every pane, its window, whether it is dead, the two
-/// things tally writes on it — the session it views and the address it
-/// claims — and where it **is**: tmux session and window index
+/// Args listing every pane, whether it is dead, the two things tally
+/// writes on it — the session it views and the address it claims — and
+/// where it **is**: tmux session and window index
 /// (`docs/06-views.md`). The claim and the place are different
 /// questions, and a moved view is exactly where they disagree.
 ///
@@ -216,7 +248,7 @@ fn list_panes_args() -> Vec<String> {
         "-a".into(),
         "-F".into(),
         format!(
-            "#{{pane_id}}{FIELD}#{{window_id}}{FIELD}#{{pane_dead}}{FIELD}#{{{PANE_OPTION}}}{FIELD}#{{{SLOT_OPTION}}}{FIELD}#{{session_name}}{FIELD}#{{window_index}}"
+            "#{{pane_id}}{FIELD}#{{pane_dead}}{FIELD}#{{{PANE_OPTION}}}{FIELD}#{{{SLOT_OPTION}}}{FIELD}#{{session_name}}{FIELD}#{{window_index}}"
         ),
     ]
 }
@@ -242,7 +274,10 @@ pub struct Place {
 /// ever name it. A view parked here cannot wedge anything, is still
 /// reachable by id, and is brought home by the lazy path the next time
 /// its own pad is pressed.
-const PARK: u8 = 90;
+///
+/// `u16` because nothing stores a park index in a column's width, and
+/// every use of it was converting.
+const PARK: u16 = 90;
 
 /// The session name for an absolute row: `r07`.
 ///
@@ -251,6 +286,16 @@ const PARK: u8 = 90;
 /// of scan.
 fn row_session(row: u8) -> String {
     format!("r{row:02}")
+}
+
+/// The window an address names: the row session, then the index in it.
+///
+/// **The window index *is* the column** — the central claim of this
+/// module, written out at four call sites and named at none of them
+/// until now. `u16` and not a [`Place`] because a parked squatter gets an
+/// index that is deliberately not a column ([`PARK`]).
+fn window_target(row: u8, index: u16) -> String {
+    format!("{}:{index}", row_session(row))
 }
 
 /// Args creating the row session *with* its first view already in it.
@@ -287,46 +332,49 @@ fn new_row_session_args(place: Place, session: &str, anchor_bin: &str) -> Vec<St
 /// `-d` because creating a view must not move anybody: the switch is a
 /// separate, deliberate step.
 fn new_window_args(place: Place, session: &str, anchor_bin: &str, replace: bool) -> Vec<String> {
-    let mut args: Vec<String> = vec![
-        "new-window".into(),
+    let mut args: Vec<String> = vec!["new-window".into()];
+    if replace {
+        // A corpse holds the index. `-k` takes it over in one step, the
+        // same reason `move_window_args` takes it
+        // (`docs/06-views.md`).
+        args.push("-k".into());
+    }
+    args.extend([
         "-d".into(),
         "-t".into(),
-        format!("{}:{}", row_session(place.row), place.col),
+        window_target(place.row, u16::from(place.col)),
         "-P".into(),
         "-F".into(),
         "#{pane_id}".into(),
         format!("{anchor_bin} attach {session}"),
-    ];
-    if replace {
-        // A corpse holds the index. `-k` takes it over in one step, the
-        // same reason `relocate_window_args` passes it
-        // (`docs/06-views.md`).
-        args.insert(1, "-k".into());
-    }
+    ]);
     args
 }
 
-/// Args moving a freshly-made row session's only window to its column.
+/// Args moving a window to the index an address names.
 ///
-/// `new-session` puts the first window at the server's `base-index`,
-/// which is whatever the user's config says and is not the column. One
-/// `move-window` afterwards is what makes the index an address again.
-fn move_window_args(pane: &str, place: Place) -> Vec<String> {
-    vec![
-        "move-window".into(),
+/// Three callers, one command, and the index is the only thing that
+/// differs between them. A freshly-made row session's only window lands
+/// at the server's `base-index` — whatever the user's config says, and
+/// not the column — so one `move-window` is what makes the index an
+/// address again; a drifted view is moved to the column it claims; a
+/// squatter is moved to a [`park_index`], which is the one index that is
+/// deliberately not a column.
+///
+/// `replace` passes `-k`, and only ever after the occupant has been seen
+/// dead. It goes **before** the `-s` it is aimed with, which is where it
+/// was when it was an `insert(1, …)`.
+fn move_window_args(pane: &str, row: u8, index: u16, replace: bool) -> Vec<String> {
+    let mut args: Vec<String> = vec!["move-window".into()];
+    if replace {
+        args.push("-k".into());
+    }
+    args.extend([
         "-s".into(),
         pane.into(),
         "-t".into(),
-        format!("{}:{}", row_session(place.row), place.col),
-    ]
-}
-
-/// [`move_window_args`], replacing whatever holds the index when asked.
-fn relocate_window_args(pane: &str, place: Place, replace: bool) -> Vec<String> {
-    let mut args = move_window_args(pane, place);
-    if replace {
-        args.insert(1, "-k".into());
-    }
+        window_target(row, index),
+    ]);
     args
 }
 
@@ -350,7 +398,7 @@ fn swap_window_args(pane: &str, place: Place) -> Vec<String> {
         "-s".into(),
         pane.into(),
         "-t".into(),
-        format!("{}:{}", row_session(place.row), place.col),
+        window_target(place.row, u16::from(place.col)),
     ]
 }
 
@@ -431,12 +479,17 @@ fn automatic_rename_off_args(pane: &str) -> Vec<String> {
 }
 
 /// Args naming a view's window, which is what a tab reads as.
-fn rename_window_args(pane: &str, place: Place, at: &str, session: &str) -> Vec<String> {
+///
+/// Takes the title rather than deriving one, so the window name and the
+/// pane title cannot drift apart — [`Tmux::tag`] computes it once and
+/// hands the same string to both. Neither held that by construction when
+/// each called [`pane_title`] itself.
+fn rename_window_args(pane: &str, title: &str) -> Vec<String> {
     vec![
         "rename-window".into(),
         "-t".into(),
         pane.into(),
-        pane_title(place, at, session),
+        title.into(),
     ]
 }
 
@@ -452,90 +505,38 @@ fn new_home_session_args() -> Vec<String> {
     ]
 }
 
-/// Args tagging `pane` with the session it views.
+/// Args setting one **pane** option.
 ///
 /// **`-p` is load-bearing.** With `-w` this sets a *window* option, which
 /// every pane in the window inherits — so splitting a view would give two
-/// panes claiming one session, and a jump would confidently land on either.
-/// Measured on tmux 3.6b, not theorised (`docs/06-views.md`).
-fn set_option_args(pane: &str, session: &str) -> Vec<String> {
+/// panes claiming one session, and a jump would confidently land on
+/// either. Measured on tmux 3.6b, not theorised (`docs/06-views.md`).
+///
+/// Five callers in [`Tmux::tag`] used to be five functions with this
+/// argument written out five times. What each option is *for* lives on
+/// its name: [`PANE_OPTION`], [`SLOT_OPTION`], [`CLAUDE_OPTION`],
+/// [`REMAIN_ON_EXIT`], [`REMAIN_ON_EXIT_FORMAT`].
+fn set_pane_option_args(pane: &str, name: &str, value: &str) -> Vec<String> {
     vec![
         "set-option".into(),
         "-p".into(),
         "-t".into(),
         pane.into(),
-        PANE_OPTION.into(),
-        session.into(),
+        name.into(),
+        value.into(),
     ]
 }
 
-/// Args tagging `pane` with the address it occupies.
-///
-/// Separate from [`set_option_args`] because the two answer different
-/// questions and go stale at different times: the session id is identity
-/// and changes when the pad is rebound; the address is geometry and
-/// changes never.
-fn set_slot_args(pane: &str, at: &str) -> Vec<String> {
-    vec![
-        "set-option".into(),
-        "-p".into(),
-        "-t".into(),
-        pane.into(),
-        SLOT_OPTION.into(),
-        at.into(),
-    ]
-}
-
-/// Args tagging `pane` with the conversation it is running.
-///
-/// Only ever called with an id in hand: there is no "clear it" path,
-/// because *not knowing* is the ordinary state — `tally spawn` makes a
-/// view before the agent has had a turn — and a jump that blanked the
-/// tag would take the resume command off the dead line of a session that
-/// still has one (`docs/06-views.md`).
-fn set_claude_args(pane: &str, claude: &str) -> Vec<String> {
-    vec![
-        "set-option".into(),
-        "-p".into(),
-        "-t".into(),
-        pane.into(),
-        CLAUDE_OPTION.into(),
-        claude.into(),
-    ]
-}
-
-/// Args giving `pane` a readable title: the column, the address, and a
-/// short tail of the session id.
-///
-/// The tail stays for the reason the old window name kept it: a slot
-/// outlives the sessions in it, so a dead pane and its replacement can
-/// both claim one address, and two panes labelled `work:7:3` is a row you
-/// cannot read.
-fn pane_title_args(pane: &str, place: Place, at: &str, session: &str) -> Vec<String> {
+/// Args giving `pane` a readable title. [`pane_title`] is what the title
+/// says and why; [`rename_window_args`] is why this takes one rather
+/// than making one.
+fn pane_title_args(pane: &str, title: &str) -> Vec<String> {
     vec![
         "select-pane".into(),
         "-t".into(),
         pane.into(),
         "-T".into(),
-        pane_title(place, at, session),
-    ]
-}
-
-/// Args making `pane` outlive the command running in it.
-///
-/// Without this, `anchor attach` exiting takes the pane, then the window,
-/// then the session, then your client — which is the detach in
-/// [#2](https://github.com/alehatsman/tally/issues/2). Pane-scoped because
-/// an adopted view sits in a window full of panes that are **yours**, and
-/// tally does not get to change how those behave.
-fn remain_on_exit_args(pane: &str) -> Vec<String> {
-    vec![
-        "set-option".into(),
-        "-p".into(),
-        "-t".into(),
-        pane.into(),
-        "remain-on-exit".into(),
-        "on".into(),
+        title.into(),
     ]
 }
 
@@ -574,41 +575,6 @@ fn dead_pane_format() -> String {
     )
 }
 
-/// Args giving `pane` a dead-line that names its session.
-///
-/// Pane-scoped for the same reason as [`remain_on_exit_args`]: an adopted
-/// view sits among panes that are yours.
-///
-/// **Set long before any death.** Setting this on an already-dead pane
-/// does not repaint it — measured, tmux 3.6b — so it belongs with the
-/// other options in [`Tmux::tag`], not on the kill path.
-fn dead_pane_format_args(pane: &str) -> Vec<String> {
-    vec![
-        "set-option".into(),
-        "-p".into(),
-        "-t".into(),
-        pane.into(),
-        "remain-on-exit-format".into(),
-        dead_pane_format(),
-    ]
-}
-
-/// Args clearing a legacy window-scoped tag.
-///
-/// Views created before the identity moved to the pane carry the option on
-/// their window, where every pane inherits it. They resolve correctly today
-/// because such a window has one pane — so this is not a repair, it is
-/// removing an ambiguity before someone splits one.
-fn clear_window_option_args(window: &str) -> Vec<String> {
-    vec![
-        "set-option".into(),
-        "-uw".into(),
-        "-t".into(),
-        window.into(),
-        PANE_OPTION.into(),
-    ]
-}
-
 /// Args bringing a dead view back **in the pane it already occupies**.
 ///
 /// The pane keeps its id across a respawn — measured — so it keeps its
@@ -643,8 +609,27 @@ fn kill_pane_args(pane: &str) -> Vec<String> {
     vec!["kill-pane".into(), "-t".into(), pane.into()]
 }
 
+/// Args listing every attached client and the pane it is looking at.
+///
+/// In a function like every other command here. It was the one whose
+/// arguments were inlined at the call site, and therefore the one
+/// nothing pinned — an unmarked exception to the rule this section is
+/// named for.
+fn list_clients_args() -> Vec<String> {
+    vec![
+        "list-clients".into(),
+        "-F".into(),
+        "#{client_name} #{pane_id}".into(),
+    ]
+}
+
 /// A title you can read: the column, the pad it belongs to, then a short
 /// tail of the session id.
+///
+/// The tail stays for the reason the old window name kept it: a slot
+/// outlives the sessions in it, so a dead pane and its replacement can
+/// both claim one address, and two panes labelled `work:7:3` is a row you
+/// cannot read.
 ///
 /// `c3 · work:7:3 · Z8YN`. The address is the part you actually know — it
 /// is where your finger goes, and it is what the `tl.slot` label says —
@@ -677,8 +662,6 @@ fn pane_title(place: Place, at: &str, session: &str) -> String {
 struct Pane<'a> {
     /// tmux's id for it, `%N`.
     id: &'a str,
-    /// The window that pane is in, for clearing a legacy tag.
-    window: &'a str,
     /// Is its command gone? **Not** the same as the agent being gone:
     /// detaching from `anchor attach` also ends the attach, and the pad is
     /// what answers which (`docs/06-views.md`).
@@ -703,14 +686,13 @@ struct Row<'a> {
 fn row(line: &str) -> Option<Row<'_>> {
     let mut f = line.split(FIELD);
     let pane = f.next()?;
-    let window = f.next()?;
     let dead = f.next()?;
     let session = f.next()?;
     let slot = f.next()?;
     let tmux_session = f.next()?;
     let index = f.next()?;
-    // An eighth field means a [`FIELD`] got into a value, so the seven
-    // above are not the seven they are named as. Tally's own fields are
+    // A seventh field means a [`FIELD`] got into a value, so the six
+    // above are not the six they are named as. Tally's own fields are
     // fenced (see [`FIELD`]); a tmux session somebody named `a|b` is not,
     // and a line that cannot be trusted positionally is dropped rather
     // than misread.
@@ -720,7 +702,6 @@ fn row(line: &str) -> Option<Row<'_>> {
     Some(Row {
         pane: Pane {
             id: pane,
-            window,
             dead: dead == "1",
             tmux_session,
             index,
@@ -817,22 +798,11 @@ fn park_index(listing: &str, place: Place) -> u16 {
         .filter(|r| r.pane.tmux_session == want_session)
         .filter_map(|r| r.pane.index.parse().ok())
         .collect();
-    let mut index = u16::from(PARK);
+    let mut index = PARK;
     while taken.contains(&index) {
         index = index.saturating_add(1);
     }
     index
-}
-
-/// Args parking a squatter's window out of the address space.
-fn park_args(pane: &str, place: Place, index: u16) -> Vec<String> {
-    vec![
-        "move-window".into(),
-        "-s".into(),
-        pane.into(),
-        "-t".into(),
-        format!("{}:{index}", row_session(place.row)),
-    ]
 }
 
 /// A view that is not in the window its address names
@@ -884,17 +854,15 @@ fn relocation(listing: &str, pane: Pane<'_>, place: Place) -> Option<Relocation>
     if pane.tmux_session == want_session && pane.index == want_index {
         return None;
     }
-    let mut row_exists = false;
-    let mut occupant = None;
-    for r in listing.lines().filter_map(row) {
-        if r.pane.tmux_session != want_session {
-            continue;
-        }
-        row_exists = true;
-        if r.pane.index == want_index {
-            occupant = Some(r.pane);
-        }
-    }
+    // [`occupant_at`] and not a second copy of its predicate: the move
+    // path and the sweep already share [`relocation`] so they cannot
+    // disagree about *out of place*, and this is the same rule one level
+    // down. A second pass over a few hundred short lines, once per jump.
+    let occupant = occupant_at(listing, place).map(|r| r.pane);
+    let row_exists = listing
+        .lines()
+        .filter_map(row)
+        .any(|r| r.pane.tmux_session == want_session);
     match occupant {
         Some(held) if !held.dead => Some(Relocation::Swap),
         Some(_) => Some(Relocation::Move {
@@ -1005,7 +973,13 @@ impl Tmux {
         cmd
     }
 
-    fn run(&self, what: &'static str, args: &[String]) -> Result<Output, Error> {
+    /// Run one tmux command on tally's socket.
+    ///
+    /// The verb in [`Error::Tmux`] comes off `args[0]`, never from a
+    /// second argument naming it: every `*_args` function puts the verb
+    /// first, so the name is already in hand and a copy of it is only
+    /// something that can go stale.
+    fn run(&self, args: &[String]) -> Result<Output, Error> {
         let out = self
             .tmux()
             .args(args)
@@ -1015,13 +989,13 @@ impl Tmux {
             return Ok(out);
         }
         Err(Error::Tmux {
-            what,
+            what: args.first().cloned().unwrap_or_default(),
             stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
         })
     }
 
-    fn stdout(&self, what: &'static str, args: &[String]) -> Result<String, Error> {
-        Ok(String::from_utf8_lossy(&self.run(what, args)?.stdout).into_owned())
+    fn stdout(&self, args: &[String]) -> Result<String, Error> {
+        Ok(String::from_utf8_lossy(&self.run(args)?.stdout).into_owned())
     }
 
     /// Does a session by this name exist on tally's server?
@@ -1047,21 +1021,15 @@ impl Tmux {
     /// the server — a tab the user closes between presses is covered by
     /// the latter, which is the case that started this (`docs/33`).
     pub fn hold_indexes(&self) {
-        let _held = self.run("set-option", &hold_indexes_args());
+        let _held = self.run(&hold_indexes_args());
     }
 
     fn panes(&self) -> String {
-        self.stdout("list-panes", &list_panes_args())
-            .unwrap_or_default()
+        self.stdout(&list_panes_args()).unwrap_or_default()
     }
 
     fn client_panes(&self) -> Vec<(String, String)> {
-        let listing = self
-            .stdout(
-                "list-clients",
-                &["list-clients", "-F", "#{client_name} #{pane_id}"].map(str::to_owned),
-            )
-            .unwrap_or_default();
+        let listing = self.stdout(&list_clients_args()).unwrap_or_default();
         clients(&listing)
             .into_iter()
             .map(|(c, p)| (c.to_owned(), p.to_owned()))
@@ -1082,16 +1050,20 @@ impl Tmux {
     ) -> Result<(), Error> {
         // The tag first: the dead-line format reads `@tally_session`, and
         // a pane that has not got one yet would die saying nothing.
-        let _opt = self.run("set-option", &set_option_args(pane, session))?;
+        let _opt = self.run(&set_pane_option_args(pane, PANE_OPTION, session))?;
         // The conversation, on the same argument and before the format:
         // both ids are read by the line, and both must be there before it
         // can be. Skipped when unknown rather than cleared — see
-        // `set_claude_args`.
+        // [`CLAUDE_OPTION`].
         if let Some(claude) = claude {
-            let _conversation = self.run("set-option", &set_claude_args(pane, claude))?;
+            let _conversation = self.run(&set_pane_option_args(pane, CLAUDE_OPTION, claude))?;
         }
-        let _roe = self.run("set-option", &remain_on_exit_args(pane))?;
-        let _fmt = self.run("set-option", &dead_pane_format_args(pane))?;
+        let _roe = self.run(&set_pane_option_args(pane, REMAIN_ON_EXIT, "on"))?;
+        let _fmt = self.run(&set_pane_option_args(
+            pane,
+            REMAIN_ON_EXIT_FORMAT,
+            &dead_pane_format(),
+        ))?;
         // The address, only when the pane is actually there. A pane that
         // could not be moved keeps whatever it last legitimately held, so
         // the drift stays visible to `list-panes` and to anything that
@@ -1103,22 +1075,22 @@ impl Tmux {
                 // A failure here is a view that reads badly, not a view
                 // that cannot be found, so it does not take the jump down
                 // with it.
-                let _slot = self.run("set-option", &set_slot_args(pane, at));
+                let _slot = self.run(&set_pane_option_args(pane, SLOT_OPTION, at));
             }
             Holds::SomewhereElse => {
                 eprintln!("tally: {pane} is not at {at}; slot tag left alone");
             }
         }
         // The title is for the eye and says where it belongs, which is
-        // worth saying even when it is not there yet.
-        let _title = self.run("select-pane", &pane_title_args(pane, place, at, session));
+        // worth saying even when it is not there yet. Computed once: the
+        // pane title and the window name are the same string by
+        // construction, which is not a property two derivations hold.
+        let title = pane_title(place, at, session);
+        let _title = self.run(&pane_title_args(pane, &title));
         // Per window, because a row is many windows now. Both are for the
         // eye, so both are best-effort for the same reason the title is.
-        let _auto = self.run("set-option", &automatic_rename_off_args(pane));
-        let _name = self.run(
-            "rename-window",
-            &rename_window_args(pane, place, at, session),
-        );
+        let _auto = self.run(&automatic_rename_off_args(pane));
+        let _name = self.run(&rename_window_args(pane, &title));
         Ok(())
     }
 
@@ -1138,29 +1110,26 @@ impl Tmux {
             // A swap destroys no session, so there is nothing to tell not
             // to detach, and nothing to create or kill afterwards. One
             // call (`docs/06-views.md`).
-            return self
-                .run("swap-window", &swap_window_args(pane.id, place))
-                .map(|_| ());
+            return self.run(&swap_window_args(pane.id, place)).map(|_| ());
         };
         // Before the move, while the session still exists to be told.
-        let _kept = self.run("set-option", &keep_clients_args(pane.tmux_session));
+        let _kept = self.run(&keep_clients_args(pane.tmux_session));
         let placeholder = if create_row {
-            let window = self
-                .stdout("new-session", &placeholder_args(place))?
-                .trim()
-                .to_owned();
+            let window = self.stdout(&placeholder_args(place))?.trim().to_owned();
             self.hold_indexes();
             Some(window)
         } else {
             None
         };
-        let moved = self.run(
-            "move-window",
-            &relocate_window_args(pane.id, place, replace),
-        );
+        let moved = self.run(&move_window_args(
+            pane.id,
+            place.row,
+            u16::from(place.col),
+            replace,
+        ));
         // `-k` may already have replaced it, so there may be nothing to kill.
         if let Some(window) = placeholder {
-            let _gone = self.run("kill-window", &kill_window_args(&window));
+            let _gone = self.run(&kill_window_args(&window));
         }
         moved.map(|_| ())
     }
@@ -1185,7 +1154,7 @@ impl Tmux {
         if let Some(found) = view_for(&listing, session) {
             if found.dead {
                 let args = respawn_pane_args(found.id, session, &self.anchor_bin);
-                let _revived = self.run("respawn-pane", &args)?;
+                let _revived = self.run(&args)?;
             }
             // Where the pad *is*, not where the pane was left. For the eye
             // and for the pad it vacated, so best-effort like the tag below
@@ -1199,10 +1168,6 @@ impl Tmux {
                 Err(_) => Holds::SomewhereElse,
             };
             self.tag(found.id, session, claude, place, at, holds)?;
-            // After the pane owns the tag, never before: an inherited tag
-            // is the only thing identifying a legacy view, and clearing it
-            // first would lose the session mid-sequence.
-            let _legacy = self.run("set-option", &clear_window_option_args(found.window));
             return Ok(found.id.to_owned());
         }
         // Not found by id, so this is a new session for the slot — and the
@@ -1213,10 +1178,9 @@ impl Tmux {
         // respawn (`docs/06-views.md`).
         if let Some(stale) = dead_view_at(&listing, at) {
             let args = respawn_pane_args(stale.id, session, &self.anchor_bin);
-            let _reclaimed = self.run("respawn-pane", &args)?;
+            let _reclaimed = self.run(&args)?;
             // Found *by* the address, so it is at it by construction.
             self.tag(stale.id, session, claude, place, at, Holds::TheAddress)?;
-            let _legacy = self.run("set-option", &clear_window_option_args(stale.window));
             return Ok(stale.id.to_owned());
         }
         let pane = self.make_view(session, place)?;
@@ -1237,12 +1201,17 @@ impl Tmux {
     fn make_view(&self, session: &str, place: Place) -> Result<String, Error> {
         if !self.session_exists(&row_session(place.row)) {
             let args = new_row_session_args(place, session, &self.anchor_bin);
-            let pane = self.stdout("new-session", &args)?.trim().to_owned();
+            let pane = self.stdout(&args)?.trim().to_owned();
             self.hold_indexes();
             // `new-session` puts it at `base-index`; the column is where
             // it belongs. Best-effort: a view at the wrong index is read
             // in the wrong order, not lost.
-            let _moved = self.run("move-window", &move_window_args(&pane, place));
+            let _moved = self.run(&move_window_args(
+                &pane,
+                place.row,
+                u16::from(place.col),
+                false,
+            ));
             return Ok(pane);
         }
         // Nothing may hold this index that is not entitled to it
@@ -1251,7 +1220,7 @@ impl Tmux {
         // anything still sitting at the column is in the way.
         let replace = self.clear_the_index(place);
         let args = new_window_args(place, session, &self.anchor_bin, replace);
-        Ok(self.stdout("new-window", &args)?.trim().to_owned())
+        Ok(self.stdout(&args)?.trim().to_owned())
     }
 
     /// Make the window `place` names available, and say whether the
@@ -1284,7 +1253,7 @@ impl Tmux {
             return false;
         }
         let index = park_index(&listing, place);
-        let parked = self.run("move-window", &park_args(held.pane.id, place, index));
+        let parked = self.run(&move_window_args(held.pane.id, place.row, index, false));
         if parked.is_err() {
             eprintln!(
                 "tally: {} squats on {}:{} and would not move",
@@ -1307,7 +1276,7 @@ impl Tmux {
             return;
         }
         if !self.session_exists(HOME_SESSION) {
-            let _home = self.run("new-session", &new_home_session_args());
+            let _home = self.run(&new_home_session_args());
             self.hold_indexes();
         }
         open_terminal(&self.socket);
@@ -1374,10 +1343,11 @@ fn session_of(listing: &str, pane: &str) -> Option<String> {
 ///
 /// Overridable because this is the one genuinely machine-specific string
 /// in the file — the rest of tmux is the same everywhere.
-fn terminal_app() -> Option<String> {
-    crate::env_path("TALLY_TERMINAL")
-        .map(|p| p.to_string_lossy().into_owned())
-        .or_else(|| Some("Alacritty".to_owned()))
+fn terminal_app() -> String {
+    crate::env_path("TALLY_TERMINAL").map_or_else(
+        || DEFAULT_TERMINAL.to_owned(),
+        |p| p.to_string_lossy().into_owned(),
+    )
 }
 
 /// The command that brings the terminal forward.
@@ -1388,14 +1358,23 @@ fn terminal_app() -> Option<String> {
 /// Overridable as `TALLY_RAISE_CMD`, the twin of `TALLY_TERMINAL_CMD`,
 /// and the suite sets it. It has to: leaving `TALLY_TERMINAL` unset does
 /// **not** leave [`raise`] with nothing to raise — [`terminal_app`] falls
-/// back to Alacritty — so without an override every headless jump in the
-/// tests takes the screen of whoever is running them. The override is
-/// split on spaces, which is enough for a path and some flags and
-/// deliberately not a shell.
+/// back to [`DEFAULT_TERMINAL`] — so without an override every headless
+/// jump in the tests takes the screen of whoever is running them. See
+/// [`split_override`] for what an override may be.
 fn raise_command(app: &str, override_cmd: Option<&str>) -> (String, Vec<String>) {
     let Some(cmd) = override_cmd.map(str::trim).filter(|c| !c.is_empty()) else {
         return ("open".to_owned(), vec!["-a".to_owned(), app.to_owned()]);
     };
+    split_override(cmd)
+}
+
+/// An override command as a binary and its arguments.
+///
+/// Split on spaces, which is enough for a path and some flags and
+/// deliberately **not** a shell. `"true"` when the string is nothing but
+/// separators: a no-op is the honest failure for a command whose whole
+/// job is best-effort.
+fn split_override(cmd: &str) -> (String, Vec<String>) {
     let mut parts = cmd.split(' ').filter(|p| !p.is_empty());
     let bin = parts.next().unwrap_or("true").to_owned();
     (bin, parts.map(ToOwned::to_owned).collect())
@@ -1405,9 +1384,7 @@ fn raise_command(app: &str, override_cmd: Option<&str>) -> (String, Vec<String>)
 /// an error: tmux has already been switched, so the move has happened even
 /// if the window manager will not cooperate.
 fn raise() {
-    let Some(app) = terminal_app() else {
-        return;
-    };
+    let app = terminal_app();
     let over = std::env::var("TALLY_RAISE_CMD").ok();
     let (bin, args) = raise_command(&app, over.as_deref());
     let _raised = Command::new(bin).args(args).output();
@@ -1423,9 +1400,8 @@ fn raise() {
 /// what exists, this one exists because nothing does.
 ///
 /// One string, overridable as `TALLY_TERMINAL_CMD`, for the same reason
-/// [`terminal_app`] is: it is machine-specific and the rest is not. The
-/// override is split on spaces, which is enough for a path and some flags
-/// and deliberately not a shell.
+/// [`terminal_app`] is: it is machine-specific and the rest is not. See
+/// [`split_override`] for what an override may be.
 fn terminal_command(socket: &str, app: &str, override_cmd: Option<&str>) -> (String, Vec<String>) {
     let attach = [
         "tmux".to_owned(),
@@ -1447,9 +1423,7 @@ fn terminal_command(socket: &str, app: &str, override_cmd: Option<&str>) -> (Str
         args.extend(attach);
         return ("open".to_owned(), args);
     };
-    let mut parts = cmd.split(' ').filter(|p| !p.is_empty());
-    let bin = parts.next().unwrap_or("true").to_owned();
-    let mut args: Vec<String> = parts.map(ToOwned::to_owned).collect();
+    let (bin, mut args) = split_override(cmd);
     args.extend(attach);
     (bin, args)
 }
@@ -1457,7 +1431,7 @@ fn terminal_command(socket: &str, app: &str, override_cmd: Option<&str>) -> (Str
 /// Open the window that looks at tally's server. Best-effort, like
 /// [`raise`]: the view exists whether or not anything shows it.
 fn open_terminal(socket: &str) {
-    let app = terminal_app().unwrap_or_else(|| "Alacritty".to_owned());
+    let app = terminal_app();
     let over = std::env::var("TALLY_TERMINAL_CMD").ok();
     let (bin, args) = terminal_command(socket, &app, over.as_deref());
     let _opened = Command::new(bin).args(args).output();
@@ -1487,7 +1461,7 @@ impl Jump for Tmux {
         // Zero clients is not an error: the view exists and is correct,
         // and it is there the next time you attach.
         for (client, _) in &clients {
-            self.run("switch-client", &switch_args(client, &pane))?;
+            self.run(&switch_args(client, &pane))?;
         }
         raise();
         Ok(())
@@ -1548,7 +1522,7 @@ impl Jump for Tmux {
             if !live.lines().filter_map(row).any(|r| r.pane.id == pane) {
                 continue; // the origin closed while you were away
             }
-            self.run("switch-client", &switch_args(&client, &pane))?;
+            self.run(&switch_args(&client, &pane))?;
             moved = true;
         }
         if moved {
@@ -1577,7 +1551,7 @@ impl Jump for Tmux {
         // The close is the thing that renumbers, and `purge` can run on a
         // grid whose daemon has never been pressed.
         self.hold_indexes();
-        let _closed = self.run("kill-pane", &kill_pane_args(found.id))?;
+        let _closed = self.run(&kill_pane_args(found.id))?;
         Ok(())
     }
 }
@@ -1599,17 +1573,17 @@ mod tests {
     /// The same slot as geometry: absolute row 4, column 4.
     const PLACE: Place = Place { row: 4, col: 4 };
 
-    /// `#{pane_id}|#{window_id}|#{pane_dead}|#{@tally_session}|#{@tally_slot}|#{session_name}|#{window_index}`
+    /// `#{pane_id}|#{pane_dead}|#{@tally_session}|#{@tally_slot}|#{session_name}|#{window_index}`
     ///
     /// `%4` is the corpse this file is about: dead, holding slot `AT`,
     /// tagged with a session that is not [`SESSION`]. `%5` is a live pane
     /// at another address, and `%1` is one of yours — neither tag set.
     const LISTING: &str = "\
-%1|@1|0|||tally|1\n\
-%2|@2|0|other-session|work:4:1|r04|1\n\
-%3|@2|0|01M52GEKED8ZEJPMT2KCJ35ZWT|work:4:2|r04|2\n\
-%4|@3|1|01M52MXB4WQTA79K5FTHMXZ8YN|work:4:4|r04|4\n\
-%5|@3|0|||r04|4\n";
+%1|0|||tally|1\n\
+%2|0|other-session|work:4:1|r04|1\n\
+%3|0|01M52GEKED8ZEJPMT2KCJ35ZWT|work:4:2|r04|2\n\
+%4|1|01M52MXB4WQTA79K5FTHMXZ8YN|work:4:4|r04|4\n\
+%5|0|||r04|4\n";
 
     #[test]
     fn a_view_is_created_in_the_row_session_for_its_row() {
@@ -1670,7 +1644,7 @@ mod tests {
     /// mean the column again.
     #[test]
     fn a_rows_first_view_is_moved_to_its_column() {
-        let args = move_window_args("%3", Place { row: 7, col: 4 });
+        let args = move_window_args("%3", 7, 4, false);
         let t = args.iter().position(|a| a == "-t").expect("-t");
         assert_eq!(args.get(t + 1).map(String::as_str), Some("r07:4"));
         let src = args.iter().position(|a| a == "-s").expect("-s");
@@ -1705,7 +1679,7 @@ mod tests {
         let auto = automatic_rename_off_args("%7");
         assert!(auto.contains(&"%7".to_owned()));
         assert!(auto.iter().all(|a| !a.ends_with(':')), "not a row target");
-        let name = rename_window_args("%7", PLACE, "work:7:3", SESSION);
+        let name = rename_window_args("%7", &pane_title(PLACE, "work:7:3", SESSION));
         assert!(name.contains(&"%7".to_owned()));
     }
 
@@ -1732,12 +1706,10 @@ mod tests {
         assert!(new_window_args(PLACE, SESSION, "anchor", false).contains(&"-t".to_owned()));
         assert!(new_row_session_args(PLACE, SESSION, "anchor").contains(&"-s".to_owned()));
         for args in [
-            set_option_args("%7", SESSION),
-            remain_on_exit_args("%7"),
-            dead_pane_format_args("%7"),
+            set_pane_option_args("%7", PANE_OPTION, SESSION),
+            set_pane_option_args("%7", REMAIN_ON_EXIT, "on"),
             respawn_pane_args("%7", SESSION, "anchor"),
             kill_pane_args("%7"),
-            clear_window_option_args("@7"),
         ] {
             assert!(args.contains(&"-t".to_owned()), "{args:?} names its target");
         }
@@ -1747,7 +1719,6 @@ mod tests {
     fn the_view_is_found_by_option_not_by_name() {
         let found = view_for(LISTING, SESSION).expect("tagged pane");
         assert_eq!(found.id, "%3");
-        assert_eq!(found.window, "@2");
         assert!(!found.dead);
         assert_eq!(view_for(LISTING, "nope"), None);
     }
@@ -1757,7 +1728,7 @@ mod tests {
     /// server — which is every pane you work in.
     #[test]
     fn an_untagged_pane_is_not_a_candidate() {
-        assert_eq!(view_for("%9|@9|0|||tally|1\n", SESSION), None);
+        assert_eq!(view_for("%9|0|||tally|1\n", SESSION), None);
         assert_eq!(view_for(LISTING, ""), None, "an empty tag matches nothing");
     }
 
@@ -1770,9 +1741,9 @@ mod tests {
     #[test]
     fn a_pipe_in_the_address_does_not_shift_the_fields() {
         assert_eq!(
-            row("%4|@3|1|01M52MXB4WQTA79K5FTHMXZ8YN|a|b:4:4|r04|4").map(|r| r.pane.id),
+            row("%4|1|01M52MXB4WQTA79K5FTHMXZ8YN|a|b:4:4|r04|4").map(|r| r.pane.id),
             None,
-            "eight fields: the seven read would be the wrong seven"
+            "seven fields: the six read would be the wrong six"
         );
     }
 
@@ -1781,9 +1752,8 @@ mod tests {
     /// the fields after it (`docs/06-views.md`).
     #[test]
     fn an_empty_tag_does_not_shift_the_fields() {
-        let r = row("%9|@9|1|||tally|1").expect("parses");
+        let r = row("%9|1|||tally|1").expect("parses");
         assert_eq!(r.pane.id, "%9");
-        assert_eq!(r.pane.window, "@9");
         assert!(r.pane.dead, "the field after two empties is still read");
         assert_eq!(r.session, "");
         assert_eq!(r.slot, "");
@@ -1813,7 +1783,6 @@ mod tests {
     fn a_corpse_holding_the_slot_is_found_by_address() {
         let stale = dead_view_at(LISTING, AT).expect("the dead pane at this address");
         assert_eq!(stale.id, "%4");
-        assert_eq!(stale.window, "@3");
         assert_ne!(
             view_for(LISTING, SESSION).map(|v| v.id),
             Some(stale.id),
@@ -1825,7 +1794,7 @@ mod tests {
     /// somebody is reading, and a spawn is not the gesture that closes it.
     #[test]
     fn a_live_view_at_the_address_is_left_alone() {
-        let live = "%7|@7|0|other-session|work:4:4|r04|4\n";
+        let live = "%7|0|other-session|work:4:4|r04|4\n";
         assert_eq!(dead_view_at(live, AT), None);
     }
 
@@ -1833,7 +1802,7 @@ mod tests {
     /// session id is not a session id.
     #[test]
     fn an_untagged_pane_holds_no_address() {
-        assert_eq!(dead_view_at("%9|@9|1|||tally|1\n", ""), None);
+        assert_eq!(dead_view_at("%9|1|||tally|1\n", ""), None);
         assert_eq!(dead_view_at(LISTING, ""), None);
         assert_eq!(
             dead_view_at(LISTING, "nowhere:9:9"),
@@ -1845,7 +1814,7 @@ mod tests {
     /// The view for [`SESSION`] after a Move to row 2, column 1: tagged
     /// with its new address, **still in `r03:1`** — the state the owner's
     /// log is made of (`docs/06-views.md`).
-    const SQUATTER: &str = "%7|@7|0|01M52GEKED8ZEJPMT2KCJ35ZWT|1:2:1|r03|1\n";
+    const SQUATTER: &str = "%7|0|01M52GEKED8ZEJPMT2KCJ35ZWT|1:2:1|r03|1\n";
     const MOVED_TO: Place = Place { row: 2, col: 1 };
 
     fn squatter(listing: &str) -> Pane<'_> {
@@ -1867,7 +1836,7 @@ mod tests {
     /// refuse it (`same index`) if asked.
     #[test]
     fn a_view_at_its_address_stays() {
-        let here = "%7|@7|0|01M52GEKED8ZEJPMT2KCJ35ZWT|1:3:1|r03|1\n";
+        let here = "%7|0|01M52GEKED8ZEJPMT2KCJ35ZWT|1:3:1|r03|1\n";
         assert_eq!(
             relocation(here, squatter(here), Place { row: 3, col: 1 }),
             None
@@ -1877,7 +1846,7 @@ mod tests {
     /// The bug, with an empty destination in a row that exists.
     #[test]
     fn a_moved_view_goes_to_the_window_its_address_names() {
-        let listing = format!("{SQUATTER}%8|@8|0|other|1:2:2|r02|2\n");
+        let listing = format!("{SQUATTER}%8|0|other|1:2:2|r02|2\n");
         assert_eq!(
             relocation(&listing, squatter(&listing), MOVED_TO),
             Some(Relocation::Move {
@@ -1892,7 +1861,7 @@ mod tests {
     /// failed on that would turn a working jump into a broken one.
     #[test]
     fn a_corpse_at_the_destination_is_replaced() {
-        let listing = format!("{SQUATTER}%8|@8|1|01DEAD|1:2:1|r02|1\n");
+        let listing = format!("{SQUATTER}%8|1|01DEAD|1:2:1|r02|1\n");
         assert_eq!(
             relocation(&listing, squatter(&listing), MOVED_TO),
             Some(Relocation::Move {
@@ -1911,7 +1880,7 @@ mod tests {
     /// its window did not hold.
     #[test]
     fn a_live_view_at_the_destination_is_swapped_with_never_replaced() {
-        let listing = format!("{SQUATTER}%8|@8|0|01LIVE|1:9:9|r02|1\n");
+        let listing = format!("{SQUATTER}%8|0|01LIVE|1:9:9|r02|1\n");
         let plan = relocation(&listing, squatter(&listing), MOVED_TO);
         assert_eq!(plan, Some(Relocation::Swap));
         assert!(
@@ -1935,7 +1904,7 @@ mod tests {
     /// Within a row the index is all that differs.
     #[test]
     fn a_move_within_a_row_is_a_move_of_the_index() {
-        let listing = "%7|@7|0|01M52GEKED8ZEJPMT2KCJ35ZWT|1:3:4|r03|1\n";
+        let listing = "%7|0|01M52GEKED8ZEJPMT2KCJ35ZWT|1:3:4|r03|1\n";
         assert_eq!(
             relocation(listing, squatter(listing), Place { row: 3, col: 4 }),
             Some(Relocation::Move {
@@ -1966,7 +1935,7 @@ mod tests {
     /// about the window instead, which is the question that was missing.
     #[test]
     fn the_occupant_is_found_by_its_window_whatever_it_claims() {
-        let listing = "%8|@8|1|01DEAD|1:9:9|r02|1\n";
+        let listing = "%8|1|01DEAD|1:9:9|r02|1\n";
         let held = occupant_at(listing, MOVED_TO).expect("occupied");
         assert_eq!(held.pane.id, "%8");
         assert!(held.pane.dead);
@@ -1980,7 +1949,7 @@ mod tests {
     /// Nothing there is not an occupant.
     #[test]
     fn an_empty_index_has_no_occupant() {
-        let listing = "%8|@8|0|01LIVE|1:2:2|r02|2\n";
+        let listing = "%8|0|01LIVE|1:2:2|r02|2\n";
         assert!(occupant_at(listing, MOVED_TO).is_none());
     }
 
@@ -1988,17 +1957,25 @@ mod tests {
     /// index 90, so a parked view cannot wedge anything.
     #[test]
     fn a_squatter_is_parked_out_of_the_address_space() {
-        let listing = "%8|@8|0|01LIVE|1:9:9|r02|1\n";
+        let listing = "%8|0|01LIVE|1:9:9|r02|1\n";
         let index = park_index(listing, MOVED_TO);
-        assert!(index >= u16::from(PARK), "{index} must be unaddressable");
+        assert!(index >= PARK, "{index} must be unaddressable");
         assert!(index > 8, "a column is 1-8 and this must not be one");
+        // The park is a `move-window` like any other; only the index is
+        // not a column.
+        let args = move_window_args("%8", MOVED_TO.row, index, false);
+        let t = args.iter().position(|a| a == "-t").expect("-t");
+        assert_eq!(
+            args.get(t + 1).map(String::as_str),
+            Some(format!("r02:{index}").as_str())
+        );
     }
 
     /// Two squatters in one row do not land on each other.
     #[test]
     fn parking_skips_a_space_already_taken() {
-        let listing = format!("%8|@8|0|01LIVE|1:9:9|r02|1\n%9|@9|0|01OTHER|1:9:8|r02|{PARK}\n");
-        assert_eq!(park_index(&listing, MOVED_TO), u16::from(PARK) + 1);
+        let listing = format!("%8|0|01LIVE|1:9:9|r02|1\n%9|0|01OTHER|1:9:8|r02|{PARK}\n");
+        assert_eq!(park_index(&listing, MOVED_TO), PARK + 1);
     }
 
     /// `-k` on a creation is the corpse case and nothing else, for the
@@ -2017,11 +1994,14 @@ mod tests {
     /// when the plan asked, and always before the pane it is aimed with.
     #[test]
     fn replacing_is_asked_for_and_never_assumed() {
-        let plain = relocate_window_args("%7", MOVED_TO, false);
+        let col = u16::from(MOVED_TO.col);
+        let plain = move_window_args("%7", MOVED_TO.row, col, false);
         assert!(!plain.contains(&"-k".to_owned()));
-        assert_eq!(plain, move_window_args("%7", MOVED_TO));
-        let hard = relocate_window_args("%7", MOVED_TO, true);
+        let hard = move_window_args("%7", MOVED_TO.row, col, true);
         assert_eq!(hard.get(1).map(String::as_str), Some("-k"));
+        let mut without = hard.clone();
+        let _flag = without.remove(1);
+        assert_eq!(without, plain, "-k is the only difference between them");
         let s = hard.iter().position(|a| a == "-s").expect("-s");
         assert_eq!(hard.get(s + 1).map(String::as_str), Some("%7"));
         let t = hard.iter().position(|a| a == "-t").expect("-t");
@@ -2062,34 +2042,36 @@ mod tests {
         assert_eq!(dead.id, "%4");
     }
 
-    /// The bug a window option would reintroduce: every pane in the window
-    /// inherits it, so a split of a view claims the same session.
+    /// The bug a window option would reintroduce: every pane in the
+    /// window inherits it, so a split of a view claims the same session
+    /// — and `remain-on-exit` is pane-scoped for a second reason, that an
+    /// adopted view sits among panes that are yours. One function now, so
+    /// one test: every option [`Tmux::tag`] writes goes through it.
     #[test]
-    fn the_tag_is_a_pane_option_not_a_window_one() {
-        let args = set_option_args("%7", SESSION);
-        assert!(
-            args.contains(&"-p".to_owned()),
-            "with -w a split of a view would claim the same session"
-        );
-        assert!(!args.contains(&"-w".to_owned()));
-    }
-
-    /// `remain-on-exit` is pane-scoped too, and for a second reason: an
-    /// adopted view sits among panes that are yours.
-    #[test]
-    fn remain_on_exit_is_set_on_the_pane_alone() {
-        let args = remain_on_exit_args("%7");
-        assert!(args.contains(&"-p".to_owned()));
-        assert_eq!(args.last().map(String::as_str), Some("on"));
+    fn every_tag_is_a_pane_option_not_a_window_one() {
+        for name in [
+            PANE_OPTION,
+            SLOT_OPTION,
+            CLAUDE_OPTION,
+            REMAIN_ON_EXIT,
+            REMAIN_ON_EXIT_FORMAT,
+        ] {
+            let args = set_pane_option_args("%7", name, "v");
+            assert!(
+                args.contains(&"-p".to_owned()),
+                "{name}: with -w a split of a view would claim the same session"
+            );
+            assert!(!args.contains(&"-w".to_owned()), "{name}");
+            assert_eq!(args.first().map(String::as_str), Some("set-option"));
+            assert_eq!(args.last().map(String::as_str), Some("v"));
+        }
     }
 
     /// The dead-line must read the tag, not a literal: a pane rebound to
     /// another session would otherwise die naming the previous one.
     #[test]
     fn the_dead_line_names_the_session_through_the_tag() {
-        let args = dead_pane_format_args("%7");
-        assert!(args.contains(&"-p".to_owned()));
-        let fmt = args.last().expect("a format").clone();
+        let fmt = dead_pane_format();
         assert!(
             fmt.contains(&format!("#{{{PANE_OPTION}}}")),
             "{fmt} expands the tag at draw time"
@@ -2141,14 +2123,6 @@ mod tests {
         println!("{}", dead_pane_format());
     }
 
-    #[test]
-    fn the_conversation_tag_is_a_pane_option() {
-        let args = set_claude_args("%7", "c1567a67");
-        assert!(args.contains(&"-p".to_owned()), "{args:?} is pane-scoped");
-        assert!(args.contains(&CLAUDE_OPTION.to_owned()), "{args:?}");
-        assert!(args.last().is_some_and(|v| v == "c1567a67"), "{args:?}");
-    }
-
     /// `attach exit` is the attach client's status, not the agent's. The
     /// agent's exit is on the pad; calling this one `exit` would be a lie
     /// on every kill (`docs/06-views.md`).
@@ -2170,13 +2144,22 @@ mod tests {
         );
     }
 
-    /// Legacy tags are cleared at window scope, which is the only scope
-    /// they were ever set at.
+    /// The one command whose arguments used to be inlined, and so the
+    /// one nothing pinned. [`clients`] reads the two fields back out by
+    /// splitting on the space between them, so the format is half of a
+    /// contract the parser holds the other half of.
     #[test]
-    fn a_legacy_window_tag_is_unset_not_overwritten() {
-        let args = clear_window_option_args("@2");
-        assert!(args.contains(&"-uw".to_owned()));
-        assert_eq!(args.last().map(String::as_str), Some(PANE_OPTION));
+    fn a_client_is_listed_with_the_pane_it_is_on() {
+        let args = list_clients_args();
+        assert_eq!(args.first().map(String::as_str), Some("list-clients"));
+        let f = args.iter().position(|a| a == "-F").expect("-F");
+        let fmt = args.get(f + 1).expect("a format");
+        assert_eq!(fmt, "#{client_name} #{pane_id}");
+        assert_eq!(
+            clients(&format!("{} %99\n", "/dev/ttys000")),
+            [("/dev/ttys000", "%99")],
+            "{fmt} is what `clients` splits"
+        );
     }
 
     #[test]
@@ -2345,8 +2328,7 @@ mod tests {
             std::env::set_var("TALLY_TERMINAL", v);
         }
         assert_eq!(
-            app.as_deref(),
-            Some("Alacritty"),
+            app, DEFAULT_TERMINAL,
             "unsetting the app does not disable the raise -- TALLY_RAISE_CMD does"
         );
     }
