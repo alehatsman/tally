@@ -11,6 +11,13 @@
 //! killed, or that anchord exists. The four rules it enforces are the four
 //! in `docs/05-interaction.md#the-exact-rules-of-a-chord`, and between
 //! them they decide whether a fat finger kills an agent.
+//!
+//! **And it has no `now`.** That is the half of the purity the rest of the
+//! crate kept restating, so it is stated here once: there is no clock in
+//! this file, so every gesture that is *timed* — the `▲` hold behind
+//! [`Gesture::Home`], the `CC19` double-tap behind [`Chords::toggle_mode`]
+//! — is held by `tallyd`'s loop instead, which is what lets the four rules
+//! be tested with no device and no timeline.
 
 use crate::surface::Button;
 
@@ -174,12 +181,21 @@ fn top(n: u8) -> Option<Gesture> {
     }
 }
 
-/// Which modifiers are down.
+/// What the right column is doing: the modifier that is down, and the
+/// verb the corner is carrying.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Chords {
-    /// In press order. At most four, so a `Vec` is the right amount of
-    /// machinery — a press that is already down is not pushed twice.
-    held: Vec<Action>,
+    /// The modifier under the thumb, if any.
+    ///
+    /// **One, not a set.** It was a `Vec` while the right column had four
+    /// hold-modifiers; `CC89`–`CC29` became the seven `>` launchers (see
+    /// [`Action::of`]) and the corner is the only one left, so a second
+    /// element was unreachable. If a second modifier is ever restored,
+    /// the rule that goes with it is in `docs/05-interaction.md` — *two
+    /// modifiers down fires nothing* — and it has to be rebuilt here,
+    /// because what this shape gives you instead is newest-wins, and
+    /// newest-wins makes a fumble destructive.
+    held: Option<Action>,
     /// Which verb `CC19` is carrying.
     ///
     /// Surface state, so it lives with the other surface state and not in
@@ -195,7 +211,7 @@ pub struct Chords {
 impl Default for Chords {
     fn default() -> Self {
         Self {
-            held: Vec::new(),
+            held: None,
             // It rests on Stop: four presses of muscle memory, and the
             // word the silkscreen puts under that corner.
             mode: Action::Stop,
@@ -221,33 +237,25 @@ impl Chords {
     ///   justifies hold-then-tap over a prefix.
     pub fn feed(&mut self, button: Button, down: bool) -> Option<Gesture> {
         if let Some(action) = Action::of(button, self.mode) {
-            if down {
-                if !self.held.contains(&action) {
-                    self.held.push(action);
-                }
-            } else {
-                // **Every verb that lives on this button**, not just the
-                // one the mode names right now. The mode can change
-                // between the press and the release — a double-tap
-                // toggles it on the release itself — and a release that
-                // removed only the current verb stranded the old one in
-                // `held` forever. That left [`Self::modifier`] answering
-                // `Some` with nothing down, so the grid froze in a
-                // preview with no way out (`docs/05-interaction.md`).
-                self.held.retain(|a| a.button() != button);
-            }
+            // A release lets go of the **button**, not of the verb. The
+            // mode can change between the press and the release — a
+            // double-tap toggles it on the release itself — and a release
+            // that cleared only the verb the mode names right now
+            // stranded the old one in `held` forever. That left
+            // [`Self::modifier`] answering `Some` with nothing down, so
+            // the grid froze in a preview with no way out
+            // (`docs/05-interaction.md`). Clearing the field outright is
+            // that fix by construction rather than by a predicate.
+            self.held = down.then_some(action);
             return None;
         }
         if !down {
             return None;
         }
         match button {
-            Button::Grid { row, col } => match self.modifier() {
+            Button::Grid { row, col } => match self.held {
                 Some(action) => Some(Gesture::Chord { action, row, col }),
-                // Either nothing is held, or more than one is -- and an
-                // ambiguous chord fires nothing. See `modifier`.
-                None if self.held.is_empty() => Some(Gesture::Tap { row, col }),
-                None => None,
+                None => Some(Gesture::Tap { row, col }),
             },
             // Switching page under a held modifier is allowed, and useful:
             // it is how you kill something that is not on the grid.
@@ -256,36 +264,20 @@ impl Chords {
             // tap and not a chord, so a held modifier owns the surface and
             // suppresses it: you are mid-kill, not mid-launch.
             Button::Action(row) if row <= 7 => {
-                self.held.is_empty().then_some(Gesture::Launch { row })
+                self.held.is_none().then_some(Gesture::Launch { row })
             }
             Button::Action(_) | Button::Logo => None,
         }
     }
 
-    /// The modifier in effect, or `None`.
-    ///
-    /// **Two modifiers down means none.** Nothing in the hardware stops
-    /// you brushing kill while holding purge, and the alternatives are
-    /// both worse: picking the newest makes a fumble destructive, and
-    /// picking the oldest makes it destructive and surprising.
-    ///
-    /// Doing nothing is safe, and — because the held preview is driven by
-    /// this same function — it is *visible*. The second button down makes
-    /// the preview **disappear**: the red pads you were aiming at revert
-    /// to their resting colours while both buttons stay white. Confirmed
-    /// on hardware, and it reads as unmistakably disarmed, because the
-    /// grid you are now looking at is the one you see when nothing is
-    /// held at all.
+    /// The modifier in effect, or `None`. Drives the held preview.
     pub fn modifier(&self) -> Option<Action> {
-        match self.held.as_slice() {
-            [only] => Some(*only),
-            _ => None,
-        }
+        self.held
     }
 
     /// Whether this button should render as held.
     pub fn is_held(&self, action: Action) -> bool {
-        self.held.contains(&action)
+        self.held == Some(action)
     }
 
     /// Which verb the corner is carrying.
@@ -296,11 +288,10 @@ impl Chords {
     /// Flip the corner to its other verb.
     ///
     /// **Called by `tallyd`, never from here.** A double-tap is two
-    /// presses close together in time, and this module has no clock on
-    /// purpose: it is pure, and that is what lets the four chord rules be
-    /// tested without a device or a timeline. The loop that owns
-    /// `elapsed` owns the threshold, exactly as it does for the `▲` hold
-    /// (`docs/05-interaction.md`, `docs/05-interaction.md`).
+    /// presses close together in time, and this module has no clock
+    /// ([module docs](self)). The loop that owns `elapsed` owns the
+    /// threshold, exactly as it does for the `▲` hold
+    /// (`docs/05-interaction.md`).
     pub fn toggle_mode(&mut self) {
         self.mode = self.mode.toggled();
     }
@@ -313,7 +304,7 @@ impl Chords {
     /// failure M0 went looking for in the hardware and did not find, left
     /// for us to introduce in software instead.
     pub fn clear(&mut self) {
-        self.held.clear();
+        self.held = None;
         // The mode deliberately survives: it is not a button that can be
         // stuck down, it is what the corner means, and a replug that
         // silently moved it back to Stop would be a surface lying about
@@ -629,12 +620,11 @@ mod tests {
             let _up = c.feed(Button::Action(8), false);
             assert_eq!(c.modifier(), None);
         }
-        assert!(c.held.is_empty(), "nothing accumulated");
+        assert_eq!(c.held, None, "nothing accumulated");
     }
 
-    /// This module has no clock, and that is what lets the four chord
-    /// rules be tested without a device or a timeline. The double-tap
-    /// lives in `tallyd` for the same reason `Home` does.
+    /// No clock in this file ([module docs](self)), so no sequence of
+    /// presses can reach one.
     #[test]
     fn no_sequence_of_presses_alone_changes_the_mode() {
         let mut c = Chords::default();
