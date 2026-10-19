@@ -252,6 +252,23 @@ impl Grip {
         }
         false
     }
+
+    /// The cable came out. Everything a finger was holding went with it.
+    ///
+    /// One function rather than a line per field, because the chord state
+    /// is split across two types and the halves drifted: the departure
+    /// branch cleared [`Chords`] and left the hand behind, so a hold-tap
+    /// that was interrupted by a replug put the carried pad down wherever
+    /// the next finger landed. A pick-up that is never put down is already
+    /// specified to leave anchord untouched (`docs/05-interaction.md`,
+    /// chord rule 4); a departure is one of the ways it is never put down.
+    fn unplugged(&mut self, chords: &mut Chords) {
+        chords.clear();
+        self.hand = None;
+        // `▲` down when the cable went leaves a hold that would fire a
+        // spurious `⌂` on the replug. Same event, same answer.
+        self.home = None;
+    }
 }
 
 /// What a press did to the hand under a held `Move`.
@@ -1149,9 +1166,10 @@ fn main() -> ExitCode {
 
         // One departure, one response, wherever this tick it happened:
         // the release for anything held went out with the cable, and
-        // without this the first tap after a replug is a kill.
+        // without this the first tap after a replug is a kill -- a
+        // modifier still down, or a pad still in the hand.
         if link.take_departed() {
-            chords.clear();
+            grip.unplugged(&mut chords);
         }
 
         beat.pulse(link.device(), elapsed);
@@ -1366,5 +1384,40 @@ mod tests {
         grip.aim(Button::Top(1), true, Duration::ZERO);
         grip.aim(Button::Top(1), false, Duration::from_millis(10));
         assert!(!grip.home_due(HOME_HOLD * 10));
+    }
+
+    /// **A departure forgets the whole grip, not half of it.** The
+    /// release for everything a finger was holding went out with the
+    /// cable, so the modifier, the carried pad and the `▲` hold all have
+    /// to go -- otherwise the first grid tap after a replug is a
+    /// `Consequence::Dropped`, one `tl.slot` write moving a session to
+    /// wherever the finger happened to land (review w3 F1).
+    #[test]
+    fn a_departure_empties_the_hand_as_well_as_the_modifier() {
+        let mut chords = Chords::default();
+        chords.toggle_mode();
+        assert_eq!(chords.mode(), Action::Move);
+        let _held = chords.feed(Action::Move.button(), true);
+        assert!(chords.is_held(Action::Move), "the modifier is down");
+
+        let mut grip = Grip {
+            hand: Slot::at_absolute(1, 1),
+            ..Grip::default()
+        };
+        grip.aim(Button::Top(1), true, Duration::ZERO);
+
+        grip.unplugged(&mut chords);
+
+        assert!(!chords.is_held(Action::Move), "the modifier went too");
+        assert_eq!(grip.hand, None, "the pad was never put down");
+        assert!(
+            !grip.home_due(HOME_HOLD * 10),
+            "no `⌂` from a `▲` that was released by the cable"
+        );
+        assert_eq!(
+            chords.mode(),
+            Action::Move,
+            "the mode is not a button that can be stuck down, and survives"
+        );
     }
 }
