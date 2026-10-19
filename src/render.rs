@@ -83,7 +83,8 @@ pub fn launch(ready: bool) -> Cell {
     }
 }
 
-/// How `Drums` is lit: dim at rest, white while an art is playing.
+/// How `Drums` is lit — and each piece's selector in an art's menu: dim
+/// at rest, white on the piece that is playing.
 ///
 /// It is never dark, because unlike the rest of the row it never has
 /// nothing to do — there is always a reel to start ([`arrow`]). The white
