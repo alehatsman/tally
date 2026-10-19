@@ -61,10 +61,6 @@ pub struct View<'a> {
     /// neither, so a fumble is visible rather than merely inert
     /// (`crate::chord::Chords::modifier`).
     pub pressed: &'a BTreeSet<Action>,
-    /// Is an art playing? It lights `Drums` white, and nothing else here
-    /// knows about it: the daemon paints the 64 pads itself while this is
-    /// true (`docs/05-interaction.md`).
-    pub art: bool,
     /// Which verb `CC19` is carrying (`crate::chord::Chords::mode`).
     /// Read here rather than assumed, because the corner's colour is the
     /// only thing that says it ([`render::action`]).
@@ -497,7 +493,9 @@ pub fn frame_from(pads: &Pads<'_>, view: &View<'_>) -> Frame {
     );
     frame.set(Button::Top(3), render::back(view.can_go_back));
     frame.set(Button::Top(4), render::next(view.queued > 0));
-    frame.set(Button::Top(6), render::arts(view.art));
+    // At rest only: while a piece plays the daemon paints the whole
+    // surface itself (`art_surface`) and `Drums` is lit by its menu.
+    frame.set(Button::Top(6), render::arts(false));
     // `Session` held the overview up until #41 ([`crate::chord::top`]).
     // Dark rather than carrying a new verb: an unassigned button is
     // better than a strained one.
@@ -578,7 +576,6 @@ mod tests {
             held: None,
             hand: None,
             pressed: &NO_BUTTONS,
-            art: false,
             mode: Action::Stop,
         }
     }
@@ -1336,22 +1333,6 @@ mod tests {
         assert_eq!(ids, ["live", "closing"]);
     }
 
-    /// The frame says an art is playing, and says it on the button you
-    /// pressed to start one (`docs/05-interaction.md`).
-    #[test]
-    fn an_art_lights_the_button_that_started_it() {
-        let pages = Pages::default();
-        let sessions = Vec::new();
-        let playing = View {
-            art: true,
-            ..view(&pages)
-        };
-        let f = frame(&sessions, &BTreeMap::new(), &playing);
-        assert_eq!(f.get(Button::Top(6)), render::arts(true));
-        let resting = frame(&sessions, &BTreeMap::new(), &view(&pages));
-        assert_eq!(resting.get(Button::Top(6)), render::arts(false));
-        assert_ne!(f.get(Button::Top(6)), resting.get(Button::Top(6)));
-    }
     /// The press and the preview must read a pad the same way.
     ///
     /// `tallyd`'s `Gesture::Tap | Gesture::Chord` arm used to open-code
