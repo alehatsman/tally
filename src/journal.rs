@@ -36,6 +36,25 @@ use crate::slot::{Pages, Slot};
 pub struct Journal {
     /// slot -> (session id, when it started asking)
     asking: BTreeMap<Slot, (String, i64)>,
+    /// Is [`Self::asking`] a memory of the last daemon that anchord has
+    /// not confirmed yet?
+    ///
+    /// At login `tallyd` and `anchord` race, and a `list` that fails
+    /// leaves the daemon with no sessions — not because every slot was
+    /// answered, but because nobody has been asked. The resolved map is
+    /// empty either way, so a tick taken then would read the whole
+    /// replayed map as *done* and write one fall per slot, with
+    /// `after_ms` spanning the downtime; anchord coming up a moment later
+    /// would raise every one of them again. That is #7's duplicate rising
+    /// edge arriving by the unreachable-anchord road, plus a fall nobody
+    /// made.
+    ///
+    /// So a replayed map is fall-blind until [`Self::saw_listing`].
+    /// A *later* failed `list` is a different thing and is not guarded
+    /// here: the daemon keeps the sessions it had, so the map it resolves
+    /// is the stale truth rather than an empty lie
+    /// (`docs/08-daemon.md`).
+    replayed: bool,
     /// Where the lines go, or nothing. See [`Sink`].
     sink: Sink,
 }
@@ -204,8 +223,26 @@ impl Journal {
         }
         Self {
             asking,
+            // Whatever was read here is last run's answer, not this
+            // run's ([`Self::replayed`]). True even when the file left
+            // nothing behind, because an empty map has no fall to write
+            // either way.
+            replayed: true,
             sink: Sink::default(),
         }
+    }
+
+    /// anchord has answered a `list`, so the grid being resolved is this
+    /// run's and a fall means a slot stopped asking.
+    ///
+    /// Called from the daemon's success branch, once a tick and harmless
+    /// after the first: the race it closes is the login one, where
+    /// `tallyd` resolves an empty session list because anchord is not up
+    /// yet. Until then a replayed map is **fall-blind**, or every slot
+    /// that was asking when the last daemon stopped is written down as
+    /// answered and then asked again (`docs/08-daemon.md`).
+    pub fn saw_listing(&mut self) {
+        self.replayed = false;
     }
 
     /// Write a line for every slot that started or stopped asking, to a
@@ -225,7 +262,7 @@ impl Journal {
         now: i64,
         out: &mut impl Write,
     ) -> io::Result<()> {
-        Self::transitions(&mut self.asking, resolved, pages, now, out)
+        Self::transitions(&mut self.asking, self.replayed, resolved, pages, now, out)
     }
 
     /// Record this tick's transitions to the journal's own file.
@@ -237,19 +274,32 @@ impl Journal {
     /// `self` is destructured rather than passed whole so the map and the
     /// sink are borrowed separately.
     pub fn tick(&mut self, resolved: &BTreeMap<Slot, Resolved>, pages: &Pages, now: i64) {
-        let Self { asking, sink } = self;
-        sink.write(|out| Self::transitions(asking, resolved, pages, now, out));
+        let Self {
+            asking,
+            replayed,
+            sink,
+        } = self;
+        sink.write(|out| Self::transitions(asking, *replayed, resolved, pages, now, out));
     }
 
     /// The body of [`Self::record`], over the map rather than over
     /// `self`, so [`Self::tick`] can hold the sink at the same time.
     fn transitions(
         asking_now: &mut BTreeMap<Slot, (String, i64)>,
+        replayed: bool,
         resolved: &BTreeMap<Slot, Resolved>,
         pages: &Pages,
         now: i64,
         out: &mut impl Write,
     ) -> io::Result<()> {
+        // Nothing has been listed yet, so `resolved` is not a grid —
+        // it is the absence of an answer ([`Self::replayed`]). The whole
+        // tick is skipped rather than only the falls: a rise needs a
+        // session to have been listed, so before the first one there is
+        // nothing truthful to write.
+        if replayed {
+            return Ok(());
+        }
         for (slot, r) in resolved {
             let SlotState::NeedsAnswer { source } = r.state else {
                 continue;
@@ -758,6 +808,10 @@ mod tests {
 
         let mut j = Journal::replay(written, &pages);
         assert_eq!(j.asking(), 1, "the rise in the file was not replayed");
+        // anchord answered before this tick, which is what makes the
+        // empty output below a decision rather than the guard in
+        // `a_tick_before_anchord_answers_is_not_a_fall`.
+        j.saw_listing();
 
         let mut out = Vec::new();
         j.record(
@@ -784,12 +838,54 @@ mod tests {
             format!(r#"{{"ms":{rise},"session":"01J","slot":"1:3:3","to":"needs_answer"}}"#);
 
         let mut j = Journal::replay(&written, &pages);
+        // The grid below is empty because the slot was answered while the
+        // daemon was down, not because anchord has yet to speak.
+        j.saw_listing();
         let mut out = Vec::new();
         j.record(&BTreeMap::new(), &pages, rise + 90_347, &mut out)
             .expect("write");
 
         let line = lines(&out).pop().expect("a falling edge");
         assert!(line.contains(r#""after_ms":90347"#), "{line}");
+        assert_eq!(j.asking(), 0);
+    }
+
+    /// The same empty grid, read before anchord has ever answered, means
+    /// the opposite: at login `tallyd` beats `anchord` up, the first
+    /// `list` fails, and the daemon resolves the sessions it has — none.
+    ///
+    /// Taking that for a fall writes one `answered` per replayed slot
+    /// with `after_ms` spanning the downtime, empties the queue, and
+    /// hands every slot back a second later with a fresh rise: #7's
+    /// duplicate rising edge by another road, plus a fall nobody made.
+    /// So the map waits for the first listing.
+    #[test]
+    fn a_tick_before_anchord_answers_is_not_a_fall() {
+        let pages = Pages::default();
+        let rise = 1_000_000;
+        let written =
+            format!(r#"{{"ms":{rise},"session":"01J","slot":"1:3:3","to":"needs_answer"}}"#);
+
+        let mut j = Journal::replay(&written, &pages);
+        let mut out = Vec::new();
+        j.record(&BTreeMap::new(), &pages, rise + 90_347, &mut out)
+            .expect("write");
+        assert!(
+            lines(&out).is_empty(),
+            "wrote a fall for a grid nobody listed: {:?}",
+            lines(&out)
+        );
+        assert_eq!(j.asking(), 1, "and the queue kept the slot");
+        let (_, since) = j.waiting().get(&at(1, 3, 3)).expect("still asking");
+        assert_eq!(*since, rise, "with the moment it originally asked");
+
+        // anchord comes up, the slot is genuinely gone, and the fall is
+        // written then — measured from the original question.
+        j.saw_listing();
+        j.record(&BTreeMap::new(), &pages, rise + 120_000, &mut out)
+            .expect("write");
+        let line = lines(&out).pop().expect("a falling edge");
+        assert!(line.contains(r#""after_ms":120000"#), "{line}");
         assert_eq!(j.asking(), 0);
     }
 
