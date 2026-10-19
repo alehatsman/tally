@@ -26,8 +26,6 @@
 //! changes it degrades to "no title" — never a parse error, never a broken
 //! session.
 
-use std::mem;
-
 /// Caps how much of one OSC payload is ever buffered. A stream that opens a
 /// sequence and never closes it must not grow this without bound; real
 /// titles are a few dozen bytes.
@@ -36,7 +34,7 @@ const MAX_PAYLOAD_BYTES: usize = 512;
 const BEL: u8 = 0x07;
 const ESC: u8 = 0x1b;
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Copy)]
 enum State {
     #[default]
     Ground,
@@ -44,26 +42,23 @@ enum State {
     Esc,
     /// Saw `ESC ]`; accumulating the numeric parameter before the first `;`.
     Param(u16),
-    /// Saw `ESC ] Ps ;`; buffering the payload until a terminator.
-    Payload { code: u16, buf: Vec<u8> },
-    /// Mid-payload, just saw `ESC` — is it `ESC \` (String Terminator) or a
-    /// byte that happens to be `0x1b`?
-    PayloadEsc { code: u16, buf: Vec<u8> },
-    /// Inside a sequence whose payload we will not read, eating bytes until
-    /// it ends.
+    /// Inside a string sequence, reading towards its terminator.
+    /// `Some(code)` is capturing the payload into [`Scanner::buf`];
+    /// `None` is reading it and throwing it away.
     ///
     /// **Abandoning a sequence is not the same as leaving it.** Every arm
-    /// that gives up mid-sequence lands here rather than in `Ground`,
-    /// because the rest of that sequence is still escape-sequence bytes and
-    /// the `BEL` that closes it is still a terminator. Dropping straight to
-    /// `Ground` counted that `BEL` as a ring — a clipboard write over the
-    /// payload cap, or a `tmux` passthrough, flashed the pad amber for a
-    /// session that rang nothing. Holds no buffer, so it costs nothing and
-    /// the no-unbounded-growth property is unchanged.
-    Discard,
-    /// Mid-discard, just saw `ESC` — the `\` of a String Terminator may be
-    /// next.
-    DiscardEsc,
+    /// that gives up mid-sequence lands on `Payload(None)` rather than in
+    /// `Ground`, because the rest of that sequence is still escape-sequence
+    /// bytes and the `BEL` that closes it is still a terminator. Dropping
+    /// straight to `Ground` counted that `BEL` as a ring — a clipboard
+    /// write over the payload cap, or a `tmux` passthrough, flashed the pad
+    /// amber for a session that rang nothing. `None` also clears the
+    /// buffer, so it costs nothing and the no-unbounded-growth property is
+    /// unchanged.
+    Payload(Option<u16>),
+    /// Mid-payload, just saw `ESC` — is it `ESC \\` (String Terminator) or a
+    /// byte that happens to be `0x1b`?
+    PayloadEsc(Option<u16>),
 }
 
 /// What one chunk contained.
@@ -85,6 +80,11 @@ pub struct Scan {
 #[derive(Debug, Default, Clone)]
 pub struct Scanner {
     state: State,
+    /// The payload of the sequence currently open, when it is one we are
+    /// capturing. Lives on the scanner rather than in `State` so that a
+    /// sequence can be abandoned mid-payload without moving a `Vec`
+    /// between two variants — which is what `State::Discard` used to be.
+    buf: Vec<u8>,
 }
 
 impl Scanner {
@@ -92,7 +92,7 @@ impl Scanner {
     pub fn feed(&mut self, chunk: &[u8]) -> Scan {
         let mut scan = Scan::default();
         for (at, &b) in chunk.iter().enumerate() {
-            match &mut self.state {
+            match self.state {
                 State::Ground => match b {
                     ESC => self.state = State::Esc,
                     // The only place a BEL means what it says.
@@ -105,7 +105,7 @@ impl Scanner {
                     // either: their payloads are arbitrary bytes, and a
                     // `tmux` passthrough carrying a `0x07` read as a ring
                     // in ground state.
-                    b'P' | b'X' | b'^' | b'_' => self.state = State::Discard,
+                    b'P' | b'X' | b'^' | b'_' => self.abandon(),
                     // `ESC ESC` is a fresh start, not an escape that needs
                     // consuming — staying here is how the byte gets
                     // re-dispatched without the loop having to back up.
@@ -115,72 +115,85 @@ impl Scanner {
                 },
                 State::Param(code) => match b {
                     b'0'..=b'9' => {
-                        *code = code.saturating_mul(10).saturating_add(u16::from(b - b'0'));
+                        self.state = State::Param(
+                            code.saturating_mul(10).saturating_add(u16::from(b - b'0')),
+                        );
                     }
-                    b';' => {
-                        self.state = State::Payload {
-                            code: *code,
-                            buf: Vec::new(),
-                        }
-                    }
+                    b';' => self.state = State::Payload(Some(code)),
                     // Malformed. Stop guessing at the parameter, but keep
                     // reading as a sequence to its end: the BEL that closes
                     // it is still a terminator, however badly formed what
                     // came before it was.
-                    _ => self.state = State::Discard,
+                    _ => self.abandon(),
                 },
-                State::Payload { code, buf } => match b {
+                State::Payload(code) => match b {
                     BEL => {
-                        if let Some(title) = finish(*code, buf) {
-                            scan.titles.push(title);
-                        }
-                        self.state = State::Ground;
+                        self.take_title(code, &mut scan);
+                        self.ground();
                     }
-                    ESC => {
-                        self.state = State::PayloadEsc {
-                            code: *code,
-                            buf: mem::take(buf),
-                        };
-                    }
-                    _ if buf.len() < MAX_PAYLOAD_BYTES => buf.push(b),
+                    ESC => self.state = State::PayloadEsc(code),
+                    // Already abandoned: read the bytes, keep none.
+                    _ if code.is_none() => {}
+                    _ if self.buf.len() < MAX_PAYLOAD_BYTES => self.buf.push(b),
                     // Far longer than any real title; abandon the payload
                     // rather than buffer forever — but skip to the real end
                     // of the sequence, because OSC 52 clipboard writes blow
                     // this cap routinely and end in a BEL that is not a
                     // ring.
-                    _ => self.state = State::Discard,
+                    _ => self.abandon(),
                 },
-                State::PayloadEsc { code, buf } => match b {
+                State::PayloadEsc(code) => match b {
                     b'\\' => {
-                        if let Some(title) = finish(*code, buf) {
-                            scan.titles.push(title);
-                        }
-                        self.state = State::Ground;
+                        self.take_title(code, &mut scan);
+                        self.ground();
                     }
                     // BEL closes an OSC string too, so the sequence really
                     // is over; the stray ESC was payload junk and the title
                     // is not trustworthy.
-                    BEL => self.state = State::Ground,
+                    BEL => self.ground(),
+                    // Still an ESC — the `\` may yet be next, and the
+                    // sequence is not over until one of its terminators
+                    // arrives. The capture goes, because an ESC in the
+                    // middle of a payload makes the title untrustworthy
+                    // for the same reason the BEL arm above drops it. All
+                    // three places that can see a doubled ESC now hold it
+                    // rather than dropping it; they used to disagree, and
+                    // `ESC ] 0 ; x ESC ESC \` left the sequence open until
+                    // the next terminator because of it.
+                    ESC => {
+                        self.buf.clear();
+                        self.state = State::PayloadEsc(None);
+                    }
                     // That ESC was not a terminator, so the sequence is
                     // still open and now malformed. Same reason as the arms
                     // above: skip to its end rather than read the rest of
                     // it as output.
-                    _ => self.state = State::Discard,
-                },
-                State::Discard => match b {
-                    BEL => self.state = State::Ground,
-                    ESC => self.state = State::DiscardEsc,
-                    _ => {}
-                },
-                State::DiscardEsc => match b {
-                    b'\\' | BEL => self.state = State::Ground,
-                    // Still an ESC — the `\` may yet be next.
-                    ESC => {}
-                    _ => self.state = State::Discard,
+                    _ => self.abandon(),
                 },
             }
         }
         scan
+    }
+
+    /// Give up on this sequence's payload without leaving the sequence.
+    /// See [`State::Payload`] for why the difference matters.
+    fn abandon(&mut self) {
+        self.buf.clear();
+        self.state = State::Payload(None);
+    }
+
+    /// The sequence is over; nothing is retained between sequences.
+    fn ground(&mut self) {
+        self.buf.clear();
+        self.state = State::Ground;
+    }
+
+    /// Emit the buffered payload as a title if this sequence was being
+    /// captured and its code is one of the title codes.
+    fn take_title(&self, code: Option<u16>, scan: &mut Scan) {
+        if let Some(title) = code.and_then(|c| finish(c, &self.buf)) {
+            scan.titles.push(title);
+        }
     }
 }
 
@@ -191,10 +204,7 @@ impl Scanner {
     /// is that a stream of ordinary output leaves nothing retained here.
     #[cfg(test)]
     pub(crate) fn buffered(&self) -> usize {
-        match &self.state {
-            State::Payload { buf, .. } | State::PayloadEsc { buf, .. } => buf.len(),
-            _ => 0,
-        }
+        self.buf.len()
     }
 }
 
@@ -292,7 +302,7 @@ mod tests {
         let huge = vec![b'x'; MAX_PAYLOAD_BYTES * 4];
         let got = s.feed(&[b"\x1b]0;".as_slice(), &huge].concat());
         assert!(got.titles.is_empty(), "{:?}", got.titles);
-        // Stronger than capped: `Discard` drops the buffer outright.
+        // Stronger than capped: abandoning drops the buffer outright.
         assert_eq!(s.buffered(), 0, "nothing retained for an abandoned payload");
         // The sequence's own terminator, not a ring.
         assert_eq!(s.feed(b"\x07").last_bell, None);
@@ -314,8 +324,9 @@ mod tests {
 
     /// OSC 52 is the reachable one: base64 of anything over ~384 bytes
     /// blows `MAX_PAYLOAD_BYTES`, and `tmux set-clipboard`, vim and
-    /// `pbcopy` wrappers all emit it BEL-terminated. Before the `Discard`
-    /// state the pad went amber for every clipboard write.
+    /// `pbcopy` wrappers all emit it BEL-terminated. Before an abandoned
+    /// payload stayed inside its sequence, the pad went amber for every
+    /// clipboard write.
     #[test]
     fn a_clipboard_write_over_the_cap_rings_nothing() {
         let payload = vec![b'A'; 2_000];
@@ -334,9 +345,9 @@ mod tests {
         assert!(got.titles.is_empty(), "{:?}", got.titles);
     }
 
-    /// The overflow and the terminator can land in different reads. The
-    /// `Discard` state has to survive the chunk boundary exactly as
-    /// `Payload` does, or the scanner is back where it started.
+    /// The overflow and the terminator can land in different reads. An
+    /// abandoned payload has to survive the chunk boundary exactly as a
+    /// captured one does, or the scanner is back where it started.
     #[test]
     fn an_overflow_split_across_chunks_still_eats_its_terminator() {
         let mut s = Scanner::default();
@@ -377,14 +388,31 @@ mod tests {
         assert_eq!(s.feed(b"done\x07").last_bell, Some(4));
     }
 
-    /// CSI is deliberately *not* given the `Discard` treatment: its
-    /// payload is printable, so it cannot hide a terminator, and a real
-    /// bell on the same line must still be seen.
+    /// CSI is deliberately *not* skipped the way the string sequences
+    /// are: its payload is printable, so it cannot hide a terminator, and
+    /// a real bell on the same line must still be seen.
     #[test]
     fn a_csi_sequence_still_lets_a_real_bell_through() {
         let chunk = b"\x1b[31mred\x1b[0m ready?\x07";
         let got = scan(&[chunk]);
         assert_eq!(got.last_bell, Some(chunk.len() - 1));
+    }
+
+    /// A doubled `ESC` mid-payload used to be read three ways in one
+    /// file: ground state held it, an abandoned sequence held it, and a
+    /// captured payload dropped to abandoning — which left
+    /// `ESC ] 0 ; x ESC ESC \\` open until some later terminator closed
+    /// it. All three hold it now. The title goes, because an `ESC` in the
+    /// middle of a payload is junk, but the sequence still ends where it
+    /// says it ends.
+    #[test]
+    fn a_doubled_escape_inside_a_payload_still_terminates_the_sequence() {
+        let mut s = Scanner::default();
+        let got = s.feed(b"\x1b]0;t\x1b\x1b\\");
+        assert!(got.titles.is_empty(), "{:?}", got.titles);
+        assert_eq!(got.last_bell, None);
+        // Back in ground state: the next bell is a real one.
+        assert_eq!(s.feed(b"ready?\x07").last_bell, Some(6));
     }
 
     #[test]

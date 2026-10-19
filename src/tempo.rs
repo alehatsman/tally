@@ -44,6 +44,11 @@ pub const FLOOR_BPM: u64 = 60;
 /// mistake with a different knob.
 pub const CEILING_BPM: u64 = 140;
 
+/// Nanoseconds in a minute. Named because every other number in this
+/// module is, and a bare `60_000_000_000` beside a `bpm.max(1) * PPQN` is
+/// a zero count away from a gap that is sixty times wrong.
+const NANOS_PER_MINUTE: u64 = 60_000_000_000;
+
 /// The age at which the tempo stops climbing, in milliseconds.
 ///
 /// Fifteen minutes, from the observed distribution rather than a round
@@ -72,7 +77,7 @@ pub fn bpm(oldest_wait_ms: Option<i64>) -> u64 {
 /// How long between clock pulses at this tempo.
 #[must_use]
 pub fn gap(bpm: u64) -> Duration {
-    Duration::from_nanos(60_000_000_000 / (bpm.max(1) * PPQN))
+    Duration::from_nanos(NANOS_PER_MINUTE / (bpm.max(1) * PPQN))
 }
 
 #[cfg(test)]
@@ -132,6 +137,11 @@ mod tests {
 
     /// The fast end must stay inside the loop's tick budget, or the beat
     /// is jittered by the thing sending it.
+    ///
+    /// The 16 ms is `tallyd.rs`'s `TICK`, retyped because that constant is
+    /// private to the binary and a library test cannot name it. The margin
+    /// is thin — `gap(140)` is 17.86 ms — so a change to `TICK` has to be
+    /// checked against this, and this is the only pointer saying so.
     #[test]
     fn the_ceiling_fits_in_a_sixteen_millisecond_tick() {
         assert!(
