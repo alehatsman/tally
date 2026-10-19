@@ -135,18 +135,25 @@ mod tests {
         assert!((pulses_per_second(140) - 56.0).abs() < 0.01);
     }
 
-    /// The fast end must stay inside the loop's tick budget, or the beat
-    /// is jittered by the thing sending it.
+    /// The fast end must pulse **slower** than the loop ticks.
     ///
-    /// The 16 ms is `tallyd.rs`'s `TICK`, retyped because that constant is
-    /// private to the binary and a library test cannot name it. The margin
-    /// is thin — `gap(140)` is 17.86 ms — so a change to `TICK` has to be
-    /// checked against this, and this is the only pointer saying so.
+    /// `tallyd` sends at most one `0xF8` per pass, so a tempo whose gap is
+    /// shorter than the loop's tick cannot be emitted at all: the rate
+    /// saturates at the tick rate and every tempo above it arrives
+    /// identical. The margin is thin — `gap(140)` is 17.86 ms, 1.1 ticks
+    /// — so raising `CEILING_BPM` or `TICK` breaks the beat here first,
+    /// and this is the only pointer saying so.
+    ///
+    /// This bounds the constants; it says nothing about whether `tallyd`
+    /// keeps its schedule, which is pinned over there by
+    /// `the_commanded_tempo_is_the_emitted_tempo`. The 16 ms is
+    /// `tallyd.rs`'s `TICK`, retyped because that constant is private to
+    /// the binary and a library test cannot name it.
     #[test]
-    fn the_ceiling_fits_in_a_sixteen_millisecond_tick() {
+    fn the_ceiling_pulses_slower_than_the_loop_ticks() {
         assert!(
-            gap(CEILING_BPM) > Duration::from_millis(16),
-            "the main loop could not keep up with this"
+            gap(CEILING_BPM) >= Duration::from_millis(16),
+            "one pulse per tick cannot carry this rate"
         );
     }
 
