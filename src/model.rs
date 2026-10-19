@@ -206,7 +206,14 @@ pub fn purgeable(sessions: &[Session], pages: &Pages) -> BTreeMap<Slot, Vec<Stri
 /// (`docs/05-interaction.md`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RowLaunch {
-    /// The leftmost free pad in that row.
+    /// The leftmost pad in that row with nothing drawn on it.
+    ///
+    /// Stricter than [`SlotState::frees_the_pad`], which `tally spawn`
+    /// uses: a failed pad is drawn, so `>` steps over it. Failures stay
+    /// visible because they are the ones you have to go and look at
+    /// (`docs/05-interaction.md`), and a tap with no confirmation must not
+    /// be what buries one. `tally spawn` can reclaim it because it names
+    /// the pad.
     pub at: Slot,
     /// `argv[0]`, from the row's newest session.
     pub command: String,
@@ -805,6 +812,36 @@ mod tests {
             .collect();
         let drawn = resolve(&full, &BTreeMap::new(), &pages, 0);
         assert_eq!(row_launch(&full, &pages, &drawn, 4), None, "no free column");
+    }
+
+    /// `tally spawn` reclaims a failed pad; `>` does not. The disagreement
+    /// is deliberate: a red pad is telling you to go and look, and a tap
+    /// must not be what silently reuses it.
+    #[test]
+    fn a_launch_steps_over_a_failed_pad_that_spawn_would_reclaim() {
+        let pages = Pages::default();
+        let mut bad = ran("a", "exited", "1:3:1", "claude", "/repo/tally");
+        bad.exit_code = Some(1);
+        let sessions = [bad];
+        let drawn = resolve(&sessions, &BTreeMap::new(), &pages, 0);
+        let held = drawn
+            .get(&Slot {
+                page: 1,
+                row: 3,
+                col: 1,
+            })
+            .expect("drawn");
+        assert!(held.state.frees_the_pad(), "spawn may reclaim it");
+        let l = row_launch(&sessions, &pages, &drawn, 3).expect("launchable");
+        assert_eq!(
+            l.at,
+            Slot {
+                page: 1,
+                row: 3,
+                col: 2
+            },
+            "`>` does not"
+        );
     }
 
     /// anchord lists newest first, and the newest is the one whose
