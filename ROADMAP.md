@@ -282,7 +282,7 @@ in the README first.
 | peek, teleport-URL, squatter-resolution | **Closed** ([11](docs/11-unbuilt.md#the-graveyard)) |
 | the acting sweep | Held on its own week of `sweep:` lines |
 | [#40](https://github.com/alehatsman/tally/issues/40) — the spec system | **Cut.** `~/.config/tally/` was empty and `tallyd` loaded *8 pages, 0 slots*, so `[[slot]]`, `[[spec]]`, `tl.spec` and spawn-from-a-dark-pad were code nothing could reach. Scope bullet 2 is **reworded rather than kept** — both spawns in daily use were outside it as written ([01](docs/01-scope.md)) |
-| [#41](https://github.com/alehatsman/tally/issues/41) — 512 slots | **Half cut, and the half the evidence actually reached.** The overview is gone: `lit` sat at **4** on all nine presses and the map never once crossed the empty middle its design argues from. `▲▼` and hold-`▲` home **stay** — they are how you move through the space and they are used. The address space is still 64 rows, and that question is still open at one feature's cost instead of three |
+| [#41](https://github.com/alehatsman/tally/issues/41) — 512 slots | **Closed, in two halves.** The overview is gone: `lit` sat at **4** on all nine presses and the map never once crossed the empty middle its design argues from. `▲▼` and hold-`▲` home **stay** — they are how you move through the space and they are used. With those two judged on their own merits, nothing was left for the size to pay for: `ROWS` is a bounds check and a `MAX_OFFSET`, nothing iterates the space, and an empty row costs one comparison. **The address space stays at 64 rows** — shrinking it would migrate live `tl.slot` labels to reclaim nothing |
 | [#42](https://github.com/alehatsman/tally/issues/42) — nine art pieces | **Kept, closed on taste.** 2,157 lines of pure, zero-coupling leaf code with its own tests, in nobody's way. Three pieces cover both stated jobs and six do not, and that is not a reason to delete something that works and that someone enjoys |
 
 ### F5 — v1.0
@@ -300,8 +300,8 @@ One gate left, and it is the one that needs hands rather than time:
 | **F1's live re-run** | four ⬜ and two ❌ on a real device ([09](docs/09-testing.md#the-jump-subsystems-own-gate-and-what-is-still-owed-on-it)). Twenty minutes, and only the owner's desk has the hardware |
 
 **The tracker holds no undecided design**, which is the fourth statement,
-and it is true as of this file: #40 cut, #41 half cut and the remainder
-restated, #42 kept, #23 shipped. What is open is
+and it is true as of this file: #40 cut, #41 closed in both halves, #42
+kept, #23 shipped. What is open is
 [#22](https://github.com/alehatsman/tally/issues/22) — the acting sweep,
 held on its own week of `sweep:` lines — and that is a *measurement* that
 has not finished, not a decision nobody has made.
