@@ -17,7 +17,7 @@ use std::process::ExitCode;
 use tally::anchor::{Client, Spawn};
 use tally::attention::Ancestry;
 use tally::cli::{self, Claim, Fork, Request, USAGE};
-use tally::config::Config;
+use tally::config;
 use tally::jump::{Jump, Tmux};
 use tally::listing::{self, Caller};
 use tally::model;
@@ -70,17 +70,17 @@ fn report(outcome: Result<ExitCode, ExitCode>) -> ExitCode {
 }
 
 fn main() -> ExitCode {
-    let config = match Config::load(&Config::default_path()) {
-        Ok(config) => config,
+    let pages = match config::load(&config::default_path()) {
+        Ok(pages) => pages,
         // A spawn stops where tallyd carries on: the page names decide
         // where the session lands. Both halves of that are argued in
         // [`tally::config`].
         Err(e) => {
-            eprintln!("tally: {}: {e}", Config::default_path().display());
+            eprintln!("tally: {}: {e}", config::default_path().display());
             return ExitCode::FAILURE;
         }
     };
-    let pages = config.pages();
+    let pages = &pages;
 
     match cli::parse(std::env::args().skip(1), pages) {
         Ok(Request::Help) => {

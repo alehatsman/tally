@@ -162,21 +162,10 @@ mod tests {
     use super::*;
 
     fn session(id: &str, state: &str, slot: Option<&str>) -> Session {
-        let mut labels = BTreeMap::new();
-        if let Some(s) = slot {
-            let _previous = labels.insert(crate::anchor::LABEL_SLOT.to_owned(), s.to_owned());
-        }
-        Session {
-            id: id.to_owned(),
-            state: state.to_owned(),
-            exit_code: None,
-            lost_reason: None,
-            labels,
-            output_bytes: 0,
-            pid: None,
-            cwd: None,
-            command: None,
-            login_shell: false,
+        let s = Session::fixture(id, state);
+        match slot {
+            Some(at) => s.labelled(crate::anchor::LABEL_SLOT, at),
+            None => s,
         }
     }
 
