@@ -185,6 +185,7 @@ yours and are left alone.
 | | |
 |---|---|
 | **grid is dark, `tally ls` has rows** | the device. `tallyd` logs which port it found; unplug and replug — there is no hot-plug notification in either direction ([03](03-surface.md)) |
+| **the logo is dark** | `tallyd` is not running. A live daemon holds the logo **green**; dark red is a reachable surface with an unreachable `anchord` ([05](05-interaction.md#the-logo-is-the-health-light)) |
 | **sixty-four dark pads** | *nothing is running*. It must never mean *I cannot tell* — an unreachable anchord takes the **logo dark red** and holds the last grid ([01](01-scope.md#the-boundary-stated-plainly)) |
 | **pads never go amber** | the hooks. See step 2, and check `PATH` first |
 | **a pad is amber and the agent is working** | a hook that did not fire — the one failure [the level](11-unbuilt.md#the-level) was specified against, and it has never been observed in 544 rising edges |

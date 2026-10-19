@@ -91,8 +91,10 @@ And one set that is not about bytes at all, against a fake `list`:
 - `tl.slot` naming an undeclared page, row 0, row 9, or `"garbage"` →
   **ignored, logged once**, not clamped to an edge
 - two sessions on one slot → newest renders, older logged
-- an unreachable `list` → the model is unchanged and the logo goes red; the
-  grid does **not** empty
+- an unreachable `list` → the model is unchanged and the logo goes dark
+  red; the grid does **not** empty
+- attention scrolled off the window → `►` pulses amber and the logo is
+  untouched; health is the only question it answers
 
 ## 3. The gestures — pure, and the reason they are
 
@@ -214,7 +216,11 @@ with its rows upside down. A written checklist, run before each milestone:
 [ ] unplug mid-run: no crash; replug: full repaint, correct state
 [ ] SIGTERM tallyd: device returns to Live mode, Setup menu works again
 [ ] SIGKILL tallyd, restart: device recovers to the correct grid
+[ ] start tallyd: logo goes green and stays green
 [ ] stop anchord: logo goes dark red, grid does not clear
+[ ] SIGTERM tallyd: logo goes dark — the only thing that means *not running*
+[ ] scroll a waiting session off the window: the logo does **not** change;
+    `►` is what pulses
 [ ] with no tmux server at all: tallyd starts, grid is correct, a jump
     creates the server
 ```
