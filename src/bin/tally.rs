@@ -11,7 +11,7 @@
 //! (`docs/08-daemon.md#one-process-no-socket`).
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use tally::anchor::{Client, Spawn};
@@ -462,7 +462,7 @@ fn claim_pads(
         }) {
             Ok(id) => {
                 if view {
-                    place_or_report(&id, address, *at);
+                    place_or_report(&id, address, *at, &source.cwd);
                 }
                 match &source.from {
                     Some(from) => println!("forked {id} from {from} onto {address}"),
@@ -489,8 +489,11 @@ fn claim_pads(
 /// Placement is **not** fatal. The session exists by the time control
 /// gets here, so a tmux that would not cooperate costs you a view that
 /// the next press makes anyway.
-fn place_or_report(id: &str, address: &str, at: Slot) {
-    if let Err(e) = tally::jump::place(id, address, at.place()) {
+fn place_or_report(id: &str, address: &str, at: Slot, cwd: &Path) {
+    // The one caller that has the directory first-hand rather than back
+    // from anchord, and the one that most wants it: this view is opened
+    // the instant the session is created, from the shell you typed in.
+    if let Err(e) = tally::jump::place(id, address, at.place(), cwd.to_str()) {
         eprintln!("tally: could not open a view for it: {e}");
         eprintln!("tally: press its pad to open it");
     }

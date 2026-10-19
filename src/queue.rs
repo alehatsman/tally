@@ -39,6 +39,13 @@ pub struct Head {
     /// when you are busy is the one that leaves the dead line short
     /// (`docs/06-views.md`).
     pub claude: Option<String>,
+    /// The directory it is running in, from the grid.
+    ///
+    /// Carried for [`Head::claude`]'s reason: `►` creates views exactly as
+    /// a press does, and one that dropped the cwd would leave the busy
+    /// path with panes rooted at `/`
+    /// (`docs/06-views.md#the-pane-starts-where-the-agent-does`).
+    pub cwd: Option<String>,
 }
 
 /// Every slot that is asking and not muted, oldest-first by nothing —
@@ -98,6 +105,7 @@ pub fn head(
             session: session.clone(),
             since: *since,
             claude: pads.grid().get(at).and_then(|r| r.claude.clone()),
+            cwd: pads.grid().get(at).and_then(|r| r.cwd.clone()),
         })
 }
 
