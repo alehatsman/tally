@@ -155,6 +155,15 @@ pub(super) fn eye_colour(body: Entry) -> Entry {
 
 pub(super) const BESTIARY_LOOP: u32 = BEAST_HOLD * 5;
 
+// The five is [`BEASTS`]'s length written where the type cannot hold it.
+// A sixth animal added to the array but not here would never get its turn
+// — the loop would come round before it, and nothing paints a piece past
+// its loop, so the new animal would simply never appear.
+const _: () = assert!(
+    BEASTS.len() == 5,
+    "BESTIARY_LOOP gives each animal a turn and counts five of them"
+);
+
 pub(super) fn paint(n: u32, frame: &mut Frame) {
     let t = n % BESTIARY_LOOP;
     let which = usize::try_from(t / BEAST_HOLD).unwrap_or(0);

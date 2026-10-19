@@ -1,3 +1,4 @@
+use super::grid::{linear, pads};
 use super::rng::Rng;
 use crate::surface::palette::{Entry, OFF, WHITE};
 use crate::surface::{Button, Cell, Frame};
@@ -251,22 +252,20 @@ impl Tetris {
     pub(super) fn paint(&self, frame: &mut Frame) {
         // Two blinks a flash, off the same counter that times it.
         let lit = self.phase % 8 < 4;
-        for row in 1..=8u8 {
-            for col in 1..=8u8 {
-                let i = usize::from(row - 1) * 8 + usize::from(col - 1);
-                let settled = self.well >> i & 1 == 1;
-                let going = self.clearing >> (row - 1) & 1 == 1;
-                // A row on its way out blinks white; everything else
-                // settled keeps the colour of whatever shape put it there.
-                let cell = if !settled || (going && !lit) {
-                    Cell::Off
-                } else if going {
-                    Cell::Static(WHITE)
-                } else {
-                    Cell::Static(self.colour.get(i).copied().unwrap_or(WHITE))
-                };
-                frame.set(Button::Grid { row, col }, cell);
-            }
+        for (row, col) in pads() {
+            let i = linear(row, col);
+            let settled = self.well >> i & 1 == 1;
+            let going = self.clearing >> (row - 1) & 1 == 1;
+            // A row on its way out blinks white; everything else settled
+            // keeps the colour of whatever shape put it there.
+            let cell = if !settled || (going && !lit) {
+                Cell::Off
+            } else if going {
+                Cell::Static(WHITE)
+            } else {
+                Cell::Static(self.colour.get(i).copied().unwrap_or(WHITE))
+            };
+            frame.set(Button::Grid { row, col }, cell);
         }
         if self.phase == 0 {
             self.paint_piece(frame);

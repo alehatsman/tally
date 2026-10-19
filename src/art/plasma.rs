@@ -1,4 +1,5 @@
 use super::colour::hue;
+use super::grid::pads;
 use crate::surface::{Button, Cell, Frame};
 
 /// One period of a sine, scaled to ±255. Integers, not floats, so the
@@ -30,16 +31,14 @@ pub(super) fn radius(x: i32, y: i32) -> i32 {
 /// [`HUES`].
 pub(super) fn paint(n: u32, frame: &mut Frame) {
     let time = i32::try_from(n % 10_000).unwrap_or(0);
-    for row in 1..=8u8 {
-        for col in 1..=8u8 {
-            let (x, y) = (i32::from(col), i32::from(row));
-            let sum = sin(x * 5 + time)
-                + sin(y * 7 - time / 2)
-                + sin((x + y) * 4 + time / 3)
-                + sin(radius(x, y) * 3 - time);
-            // The sum is +/-1020. Shift it positive, then across the ramp.
-            let step = usize::try_from((sum + 1020) * 15 / 2041).unwrap_or(0);
-            frame.set(Button::Grid { row, col }, Cell::Static(hue(step)));
-        }
+    for (row, col) in pads() {
+        let (x, y) = (i32::from(col), i32::from(row));
+        let sum = sin(x * 5 + time)
+            + sin(y * 7 - time / 2)
+            + sin((x + y) * 4 + time / 3)
+            + sin(radius(x, y) * 3 - time);
+        // The sum is +/-1020. Shift it positive, then across the ramp.
+        let step = usize::try_from((sum + 1020) * 15 / 2041).unwrap_or(0);
+        frame.set(Button::Grid { row, col }, Cell::Static(hue(step)));
     }
 }

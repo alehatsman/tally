@@ -16,6 +16,20 @@ pub(super) const GHOST_RUN: u32 = 96;
 pub(super) const SHUFFLE: u32 = 8;
 pub(super) const PACMAN_LOOP: u32 = PAC_RUN + GHOST_RUN;
 
+/// The mouth half way, which is the frame a chomp passes through on the
+/// way down and again on the way back up. Named rather than written twice
+/// into [`PAC`]: two copies of a sprite are two things to keep in step.
+pub(super) const PAC_HALF: Sprite = [
+    0b0011_1100,
+    0b0111_1110,
+    0b1111_1110,
+    0b1111_1100,
+    0b1111_1100,
+    0b1111_1110,
+    0b0111_1110,
+    0b0011_1100,
+];
+
 /// The chomp, as four frames. Open, half, shut, half — the mouth goes
 /// back the way it came, which is what a chomp is.
 pub(super) const PAC: [Sprite; 4] = [
@@ -29,16 +43,7 @@ pub(super) const PAC: [Sprite; 4] = [
         0b0111_1110,
         0b0011_1100,
     ],
-    [
-        0b0011_1100,
-        0b0111_1110,
-        0b1111_1110,
-        0b1111_1100,
-        0b1111_1100,
-        0b1111_1110,
-        0b0111_1110,
-        0b0011_1100,
-    ],
+    PAC_HALF,
     [
         0b0011_1100,
         0b0111_1110,
@@ -49,16 +54,7 @@ pub(super) const PAC: [Sprite; 4] = [
         0b0111_1110,
         0b0011_1100,
     ],
-    [
-        0b0011_1100,
-        0b0111_1110,
-        0b1111_1110,
-        0b1111_1100,
-        0b1111_1100,
-        0b1111_1110,
-        0b0111_1110,
-        0b0011_1100,
-    ],
+    PAC_HALF,
 ];
 
 /// The ghost, feet left and feet right.

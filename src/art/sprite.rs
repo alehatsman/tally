@@ -1,3 +1,5 @@
+use super::grid::pads;
+use crate::slot::COLS;
 use crate::surface::palette::Entry;
 use crate::surface::{Button, Cell, Frame};
 
@@ -13,12 +15,10 @@ pub(super) type Sprite = [u8; 8];
 /// Leaving the rest alone is what lets a second sprite go on top: a body
 /// in one colour, then eyes in white over it.
 pub(super) fn draw(frame: &mut Frame, sprite: Sprite, entry: Entry) {
-    for row in 1..=8u8 {
+    for (row, col) in pads() {
         let bits = sprite.get(usize::from(row - 1)).copied().unwrap_or(0);
-        for col in 1..=8u8 {
-            if bits >> (8 - col) & 1 == 1 {
-                frame.set(Button::Grid { row, col }, Cell::Static(entry));
-            }
+        if bits >> (COLS - col) & 1 == 1 {
+            frame.set(Button::Grid { row, col }, Cell::Static(entry));
         }
     }
 }
