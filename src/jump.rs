@@ -142,7 +142,8 @@ pub trait Jump {
     ///
     /// `cwd` is the directory that session is running in, when tally knows
     /// one; it is where the *pane* is put, which is not where the agent is
-    /// put ([`start_directory`]).
+    /// put (`start_directory`, private to this module — a public trait
+    /// cannot link into it).
     ///
     /// # Errors
     /// Whatever stopped it.
