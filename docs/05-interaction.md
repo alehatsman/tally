@@ -476,6 +476,7 @@ recorded  when a client is about to be switched
           AND no trip is already open for it
           AND it is not already standing on the destination
 one deep, first jump wins, cleared by `◄`
+pruned on the reconcile tick against the live pane list
 ```
 
 Three rules, each load-bearing:
@@ -493,6 +494,17 @@ Three rules, each load-bearing:
    is worse than not moving, because not moving is something you can
    understand from across the room.
 
+   *Dark* is the load-bearing word, and it costs a `tmux` fork to know.
+   The renderer asks whether `◄` is lit ~62 times a second, so the
+   question cannot be asked there; the press asking it instead would make
+   the light and the press two different predicates, and the top row's
+   whole rule is **dark does nothing**. So the map is pruned against the
+   live pane list on the reconcile tick — the 2 s clock that already forks
+   `tmux` to ask who is viewing what — and both readers read the map.
+   `Jump::prune_origins` is that prune. The window it leaves is one tick
+   wide: an origin that closes between two ticks is lit, and the press
+   reports the failed switch rather than reporting nothing to do.
+
 **A view is a valid origin**, and that is the half that was got wrong. The
 first rule said "and its current pane is not a view pane", assuming you jump
 *from* nvim. Every pane this grid is used from is an anchor session, so
@@ -502,6 +514,13 @@ added for exactly that purpose: two `{"via":"back","ok":false}` in a row,
 which is what pressing a dead button twice looks like in a log. What that
 rule was protecting is held by *first jump wins* instead, which does not
 care what kind of pane you started in.
+
+**One client's failure is not every client's.** The press takes the whole
+map up front — a return is spent, and pressing `◄` twice must not bounce
+you — so a switch that fails partway through would spend the origins of
+the clients it never reached and leave them with `◄` dark and no way
+home. One detached terminal is enough to do that. Every client is
+attempted; the first error is carried out and returned at the end.
 
 The origin lives in tallyd's memory, keyed by client name. A tallyd restart
 loses it and the first press after jumps instead of returning. The

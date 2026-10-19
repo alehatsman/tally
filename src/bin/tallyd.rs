@@ -1131,6 +1131,11 @@ fn main() -> ExitCode {
             // the answer is the one it already had.
             purgeable = model::purgeable(&sessions, &pages);
             viewed = tmux.viewing();
+            // Same reason, same clock: `can_go_back` is read on every
+            // frame and must stay a map lookup, so the fork that tells a
+            // closed origin from a live one happens here. `◄` is lit by
+            // the map this leaves behind.
+            tmux.prune_origins();
         }
 
         let now = tally::now_ms();
