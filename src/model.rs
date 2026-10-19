@@ -354,14 +354,9 @@ impl<'a> Pads<'a> {
 impl View<'_> {
     /// Which grid row shows `at`, or `None` if it is scrolled off.
     ///
-    /// The renderer's only way to turn the window into a position. The
-    /// press does **not** come through here — `tallyd`'s
-    /// `Gesture::Tap | Gesture::Chord` arm open-codes
-    /// `Slot::at_absolute(offset + row, col)`, which is the same
-    /// arithmetic [`Self::slot_at`] does with a `checked_add`, and is safe
-    /// only because `MAX_OFFSET + WINDOW == ROWS`. That is exactly the
-    /// split [`Pads`] exists to stop one module over, so the press should
-    /// be moved onto [`Self::slot_at`].
+    /// The renderer's way to turn the window into a position; the inverse
+    /// of [`Self::slot_at`], which both the preview and the press go
+    /// through.
     #[must_use]
     pub fn display_row(&self, at: Slot) -> Option<u8> {
         at.absolute_row()
@@ -369,14 +364,20 @@ impl View<'_> {
             .filter(|row| (1..=slot::WINDOW).contains(row))
     }
 
-    /// The slot under grid row `row`, column `col`, or `None` past the end
-    /// of the address space.
+    /// The slot under grid row `row`, column `col` of a window scrolled
+    /// to `offset`, or `None` past the end of the address space.
     ///
-    /// The inverse of [`Self::display_row`], and the only caller today is
-    /// `frame_from`'s preview loop.
+    /// The inverse of [`Self::display_row`]. **Takes the offset rather
+    /// than `&self` so the press can reach it** — `tallyd` has an `offset`
+    /// and no `View` at the moment a pad goes down, and so open-coded this
+    /// arithmetic with a `saturating_add` where this used `checked_add`.
+    /// The two agreed only because `MAX_OFFSET + WINDOW == ROWS` makes
+    /// every overflow fail the bounds check anyway; they were one
+    /// constant away from disagreeing, which is the split [`Pads`] exists
+    /// to stop one module over. Same shape as [`Self::offset_showing`].
     #[must_use]
-    pub fn slot_at(&self, row: u8, col: u8) -> Option<Slot> {
-        Slot::at_absolute(self.offset.checked_add(row)?, col)
+    pub fn slot_at(offset: u8, row: u8, col: u8) -> Option<Slot> {
+        Slot::at_absolute(offset.checked_add(row)?, col)
     }
 
     /// The window scrolled by the smallest amount that brings `at` into
@@ -442,7 +443,7 @@ pub fn frame_from(pads: &Pads<'_>, view: &View<'_>) -> Frame {
     if let Some(action) = view.held {
         for row in 1..=slot::WINDOW {
             for col in 1..=slot::COLS {
-                let Some(at) = view.slot_at(row, col) else {
+                let Some(at) = View::slot_at(view.offset, row, col) else {
                     continue;
                 };
                 let pad = pads.at(at);
@@ -1092,7 +1093,7 @@ mod tests {
                 ..view(&pages)
             };
             for row in 1..=8 {
-                let at = v.slot_at(row, 4).expect("inside the address space");
+                let at = View::slot_at(v.offset, row, 4).expect("inside the address space");
                 assert_eq!(v.display_row(at), Some(row), "offset {offset} row {row}");
             }
         }
@@ -1260,5 +1261,36 @@ mod tests {
         let resting = frame(&sessions, &BTreeMap::new(), &view(&pages));
         assert_eq!(resting.get(Button::Top(6)), render::arts(false));
         assert_ne!(f.get(Button::Top(6)), resting.get(Button::Top(6)));
+    }
+    /// The press and the preview must read a pad the same way.
+    ///
+    /// `tallyd`'s `Gesture::Tap | Gesture::Chord` arm used to open-code
+    /// `Slot::at_absolute(offset.saturating_add(row), col)` while the
+    /// preview called `slot_at`, which used `checked_add`. They agreed
+    /// only because `MAX_OFFSET + WINDOW == ROWS` makes a saturated `255`
+    /// fail the bounds check anyway — one constant away from a press
+    /// landing on a different pad than the one that lit up.
+    ///
+    /// Now there is one function. This pins that it answers for the whole
+    /// window at every legal offset, including the overflow edge.
+    #[test]
+    fn the_press_and_the_preview_read_a_pad_the_same_way() {
+        for offset in 0..=slot::MAX_OFFSET {
+            for row in 1..=slot::WINDOW {
+                for col in 1..=slot::COLS {
+                    let at = View::slot_at(offset, row, col).expect("inside the window");
+                    assert_eq!(
+                        at.absolute_row(),
+                        offset + row,
+                        "offset {offset}, row {row}"
+                    );
+                }
+            }
+        }
+        // Past the address space, and the saturating edge the old press
+        // relied on: both must be None, not a clamped pad.
+        assert_eq!(View::slot_at(slot::MAX_OFFSET, slot::WINDOW + 1, 1), None);
+        assert_eq!(View::slot_at(u8::MAX, 1, 1), None);
+        assert_eq!(View::slot_at(0, 1, slot::COLS + 1), None);
     }
 }

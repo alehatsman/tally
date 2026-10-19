@@ -1017,8 +1017,7 @@ fn main() -> ExitCode {
                             // The window turns a pad into an address.
                             // Past the end of the address space there
                             // is no pad, and nothing happens.
-                            let Some(at) = Slot::at_absolute(offset.saturating_add(row), col)
-                            else {
+                            let Some(at) = View::slot_at(offset, row, col) else {
                                 continue;
                             };
                             let ctx = Context {
