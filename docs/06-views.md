@@ -533,6 +533,28 @@ every pane without ever reading it back.
 different session is the same collision — rebind the pad while its old view
 is attached — and a running `anchor attach` is something you are looking at.
 
+**Only a corpse that is actually there.** The lookup asks two questions,
+not one: does this pane claim the address, *and* is it in the window that
+address names. It has to, because the reclaim is **in place** — the corpse
+is respawned where it stands and then tagged with the address, and nothing
+on that path moves it. Matching on the tag alone was the opposite of the
+repair below: a corpse that had drifted off its slot and died still carried
+the claim, so the next session on that pad inherited the corpse's *window*
+along with the pad's *address*, and the two disagreed from the first press.
+That is [#19](https://github.com/alehatsman/tally/issues/19) coming back in
+through the lookup meant to prevent it. A corpse claiming the slot from
+somewhere else is left where it is: it is not holding this index, and the
+pad it really sits on reclaims it through `new-window -k` (below).
+
+**And every pane in that window, not the first one listed.** A window holds
+more than one pane the moment you split a view, and `@tally_session` is
+pane-scoped, so the sibling a split leaves carries no tag. Asking only the
+first pane at the index finds the sibling, misses the corpse, and then
+`make_view` is right to leave an untagged pane alone — `index N in use`, and
+the pad wedges. Measured: `split-window -b` is enough to put the sibling
+first. *Which* pane is first is not a question this has an answer for;
+whether the window holds such a corpse is.
+
 **Why not `kill-window` then create, or `new-window -k`.** Both work and
 both are shorter. They destroy the dead line, which is the one thing a
 corpse is still *for*; `-k` does not ask whether the occupant is dead, and
@@ -825,6 +847,8 @@ acting sweep, and resolving a squatter to its own address.
 | you detach from a view | pane dead, agent alive, pad still green; next press revives it in place |
 | a view's window split by you | only the tagged pane matches; the split is yours |
 | a corpse holding the column's index | reclaimed by address, in place |
+| a corpse claiming the pad from another window | left alone; a fresh view is made at the pad |
+| a corpse behind the sibling of a split | still reclaimed; the sibling is not what is asked about |
 | spawn refused | nothing tagged, nothing created, shell alive |
 | two clients, one on the view, one not | the on-view client returns, the other jumps; both in one press |
 | origin pane closed before you return | nothing moves; a log line says why |

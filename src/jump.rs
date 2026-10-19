@@ -747,25 +747,61 @@ fn view_for<'a>(listing: &'a str, session: &str) -> Option<Pane<'a>> {
         .map(|r| r.pane)
 }
 
-/// Find a **dead** pane holding the window that address `at` names.
+/// Find a **dead** pane that claims address `at` *and* sits in the window
+/// that address names.
 ///
 /// The second lookup, and the one that keeps a corpse from locking a pad:
 /// a column is a window *index* ([`window_target`]), so while the
 /// previous session's dead view sits there, no new window can be made at
 /// that address.
 ///
+/// **Both halves, because the caller reclaims this pane in place.** It
+/// respawns it and writes `at` on it without ever moving it, so matching
+/// on the claim alone would hand it a corpse standing somewhere else and
+/// tag it where it stands — a pane wearing an address its window does not
+/// hold, which is the bug
+/// [#19](https://github.com/alehatsman/tally/issues/19) was spent on. A
+/// claim and a place are different questions ([`Holds`]), and this lookup
+/// is the one that has to ask both.
+///
+/// The corpse that claims elsewhere is not lost by asking: it is whatever
+/// sits at the column, and `make_view` clears it through
+/// `clear_the_index`.
+///
 /// Dead only, by decision: a live `anchor attach` at this address is a
 /// view somebody is reading, and this is not the gesture that closes it.
 /// Empty address never matches, for `view_for`'s reason.
-fn dead_view_at<'a>(listing: &'a str, at: &str) -> Option<Pane<'a>> {
+///
+/// Searches **every** pane in the window, not the one [`occupant_at`]
+/// would pick: a window can hold more than one pane, because you can
+/// split a view ([`PANE_OPTION`]), and the sibling a split makes carries
+/// no tag. Asking only the first pane listed would miss the corpse
+/// whenever tmux lists the sibling ahead of it — and then `make_view`
+/// finds an untagged pane it is right to leave alone, so the index stays
+/// in use and the pad wedges. Which pane is *first* is not a question
+/// this has an answer for; whether the window holds such a corpse is.
+fn dead_view_at<'a>(listing: &'a str, at: &str, place: Place) -> Option<Pane<'a>> {
     if at.is_empty() {
         return None;
     }
+    panes_at(listing, place)
+        .find(|r| r.slot == at && r.pane.dead)
+        .map(|r| r.pane)
+}
+
+/// Every pane in the window `place` names, in listing order.
+///
+/// The one definition of *in this window*, for [`relocation`]'s reason:
+/// the lookups that ask it must not be able to disagree about the same
+/// pane. What each caller does with the answer is its own — [`occupant_at`]
+/// takes the first, [`dead_view_at`] searches them all.
+fn panes_at(listing: &str, place: Place) -> impl Iterator<Item = Row<'_>> {
+    let want_session = row_session(place.row);
+    let want_index = place.col.to_string();
     listing
         .lines()
         .filter_map(row)
-        .find(|r| r.slot == at && r.pane.dead)
-        .map(|r| r.pane)
+        .filter(move |r| r.pane.tmux_session == want_session && r.pane.index == want_index)
 }
 
 /// What it takes to put a view's pane in the window `place` names.
@@ -792,16 +828,17 @@ enum Relocation {
 
 /// The pane sitting in the window `place` names, if any.
 ///
-/// Dead or alive — unlike [`dead_view_at`], which asks *"is there a
-/// corpse claiming this address"* and so cannot see a corpse claiming a
-/// different one (`docs/06-views.md`).
+/// Dead or alive, and whatever it claims — unlike [`dead_view_at`], which
+/// asks the narrower *"does this window hold a corpse claiming this
+/// address"* and so answers for neither a live occupant nor a corpse
+/// claiming a different one (`docs/06-views.md`).
+///
+/// **The first of them**, where a split window holds several
+/// ([`PANE_OPTION`]). Every caller here asks this to decide whether the
+/// *window* is free — a question one pane is enough to answer no to — and
+/// `-k` and a park both act on the window either way.
 fn occupant_at(listing: &str, place: Place) -> Option<Row<'_>> {
-    let want_session = row_session(place.row);
-    let want_index = place.col.to_string();
-    listing
-        .lines()
-        .filter_map(row)
-        .find(|r| r.pane.tmux_session == want_session && r.pane.index == want_index)
+    panes_at(listing, place).next()
 }
 
 /// The first window index at or above [`PARK`] that `place`'s row is not
@@ -840,10 +877,10 @@ pub struct Drift {
 /// Whether a pane is known to be in the window the address names.
 ///
 /// **An address is a claim, and a claim that is not true is the bug**
-/// `docs/31` spent itself on: `dead_view_at` finds a view by its
-/// `@tally_slot`, so a pane wearing an address its window does not hold
-/// is a pane the next spawn at that address will not find and cannot
-/// replace (`docs/06-views.md`).
+/// `docs/31` spent itself on: a pane wearing an address its window does
+/// not hold sends every pad that reads the tag — the grid, the sweep, the
+/// next press — to the wrong window, and wedges the one it is really in
+/// until that pad is pressed (`docs/06-views.md`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Holds {
     /// It is where the address says. Write the tag.
@@ -1190,10 +1227,13 @@ impl Tmux {
         // ([`dead_view_at`]). That corpse is also exactly the pane we
         // want: it keeps its id, its tab and its place in the row across
         // a respawn.
-        if let Some(stale) = dead_view_at(&listing, at) {
+        if let Some(stale) = dead_view_at(&listing, at, place) {
             let args = respawn_pane_args(stale.id, session, &self.anchor_bin, cwd);
             let _reclaimed = self.run(&args)?;
-            // Found *by* the address, so it is at it by construction.
+            // Found in the window the address names and not merely by the
+            // tag, so it is at it by construction — the reason
+            // [`dead_view_at`] asks both questions, since nothing on this
+            // path moves the pane.
             self.tag(stale.id, session, claude, place, at, Holds::TheAddress)?;
             return Ok(stale.id.to_owned());
         }
@@ -1228,8 +1268,9 @@ impl Tmux {
         }
         // Nothing may hold this index that is not entitled to it
         // (`docs/06-views.md`). By here the caller has already failed
-        // to find a view by id and a corpse claiming *this* address, so
-        // anything still sitting at the column is in the way.
+        // to find a view by id and a corpse that both claims *this*
+        // address and sits at it, so anything still at the column is in
+        // the way — a corpse claiming elsewhere included.
         let replace = self.clear_the_index(place);
         let args = new_window_args(place, session, &self.anchor_bin, replace, cwd);
         Ok(self.stdout(&args)?.trim().to_owned())
@@ -1577,14 +1618,20 @@ mod tests {
     /// `#{pane_id}|#{pane_dead}|#{@tally_session}|#{@tally_slot}|#{session_name}|#{window_index}`
     ///
     /// `%4` is the corpse this file is about: dead, holding slot `AT`,
-    /// tagged with a session that is not [`SESSION`]. `%5` is a live pane
-    /// at another address, and `%1` is one of yours — neither tag set.
+    /// tagged with a session that is not [`SESSION`]. `%5` shares its
+    /// window — the untagged sibling a split leaves ([`PANE_OPTION`]) —
+    /// and `%1` is one of yours, also untagged.
+    ///
+    /// **`%5` is listed before `%4` on purpose.** A lookup that asked
+    /// only the first pane at `r04:4` would find the sibling, miss the
+    /// corpse and wedge the pad; with the order the other way round that
+    /// bug passes its own test.
     const LISTING: &str = "\
 %1|0|||tally|1\n\
 %2|0|other-session|work:4:1|r04|1\n\
 %3|0|01M52GEKED8ZEJPMT2KCJ35ZWT|work:4:2|r04|2\n\
-%4|1|01M52MXB4WQTA79K5FTHMXZ8YN|work:4:4|r04|4\n\
-%5|0|||r04|4\n";
+%5|0|||r04|4\n\
+%4|1|01M52MXB4WQTA79K5FTHMXZ8YN|work:4:4|r04|4\n";
 
     #[test]
     fn a_view_is_created_in_the_row_session_for_its_row() {
@@ -1813,7 +1860,7 @@ mod tests {
     /// reused (`docs/06-views.md`).
     #[test]
     fn a_corpse_holding_the_slot_is_found_by_address() {
-        let stale = dead_view_at(LISTING, AT).expect("the dead pane at this address");
+        let stale = dead_view_at(LISTING, AT, PLACE).expect("the dead pane at this address");
         assert_eq!(stale.id, "%4");
         assert_ne!(
             view_for(LISTING, SESSION).map(|v| v.id),
@@ -1822,22 +1869,56 @@ mod tests {
         );
     }
 
+    /// The mirror of it, and the bug: the same corpse, drifted one window
+    /// over and still claiming the slot. Reclaiming it would respawn it at
+    /// `r04:2` and tag it `work:4:4`, so the pad would jump to the wrong
+    /// window and `r04:2` would stay wedged. It falls to `make_view`
+    /// instead (`docs/06-views.md`).
+    #[test]
+    fn a_corpse_claiming_the_slot_from_another_window_is_not_reclaimed() {
+        let drifted = "%4|1|01M52MXB4WQTA79K5FTHMXZ8YN|work:4:4|r04|2\n";
+        assert_eq!(
+            dead_view_at(drifted, AT, PLACE),
+            None,
+            "it claims the address but is not in its window"
+        );
+        let elsewhere = occupant_at(drifted, Place { row: 4, col: 2 }).expect("it is somewhere");
+        assert_eq!(elsewhere.pane.id, "%4", "and that somewhere is r04:2");
+    }
+
+    /// A window holds more than one pane the moment you split a view, and
+    /// the sibling carries no tag ([`PANE_OPTION`]). The corpse is the one
+    /// being asked about, wherever tmux lists it.
+    #[test]
+    fn a_corpse_is_found_behind_the_sibling_a_split_left() {
+        let stale = dead_view_at(LISTING, AT, PLACE).expect("the corpse, not the sibling");
+        assert_eq!(
+            stale.id, "%4",
+            "the dead claimant, not the first pane there"
+        );
+        assert_eq!(
+            occupant_at(LISTING, PLACE).map(|r| r.pane.id),
+            Some("%5"),
+            "which is deliberately not the pane the occupant lookup picks"
+        );
+    }
+
     /// Decided in 27: a live `anchor attach` at this address is a view
     /// somebody is reading, and a spawn is not the gesture that closes it.
     #[test]
     fn a_live_view_at_the_address_is_left_alone() {
         let live = "%7|0|other-session|work:4:4|r04|4\n";
-        assert_eq!(dead_view_at(live, AT), None);
+        assert_eq!(dead_view_at(live, AT, PLACE), None);
     }
 
     /// An unset address is not an address, for the reason an unset
     /// session id is not a session id.
     #[test]
     fn an_untagged_pane_holds_no_address() {
-        assert_eq!(dead_view_at("%9|1|||tally|1\n", ""), None);
-        assert_eq!(dead_view_at(LISTING, ""), None);
+        assert_eq!(dead_view_at("%9|1|||tally|1\n", "", PLACE), None);
+        assert_eq!(dead_view_at(LISTING, "", PLACE), None);
         assert_eq!(
-            dead_view_at(LISTING, "nowhere:9:9"),
+            dead_view_at(LISTING, "nowhere:9:9", PLACE),
             None,
             "nothing at that slot"
         );
@@ -1970,8 +2051,8 @@ mod tests {
         assert!(held.pane.dead);
         assert_eq!(held.slot, "1:9:9", "it claims somewhere else entirely");
         assert!(
-            dead_view_at(listing, "1:2:1").is_none(),
-            "and the address lookup cannot see it, which was the bug"
+            dead_view_at(listing, "1:2:1", MOVED_TO).is_none(),
+            "and the corpse lookup will not claim it, which was the bug"
         );
     }
 
