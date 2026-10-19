@@ -44,21 +44,32 @@ against the device; the grid, the jump, the chords, `tally spawn`, the
 queue, the tempo and the launch column followed, and then the surface ran
 out of buttons. Every build item in [the roadmap](ROADMAP.md) is done.
 
-**One thing is owed, and it is now running rather than blocked.** The gate
-since M1 has been a week of `attention.jsonl` and a number out of it.
-Reading 55 hours of it found that the journal **did not record a plain pad
-jump** — the gesture the product exists for — so it held the ambers that
-were raised and almost none of the answers, and the gate could not be
-computed at any length. That was five lines
-([#43](https://github.com/alehatsman/tally/issues/43)), it shipped on
-**2026-10-19**, and the week runs from there.
+**The number it was waiting on is in, and the amber is not noise.** The
+gate since M1 was a week of `attention.jsonl`: *of the ambers raised, how
+many did you go to, and how many aged out?* On **2026-10-19**, across 17.3
+hours — **126 ambers, 93 attended (74%), 33 aged out (26%)**, reached at a
+median of 212 s. Three in four sent you somewhere you went.
 
-**And the question needed restating.** Amber used to mean *the detector
-believes it rang and went quiet*; since the hooks it means *an agent
-finished a turn*, about ten times an hour. A hook-raised amber is never
-really *wrong* — it can only be **correct and ignored**. So the number
-owed is *how many you went to, and how many aged out*
+It took one day rather than seven because the instrument only started
+working that morning. Reading the 55 hours before it found the journal
+**did not record a plain pad jump** — the gesture the product exists for —
+so it held the ambers that were raised and almost none of the answers.
+That was five lines
+([#43](https://github.com/alehatsman/tally/issues/43)); everything before
+it can answer questions about navigation and nothing about the amber.
+
+**The question had needed restating, too.** Amber used to mean *the
+detector believes it rang and went quiet*; since the hooks it means *an
+agent finished a turn*, about ten times an hour. A hook-raised amber is
+never really *wrong* — it can only be **correct and ignored**
 ([04](docs/04-signals.md#what-the-instrument-cannot-see-and-what-the-signal-now-means)).
+It turns out it mostly is not.
+
+**Read the number with its window.** One day, and a busy one — twelve
+agent sessions inside seven hours, and a day spent watching the grid is a
+day with a high answer rate. It is enough to decide what it was gating
+(build on the amber, rather than rebuild it) and not enough to claim the
+rate holds at a quieter density.
 
 **Three features were removed by their own measurements**, which is the
 habit this project is actually built on: the spec system and
