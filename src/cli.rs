@@ -219,6 +219,34 @@ pub struct Claim {
     pub count: u8,
 }
 
+impl Claim {
+    /// The addresses this claim lands on: [`Self::count`] consecutive
+    /// pads, rightwards.
+    ///
+    /// Lives here rather than in the binary because the invariant it
+    /// consumes is this module's parser's — a count that would run past
+    /// the last column is refused at parse time
+    /// (`tests::a_count_that_leaves_the_row_is_refused`), so `at.col + n`
+    /// cannot leave the row and cannot overflow a `u8`. The function that *relies* on a
+    /// rule belongs next to the one that *enforces* it; it used to assert
+    /// the invariant in a doc comment from a file with no tests.
+    ///
+    /// `None` is a page with no declared name, which is a grid the
+    /// address cannot be spelled on.
+    #[must_use]
+    pub fn targets(&self, pages: &Pages) -> Option<Vec<(Slot, String)>> {
+        (0..self.count)
+            .map(|n| {
+                let at = Slot {
+                    col: self.at.col + n,
+                    ..self.at
+                };
+                at.label(pages).map(|label| (at, label))
+            })
+            .collect()
+    }
+}
+
 /// A validated `tally fork`: where to inherit from, and the claim it feeds.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Fork {
@@ -768,6 +796,60 @@ mod tests {
                 .count,
             4
         );
+    }
+
+    /// The other half of the rule above, and the half nothing held: the
+    /// parser refuses a count that leaves the row, and `targets` is what
+    /// *consumes* that guarantee. An off-by-one here is a `u8` overflow
+    /// or a pad nobody aimed at, and it used to sit in the binary with no
+    /// test in front of it.
+    #[test]
+    fn targets_walk_rightwards_and_stop_at_the_edge_of_the_row() {
+        let pages = named();
+        let one = spawn(&["spawn", "work:3:4"], &pages).expect("a single pad");
+        assert_eq!(
+            one.targets(&pages).expect("a declared page"),
+            vec![(
+                Slot {
+                    page: 1,
+                    row: 3,
+                    col: 4
+                },
+                "work:3:4".to_owned()
+            )]
+        );
+
+        // The widest claim the parser will pass: the whole row, ending on
+        // the last column and not one past it.
+        let row = spawn(&["spawn", "work:3:1", "--count", "8"], &pages).expect("a whole row");
+        let addresses: Vec<String> = row
+            .targets(&pages)
+            .expect("a declared page")
+            .into_iter()
+            .map(|(_at, address)| address)
+            .collect();
+        assert_eq!(addresses.len(), usize::from(slot::COLS));
+        assert_eq!(addresses.first().map(String::as_str), Some("work:3:1"));
+        assert_eq!(addresses.last().map(String::as_str), Some("work:3:8"));
+    }
+
+    /// An undeclared page has no spelling, so there is no address to
+    /// print and no pad to claim — `None`, not a guess at a number.
+    #[test]
+    fn targets_on_a_page_with_no_name_are_no_targets_at_all() {
+        let anonymous = Pages::new(["work".to_owned()]);
+        let claim = Claim {
+            at: Slot {
+                page: 4,
+                row: 1,
+                col: 1,
+            },
+            command: None,
+            args: Vec::new(),
+            detach: false,
+            count: 1,
+        };
+        assert_eq!(claim.targets(&anonymous), None);
     }
 
     /// A count outside 1-8 is typing, not an address, and says so.
