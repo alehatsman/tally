@@ -586,15 +586,21 @@ pub fn address(text: &str, pages: &Pages) -> Result<Slot, Error> {
     };
     Ok(Slot {
         page,
-        row: coordinate(row, "row")?,
-        col: coordinate(col, "col")?,
+        row: coordinate(row, "row", slot::ROWS_PER_PAGE)?,
+        col: coordinate(col, "col", slot::COLS)?,
     })
 }
 
-fn coordinate(text: &str, what: &str) -> Result<u8, Error> {
+/// One coordinate, checked against the bound of *its own axis* — the same
+/// split [`slot::parse`] makes, for the same reason: [`slot::ROWS_PER_PAGE`]
+/// and [`slot::COLS`] are equal by coincidence, and a row checked against
+/// the column count would validate past the page it names. The bound goes
+/// into the message too, so `is not 1-8` stays true for whichever axis
+/// reports it.
+fn coordinate(text: &str, what: &str, bound: u8) -> Result<u8, Error> {
     match text.parse::<u8>() {
-        Ok(n) if (1..=slot::COLS).contains(&n) => Ok(n),
-        _ => Err(Error::Address(format!("{what} {text:?} is not 1-8"))),
+        Ok(n) if (1..=bound).contains(&n) => Ok(n),
+        _ => Err(Error::Address(format!("{what} {text:?} is not 1-{bound}"))),
     }
 }
 

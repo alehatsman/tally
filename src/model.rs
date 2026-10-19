@@ -448,13 +448,16 @@ pub fn frame_from(pads: &Pads<'_>, view: &View<'_>) -> Frame {
     let resolved = pads.grid();
     let mut frame = Frame::dark();
 
-    for r in resolved.values() {
-        // Off the window. `►` is what reports what you cannot see
-        // (`view.queued`); nothing here needs to know.
-        let Some(row) = view.display_row(r.slot) else {
-            continue;
-        };
-        if view.held.is_none() {
+    // Only when nothing is held: the preview below overwrites all sixty-four
+    // window pads, so under a held modifier every row this loop resolves is
+    // work done to produce something nothing reads.
+    if view.held.is_none() {
+        for r in resolved.values() {
+            // Off the window. `►` is what reports what you cannot see
+            // (`view.queued`); nothing here needs to know.
+            let Some(row) = view.display_row(r.slot) else {
+                continue;
+            };
             frame.set(
                 Button::Grid {
                     row,
