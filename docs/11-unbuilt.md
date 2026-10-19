@@ -262,23 +262,36 @@ of sixty-four have *ever* held a session.
 
 The 64-row space is sized by the hardware, not by any observed need.
 
-> ⚠️ **Partly answered, 2026-10-19.** The three features the size paid for
-> were `▲▼` scrolling, hold-`▲` home, and the overview. **The overview is
-> cut** on its own evidence — nine presses, `lit` stuck at 4, all nine
-> destinations inside the window they started in, the empty middle never
-> once crossed ([05](05-interaction.md#the-overview-cut), #41). The other
-> two are **kept**: they are how you move through the space, and they are
-> used.
+> ✅ **Answered 2026-10-19, in two halves. The space stays at 64 rows.**
 >
-> **So the space itself is still 64 rows and this question is still
-> open** — but it is now one feature's worth of cost, not three. The
-> remaining argument for shrinking is the address format, not the
-> navigation.
+> The three features the size paid for were `▲▼` scrolling, hold-`▲` home,
+> and the overview. **The overview is cut** on its own evidence — nine
+> presses, `lit` stuck at 4, all nine destinations inside the window they
+> started in, the empty middle never once crossed
+> ([05](05-interaction.md#the-overview-cut), #41). The other two are
+> **kept**: they are how you move through the space, and they are used.
+>
+> Once those two were judged on their own merits rather than as a tax on
+> the size, **nothing was left for the size to pay for.** The question
+> stops being *is 64 rows too many* and becomes *what does an empty row
+> cost* — and the answer is nothing. `ROWS` appears in `src/slot.rs` as a
+> bounds check and as the derivation of `MAX_OFFSET`, and nowhere else.
+> Nothing iterates the space, nothing allocates per row, and `Pages` holds
+> eight strings. The grid is built from the sessions that carry a
+> `tl.slot`, so fifty-seven empty rows cost one comparison.
+>
+> **An unused address is not an allocation.** The measurement that argued
+> for shrinking also stopped accruing when the overview was cut — `lit`
+> keeps the nine samples it has and will never get a tenth — so no further
+> evidence is coming either way.
 
-**The cost of shrinking is a migration:** addresses live in `tl.slot`
-labels and in muscle memory, and [02](02-model.md#the-address-pinned) pins
-the format deliberately so humans can type it into shell scripts.
-[#41](https://github.com/alehatsman/tally/issues/41).
+**And shrinking is not free, which is what settles it:** addresses live in
+`tl.slot` labels on live *and* dead anchor rows, and in muscle memory, and
+[02](02-model.md#the-address-pinned) pins the format deliberately so
+humans can type it into shell scripts. A migration that renumbers live
+labels or strands them, to reclaim one comparison, is the wrong trade in a
+direction that cannot be undone.
+[#41](https://github.com/alehatsman/tally/issues/41), closed.
 
 ### The reel is nine pieces
 
