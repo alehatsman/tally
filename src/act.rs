@@ -188,9 +188,7 @@ impl Context<'_> {
     ///
     /// A refusal on one id does not stop the others. anchord refuses a
     /// row it has already forgotten, and a `purge` that gave up halfway
-    /// would leave the pad in a state no further press could clear —
-    /// worse than the partial result, which the next reconcile draws
-    /// truthfully either way.
+    /// would leave the pad in a state no further press could clear.
     /// It cannot fail as a whole, which is why it returns no `Result`:
     /// a stack that half-forgets has still forgotten something, and the
     /// next reconcile draws whatever actually survived.
@@ -235,6 +233,30 @@ mod tests {
             claude: None,
         }
     }
+
+    /// The view both frame tests below draw from: the corner held, and
+    /// everything else at rest. They assert different things and keep
+    /// doing so — only the twelve fields are shared, so the next field
+    /// added to [`View`] lands in one place and not two.
+    fn held_view<'a>(pages: &'a Pages, pressed: &'a BTreeSet<Action>) -> View<'a> {
+        View {
+            pages,
+            offset: 0,
+            anchord_reachable: true,
+            now: 0,
+            can_go_back: false,
+            queued: 0,
+            launchable: &NOTHING_LAUNCHES,
+            held: Some(Action::Stop),
+            hand: None,
+            pressed,
+            art: false,
+            mode: Action::Stop,
+        }
+    }
+
+    /// No `>` lights in either test: neither builds a session list.
+    static NOTHING_LAUNCHES: BTreeSet<u8> = BTreeSet::new();
 
     fn context<'a>(
         client: &'a Client,
@@ -304,23 +326,7 @@ mod tests {
             "and a target under the hold"
         );
 
-        let frame = frame_from(
-            &ctx.pads,
-            &View {
-                pages: &Pages::default(),
-                offset: 0,
-                anchord_reachable: true,
-                now: 0,
-                can_go_back: false,
-                queued: 0,
-                launchable: &BTreeSet::new(),
-                held: Some(Action::Stop),
-                hand: None,
-                pressed: &pressed,
-                art: false,
-                mode: Action::Stop,
-            },
-        );
+        let frame = frame_from(&ctx.pads, &held_view(&Pages::default(), &pressed));
         assert_eq!(
             frame.get(Button::Grid { row: 5, col: 5 }),
             render::preview(Effect::Acts(Consequence::Forgotten)),
@@ -364,23 +370,7 @@ mod tests {
         let (client, purge, pages) = (nowhere(), BTreeMap::new(), Pages::default());
         let ctx = context(&client, &grid, &purge);
         let pressed = BTreeSet::new();
-        let frame = frame_from(
-            &ctx.pads,
-            &View {
-                pages: &pages,
-                offset: 0,
-                anchord_reachable: true,
-                now: 0,
-                can_go_back: false,
-                queued: 0,
-                launchable: &BTreeSet::new(),
-                held: Some(Action::Stop),
-                hand: None,
-                pressed: &pressed,
-                art: false,
-                mode: Action::Stop,
-            },
-        );
+        let frame = frame_from(&ctx.pads, &held_view(&pages, &pressed));
 
         assert_eq!(
             frame.get(Button::Grid { row: 5, col: 5 }),
