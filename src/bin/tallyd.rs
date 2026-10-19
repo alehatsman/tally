@@ -1294,9 +1294,6 @@ fn main() -> ExitCode {
                 queued: waiting.queued,
                 held: chords.modifier(),
                 hand: grip.hand,
-                // `false` by construction: the arm above is the only
-                // one that draws while a piece is playing.
-                art: false,
                 pressed: &pressed,
                 mode: chords.mode(),
             };
