@@ -47,9 +47,17 @@ fn addr(row: u8, col: u8) -> String {
 /// place, and label it. The whole of `view_pane`, through the one public
 /// door it has.
 fn press(server: &harness::Server, session: &str, row: u8, col: u8) {
+    press_in(server, session, row, col, None);
+}
+
+/// [`press`], carrying the directory the session is running in.
+///
+/// Separate because one test cares and every other press would otherwise
+/// have to carry a `None` to say it does not.
+fn press_in(server: &harness::Server, session: &str, row: u8, col: u8, cwd: Option<&str>) {
     server
         .tmux()
-        .jump(session, None, &addr(row, col), at(row, col))
+        .jump(session, None, &addr(row, col), at(row, col), cwd)
         .unwrap_or_else(|e| {
             panic!(
                 "press {session}@{row}:{col} failed: {e} — {}",
@@ -253,6 +261,46 @@ fn the_view_a_swap_displaced_is_repaired_by_its_own_press() {
         );
         assert!(s.view("S1").at("r01", 2), "S1 stays put — {}", s.dump());
     });
+}
+
+// ── where the pane starts ──────────────────────────────────────────────────
+
+/// A view's command is `anchor attach`, which says nothing about where
+/// the agent is, so the pane used to inherit the row session's directory
+/// — `/` under launchd, in the status line and in every window opened
+/// from the view
+/// (`docs/06-views.md#the-pane-starts-where-the-agent-does`).
+///
+/// Live, because the thing under test is what tmux *did* with `-c`, and
+/// the args alone have been right before while the pane was not.
+#[test]
+fn a_view_pane_starts_in_the_directory_its_session_runs_in() {
+    each_config("view cwd", |s| {
+        press_in(s, "S1", 1, 1, Some("/usr"));
+        assert_eq!(pane_path(s, &s.view("S1").id), "/usr", "{}", s.dump());
+    });
+}
+
+/// One row, two repos — the ordinary case, and the one a per-*session*
+/// directory would get wrong: the second column would inherit the first
+/// column's repo.
+#[test]
+fn two_columns_of_one_row_start_in_their_own_directories() {
+    each_config("view cwd per column", |s| {
+        press_in(s, "S1", 1, 1, Some("/usr"));
+        press_in(s, "S2", 1, 2, Some("/usr/share"));
+        assert_eq!(pane_path(s, &s.view("S1").id), "/usr", "{}", s.dump());
+        assert_eq!(pane_path(s, &s.view("S2").id), "/usr/share", "{}", s.dump());
+    });
+}
+
+/// Where tmux put a pane. The directories above are real on both
+/// platforms and under no symlink, which `/tmp` and `/etc` are not — tmux
+/// reports the resolved path and the comparison would be against the
+/// name.
+fn pane_path(server: &harness::Server, pane: &str) -> String {
+    let got = server.sh(&["display-message", "-p", "-t", pane, "#{pane_current_path}"]);
+    got.trim().to_owned()
 }
 
 // ── the no-ops ─────────────────────────────────────────────────────────────

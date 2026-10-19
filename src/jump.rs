@@ -140,6 +140,10 @@ pub trait Jump {
     /// what a view this creates is labelled with. `where_` is the same
     /// address as geometry ([`Place`]).
     ///
+    /// `cwd` is the directory that session is running in, when tally knows
+    /// one; it is where the *pane* is put, which is not where the agent is
+    /// put ([`start_directory`]).
+    ///
     /// # Errors
     /// Whatever stopped it.
     fn jump(
@@ -148,6 +152,7 @@ pub trait Jump {
         claude: Option<&str>,
         at: &str,
         where_: Place,
+        cwd: Option<&str>,
     ) -> Result<(), Error>;
 
     /// Which of these views are not in the window their address names.
@@ -286,15 +291,41 @@ fn window_target(row: u8, index: u16) -> String {
     format!("{}:{index}", row_session(row))
 }
 
+/// `-c <cwd>`, or nothing when the session's directory is not known.
+///
+/// **A view's command is `anchor attach`, which tells tmux nothing about
+/// where the agent is.** The PTY's directory is anchord's business; the
+/// *pane's* is tmux's, and left alone tmux inherits it from the row
+/// session — whose own directory is the cwd of whoever first created that
+/// row. Under launchd that is `/`, so `#{pane_current_path}` renders `/`
+/// in the status line and every window you open from the view starts
+/// there (`docs/06-views.md#the-pane-starts-where-the-agent-does`).
+///
+/// Passed on creation *and* on respawn, and per window rather than per
+/// row: one row holds eight columns and they are routinely eight
+/// different repos.
+///
+/// A directory that has since been removed is not an error — tmux falls
+/// back to its default rather than refusing the command, measured — so
+/// the worst a stale cwd costs is the path you had before this.
+fn start_directory(cwd: Option<&str>) -> Vec<String> {
+    cwd.map_or_else(Vec::new, |dir| vec!["-c".into(), dir.into()])
+}
+
 /// Args creating the row session *with* its first view already in it.
 ///
 /// `new-session -d -s r07` on its own leaves a stray shell window that
 /// nothing asked for and nothing cleans up. Creating the session around
 /// the first view means one is never made. (The one stray shell that *is*
 /// wanted is [`HOME_SESSION`], and it is made deliberately.)
-fn new_row_session_args(place: Place, session: &str, anchor_bin: &str) -> Vec<String> {
+fn new_row_session_args(
+    place: Place,
+    session: &str,
+    anchor_bin: &str,
+    cwd: Option<&str>,
+) -> Vec<String> {
     let name = row_session(place.row);
-    vec![
+    let mut args: Vec<String> = vec![
         "new-session".into(),
         "-d".into(),
         "-s".into(),
@@ -304,8 +335,10 @@ fn new_row_session_args(place: Place, session: &str, anchor_bin: &str) -> Vec<St
         "#{pane_id}".into(),
         "-n".into(),
         name,
-        format!("{anchor_bin} attach {session}"),
-    ]
+    ];
+    args.extend(start_directory(cwd));
+    args.push(format!("{anchor_bin} attach {session}"));
+    args
 }
 
 /// Args opening a view as a new **window** in an existing row.
@@ -317,7 +350,13 @@ fn new_row_session_args(place: Place, session: &str, anchor_bin: &str) -> Vec<St
 ///
 /// `-d` because creating a view must not move anybody: the switch is a
 /// separate, deliberate step.
-fn new_window_args(place: Place, session: &str, anchor_bin: &str, replace: bool) -> Vec<String> {
+fn new_window_args(
+    place: Place,
+    session: &str,
+    anchor_bin: &str,
+    replace: bool,
+    cwd: Option<&str>,
+) -> Vec<String> {
     let mut args: Vec<String> = vec!["new-window".into()];
     if replace {
         // A corpse holds the index. `-k` takes it over in one step, the
@@ -332,8 +371,9 @@ fn new_window_args(place: Place, session: &str, anchor_bin: &str, replace: bool)
         "-P".into(),
         "-F".into(),
         "#{pane_id}".into(),
-        format!("{anchor_bin} attach {session}"),
     ]);
+    args.extend(start_directory(cwd));
+    args.push(format!("{anchor_bin} attach {session}"));
     args
 }
 
@@ -557,13 +597,19 @@ fn dead_pane_format() -> String {
 /// tag, and the pad goes on meaning the place you put it. Without this an
 /// adopted view that died would be abandoned for a window under `tally`,
 /// and the pad would quietly stop pointing at your layout.
-fn respawn_pane_args(pane: &str, session: &str, anchor_bin: &str) -> Vec<String> {
-    vec![
-        "respawn-pane".into(),
-        "-t".into(),
-        pane.into(),
-        format!("{anchor_bin} attach {session}"),
-    ]
+fn respawn_pane_args(
+    pane: &str,
+    session: &str,
+    anchor_bin: &str,
+    cwd: Option<&str>,
+) -> Vec<String> {
+    let mut args: Vec<String> = vec!["respawn-pane".into(), "-t".into(), pane.into()];
+    // The pane keeps its directory across a respawn along with its id, so
+    // a reclaimed corpse would hand a new session the *old* one's cwd
+    // ([`start_directory`]).
+    args.extend(start_directory(cwd));
+    args.push(format!("{anchor_bin} attach {session}"));
+    args
 }
 
 /// Args switching one client to `pane`.
@@ -1115,12 +1161,13 @@ impl Tmux {
         claude: Option<&str>,
         place: Place,
         at: &str,
+        cwd: Option<&str>,
     ) -> Result<String, Error> {
         self.hold_indexes();
         let listing = self.panes();
         if let Some(found) = view_for(&listing, session) {
             if found.dead {
-                let args = respawn_pane_args(found.id, session, &self.anchor_bin);
+                let args = respawn_pane_args(found.id, session, &self.anchor_bin, cwd);
                 let _revived = self.run(&args)?;
             }
             // Where the pad *is*, not where the pane was left. For the eye
@@ -1143,13 +1190,13 @@ impl Tmux {
         // want: it keeps its id, its tab and its place in the row across
         // a respawn.
         if let Some(stale) = dead_view_at(&listing, at) {
-            let args = respawn_pane_args(stale.id, session, &self.anchor_bin);
+            let args = respawn_pane_args(stale.id, session, &self.anchor_bin, cwd);
             let _reclaimed = self.run(&args)?;
             // Found *by* the address, so it is at it by construction.
             self.tag(stale.id, session, claude, place, at, Holds::TheAddress)?;
             return Ok(stale.id.to_owned());
         }
-        let pane = self.make_view(session, place)?;
+        let pane = self.make_view(session, place, cwd)?;
         // Made at the address, or `make_view` would have failed.
         self.tag(&pane, session, claude, place, at, Holds::TheAddress)?;
         Ok(pane)
@@ -1162,9 +1209,9 @@ impl Tmux {
     /// shell from appearing ([`new_row_session_args`]); `new-session -d`
     /// on a dead server also starts one, which is why a missing tally
     /// server is not a startup failure.
-    fn make_view(&self, session: &str, place: Place) -> Result<String, Error> {
+    fn make_view(&self, session: &str, place: Place, cwd: Option<&str>) -> Result<String, Error> {
         if !self.session_exists(&row_session(place.row)) {
-            let args = new_row_session_args(place, session, &self.anchor_bin);
+            let args = new_row_session_args(place, session, &self.anchor_bin, cwd);
             let pane = self.stdout(&args)?.trim().to_owned();
             self.hold_indexes();
             // `new-session` puts it at `base-index`; the column is where
@@ -1183,7 +1230,7 @@ impl Tmux {
         // to find a view by id and a corpse claiming *this* address, so
         // anything still sitting at the column is in the way.
         let replace = self.clear_the_index(place);
-        let args = new_window_args(place, session, &self.anchor_bin, replace);
+        let args = new_window_args(place, session, &self.anchor_bin, replace, cwd);
         Ok(self.stdout(&args)?.trim().to_owned())
     }
 
@@ -1276,12 +1323,12 @@ impl Tmux {
 /// # Errors
 /// Whatever tmux said. Not fatal to the caller: the session exists either
 /// way, and the next press makes the view.
-pub fn place(session: &str, at: &str, where_: Place) -> Result<(), Error> {
+pub fn place(session: &str, at: &str, where_: Place, cwd: Option<&str>) -> Result<(), Error> {
     let tmux = Tmux::default();
     // No conversation: the agent has not had a turn, so no hook has
     // reported one. The first press tags it
     // (`docs/06-views.md`).
-    let _pane = tmux.view_pane(session, None, where_, at)?;
+    let _pane = tmux.view_pane(session, None, where_, at, cwd)?;
     Ok(())
 }
 
@@ -1402,8 +1449,9 @@ impl Jump for Tmux {
         claude: Option<&str>,
         at: &str,
         where_: Place,
+        cwd: Option<&str>,
     ) -> Result<(), Error> {
-        let pane = self.view_pane(session, claude, where_, at)?;
+        let pane = self.view_pane(session, claude, where_, at, cwd)?;
         // Before the clients are listed, not after: the window it opens
         // is a client by the time the switch runs.
         self.ensure_terminal();
@@ -1539,7 +1587,7 @@ mod tests {
 
     #[test]
     fn a_view_is_created_in_the_row_session_for_its_row() {
-        let args = new_row_session_args(PLACE, SESSION, "anchor");
+        let args = new_row_session_args(PLACE, SESSION, "anchor", None);
         assert!(
             args.contains(&"-d".to_owned()),
             "detached: do not steal focus to create it"
@@ -1551,6 +1599,40 @@ mod tests {
                 .is_some_and(|c| c == &format!("anchor attach {SESSION}")),
             "the row session's first pane IS a view, not a stray shell"
         );
+    }
+
+    /// `anchor attach` tells tmux nothing about where the agent is, so
+    /// without `-c` the pane inherits the row session's directory — `/`
+    /// under launchd ([`start_directory`]).
+    #[test]
+    fn a_view_is_opened_in_the_directory_its_session_runs_in() {
+        for args in [
+            new_row_session_args(PLACE, SESSION, "anchor", Some("/repo/one")),
+            new_window_args(PLACE, SESSION, "anchor", false, Some("/repo/one")),
+            respawn_pane_args("%7", SESSION, "anchor", Some("/repo/one")),
+        ] {
+            let at = args.iter().position(|a| a == "-c").expect("-c");
+            assert_eq!(args.get(at + 1).map(String::as_str), Some("/repo/one"));
+            assert!(
+                args.last()
+                    .is_some_and(|c| c == &format!("anchor attach {SESSION}")),
+                "the directory goes before the command, not instead of it: {args:?}"
+            );
+        }
+    }
+
+    /// Not knowing where a session runs is an ordinary answer — an
+    /// adopted pane has no anchord row behind it to ask. tmux is given no
+    /// `-c` at all rather than a guess at one.
+    #[test]
+    fn an_unknown_directory_passes_no_start_directory_at_all() {
+        for args in [
+            new_row_session_args(PLACE, SESSION, "anchor", None),
+            new_window_args(PLACE, SESSION, "anchor", false, None),
+            respawn_pane_args("%7", SESSION, "anchor", None),
+        ] {
+            assert!(!args.contains(&"-c".to_owned()), "{args:?}");
+        }
     }
 
     /// The row names the session and nothing else does: a page rename
@@ -1565,7 +1647,7 @@ mod tests {
     /// Creating a view must not move anybody ([`new_window_args`]).
     #[test]
     fn opening_a_view_in_a_row_does_not_steal_focus() {
-        let args = new_window_args(PLACE, SESSION, "anchor", false);
+        let args = new_window_args(PLACE, SESSION, "anchor", false, None);
         assert!(args.contains(&"-d".to_owned()));
         assert!(
             args.last()
@@ -1578,12 +1660,12 @@ mod tests {
     /// no insertion rule left to get wrong.
     #[test]
     fn a_column_is_the_window_index() {
-        let args = new_window_args(Place { row: 7, col: 3 }, SESSION, "anchor", false);
+        let args = new_window_args(Place { row: 7, col: 3 }, SESSION, "anchor", false, None);
         let t = args.iter().position(|a| a == "-t").expect("-t");
         assert_eq!(args.get(t + 1).map(String::as_str), Some("r07:3"));
 
         // Column 8 and column 1 address the same row, never each other.
-        let eight = new_window_args(Place { row: 7, col: 8 }, SESSION, "anchor", false);
+        let eight = new_window_args(Place { row: 7, col: 8 }, SESSION, "anchor", false, None);
         let t = eight.iter().position(|a| a == "-t").expect("-t");
         assert_eq!(eight.get(t + 1).map(String::as_str), Some("r07:8"));
     }
@@ -1638,8 +1720,8 @@ mod tests {
     #[test]
     fn creating_a_view_prints_a_pane_not_a_window() {
         for args in [
-            new_row_session_args(PLACE, SESSION, "anchor"),
-            new_window_args(PLACE, SESSION, "anchor", false),
+            new_row_session_args(PLACE, SESSION, "anchor", None),
+            new_window_args(PLACE, SESSION, "anchor", false, None),
         ] {
             let f = args.iter().position(|a| a == "-F").expect("-F");
             assert_eq!(args.get(f + 1).map(String::as_str), Some("#{pane_id}"));
@@ -1652,12 +1734,12 @@ mod tests {
     #[test]
     fn no_command_relies_on_a_current_session_or_client() {
         assert!(switch_args("/dev/ttys000", "%7").contains(&"-c".to_owned()));
-        assert!(new_window_args(PLACE, SESSION, "anchor", false).contains(&"-t".to_owned()));
-        assert!(new_row_session_args(PLACE, SESSION, "anchor").contains(&"-s".to_owned()));
+        assert!(new_window_args(PLACE, SESSION, "anchor", false, None).contains(&"-t".to_owned()));
+        assert!(new_row_session_args(PLACE, SESSION, "anchor", None).contains(&"-s".to_owned()));
         for args in [
             set_pane_option_args("%7", PANE_OPTION, SESSION),
             set_pane_option_args("%7", REMAIN_ON_EXIT, "on"),
-            respawn_pane_args("%7", SESSION, "anchor"),
+            respawn_pane_args("%7", SESSION, "anchor", None),
             kill_pane_args("%7"),
         ] {
             assert!(args.contains(&"-t".to_owned()), "{args:?} names its target");
@@ -1929,9 +2011,9 @@ mod tests {
     /// accident.
     #[test]
     fn a_new_window_only_replaces_when_it_was_asked_to() {
-        let plain = new_window_args(PLACE, SESSION, "anchor", false);
+        let plain = new_window_args(PLACE, SESSION, "anchor", false, None);
         assert!(!plain.contains(&"-k".to_owned()), "{plain:?}");
-        let replacing = new_window_args(PLACE, SESSION, "anchor", true);
+        let replacing = new_window_args(PLACE, SESSION, "anchor", true, None);
         assert!(replacing.contains(&"-k".to_owned()), "{replacing:?}");
         assert_eq!(replacing[0], "new-window");
     }
@@ -2079,7 +2161,7 @@ mod tests {
 
     #[test]
     fn a_dead_view_is_revived_in_the_pane_it_already_occupies() {
-        let args = respawn_pane_args("%4", SESSION, "anchor");
+        let args = respawn_pane_args("%4", SESSION, "anchor", None);
         let at = args.iter().position(|a| a == "-t").expect("-t");
         assert_eq!(args.get(at + 1).map(String::as_str), Some("%4"));
         assert!(

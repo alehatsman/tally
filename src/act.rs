@@ -221,6 +221,7 @@ mod tests {
             state,
             muted,
             claude: None,
+            cwd: None,
         }
     }
 

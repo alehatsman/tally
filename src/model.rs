@@ -94,6 +94,14 @@ pub struct Resolved {
     /// it: a pad is an address, and a UUID is not something you can see
     /// in a colour.
     pub claude: Option<String>,
+    /// The directory it is running in, from anchord's row.
+    ///
+    /// Carried for [`Resolved::claude`]'s reason and no other: on a jump
+    /// the view's tmux pane has to be *put* somewhere, and the command it
+    /// runs — `anchor attach` — tells tmux nothing about where the agent
+    /// is (`docs/06-views.md#the-pane-starts-where-the-agent-does`).
+    /// Nothing on the grid renders it.
+    pub cwd: Option<String>,
 }
 
 /// Resolve every session to a slot, newest wins, invalid ignored.
@@ -152,6 +160,7 @@ pub fn resolve(
                 state,
                 muted: session.muted(),
                 claude: session.claude().map(ToOwned::to_owned),
+                cwd: session.cwd.clone(),
             },
         );
     }

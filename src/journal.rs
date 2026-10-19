@@ -694,6 +694,7 @@ mod tests {
                 },
                 muted: false,
                 claude: None,
+                cwd: None,
             },
         );
         m
@@ -965,6 +966,7 @@ mod tests {
                 },
                 muted: false,
                 claude: None,
+                cwd: None,
             },
         );
         let mut out = Vec::new();

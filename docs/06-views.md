@@ -265,6 +265,39 @@ The agent's `PATH` is therefore set in the LaunchAgent, declared in
 Worth stating because it generalises: everything this file asks of tmux is
 an `exec`, and an agent's environment is not a login shell's.
 
+### The pane starts where the agent does
+
+A session has **two** working directories, and only one of them is anchord's.
+
+The agent's is: `tally spawn` reads the shell's cwd, hands it to anchord, and
+anchord opens the PTY there. That one was always right.
+
+The *pane's* is tmux's, and a view's command — `anchor attach <session>` —
+tells tmux nothing about it. Left alone tmux falls back to the row session's
+directory, and a row session's directory is the cwd of whoever first created
+it. Under launchd that is `/`. The agent is in the right repo and the pane
+around it is at the root of the disk, which you see as a `/` in
+`#{pane_current_path}` and get handed again by every window or split you open
+from the view.
+
+So **every command that creates or respawns a view passes `-c`** —
+`new-session`, `new-window` and `respawn-pane` alike. Per *window*, not per
+row: one row is eight columns and they are routinely eight different repos,
+so a directory set once on the row session would be right for the first pad
+on it and wrong for the rest.
+
+Two consequences worth stating:
+
+- **The directory has to reach `jump`, and `jump` knows only tmux.** It rides
+  on `Resolved` and on the queue's `Head`, the same way the conversation id
+  does and for the same reason — the view has to be *made* with something the
+  grid knows and the tmux layer cannot derive.
+- **Not knowing is an ordinary answer.** A pane adopted from a layout has no
+  anchord row behind it; it gets no `-c` rather than a guess. A directory that
+  has since been deleted is not an error either — tmux falls back to its
+  default rather than refusing the command, so the worst a stale cwd costs is
+  the path you had before any of this.
+
 ### tmux is assumed, and checked rather than inferred
 
 **This design assumes tmux is running and is where you work.** If it is not,
@@ -285,7 +318,15 @@ keeps a hard platform dependency out of the state layer.
 ```rust
 pub trait Jump {
     /// Focus the view for `session`, creating or reviving it if it is gone.
-    fn jump(&self, session: &str, at: &str, claude: Option<&str>) -> Result<(), Error>;
+    /// `cwd` is where the *pane* goes, not where the agent goes.
+    fn jump(
+        &self,
+        session: &str,
+        claude: Option<&str>,
+        at: &str,
+        where_: Place,
+        cwd: Option<&str>,
+    ) -> Result<(), Error>;
 
     /// Put each client back where it was before it jumped to `session`.
     /// `Ok(false)` when there was nowhere to go — not an error.
