@@ -64,6 +64,24 @@ impl Wants {
         }
     }
 
+    /// The word `tally ls --json` emits under `wants`.
+    ///
+    /// Deliberately neither [`Self::as_str`]'s vocabulary nor the CLI's:
+    /// the label value carries `1` for the hooks written before #23, the
+    /// CLI takes `done` because that is the word a human types, and a
+    /// program reading JSON should be made to carry neither. It sits here
+    /// rather than inline in [`crate::listing::json`] so that adding a
+    /// fourth variant is one file and the three vocabularies are visible
+    /// side by side.
+    #[must_use]
+    pub fn json_word(self) -> &'static str {
+        match self {
+            Self::Blocked => "blocked",
+            Self::Finished => "finished",
+            Self::Unstated => "unstated",
+        }
+    }
+
     /// Read a label value. Anything unrecognised is [`Self::Unstated`].
     #[must_use]
     pub fn of(value: &str) -> Self {
@@ -124,6 +142,13 @@ const HEADER_LEN: usize = 13;
 /// an abort instead of a watcher that quietly restarts.
 const MAX_FRAME_BYTES: usize = 1024 * 1024;
 
+/// A reply that says `ok: false` and then does not say why.
+///
+/// A protocol violation rather than a refusal, and both `list` and `op`
+/// meet it, so it is one sentence rather than two copies that can be
+/// edited apart.
+const NO_ERROR_GIVEN: &str = "not ok, and no error given";
+
 /// Why a call did not produce sessions.
 #[derive(Debug)]
 pub enum Error {
@@ -161,6 +186,24 @@ impl fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
+
+impl From<std::io::Error> for Error {
+    /// Every io failure in this module is the same fact: anchord would
+    /// not talk. The conversion was written out at seventeen call sites
+    /// before it was written once here; a site that ever wants an io
+    /// error to mean something else has to say so with `map_err`, which
+    /// is the right way round.
+    fn from(e: std::io::Error) -> Self {
+        Self::Unreachable(e.to_string())
+    }
+}
+
+impl From<serde_json::Error> for Error {
+    /// anchord answered with something that is not the protocol.
+    fn from(e: serde_json::Error) -> Self {
+        Self::Protocol(e.to_string())
+    }
+}
 
 /// One session, as anchord reports it. Fields tally does not use are not
 /// deserialised — anchor is free to add more without breaking us.
@@ -274,8 +317,6 @@ impl Session {
 #[derive(Debug, Deserialize)]
 struct AttachReply {
     ok: bool,
-    #[serde(default)]
-    offset: u64,
 }
 
 /// What anchord sends an attached observer.
@@ -301,17 +342,17 @@ pub enum Packet {
 
 /// A stream of packets from an attached session.
 #[derive(Debug)]
+///
+/// The handshake reply's own `offset` is **not** kept. A watcher resumes
+/// from its `scanned_to` — what it has actually read — and reconciling
+/// that against what anchord says it gave us is a reconciliation nobody
+/// has asked for (`src/watch.rs`). The per-frame offset on
+/// [`Packet::Output`] is a different thing and is wire data.
 pub struct Packets {
     reader: BufReader<UnixStream>,
-    offset: u64,
 }
 
 impl Packets {
-    /// Where anchord said the stream starts.
-    pub fn offset(&self) -> u64 {
-        self.offset
-    }
-
     /// The next packet, or `None` when the connection ends.
     ///
     /// Ending is **normal**: an exit packet, EOF, or being dropped for
@@ -451,13 +492,12 @@ impl Client {
     /// different fact from an empty list, and renders differently.
     pub fn list(&self) -> Result<Vec<Session>, Error> {
         let reply = self.call(r#"{"id":1,"op":"list","filter":{}}"#)?;
-        let parsed: ListReply =
-            serde_json::from_str(&reply).map_err(|e| Error::Protocol(e.to_string()))?;
+        let parsed: ListReply = serde_json::from_str(&reply)?;
         if parsed.ok {
             return Ok(parsed.sessions);
         }
         Err(Error::Protocol(parsed.error.map_or_else(
-            || "not ok, and no error given".to_owned(),
+            || NO_ERROR_GIVEN.to_owned(),
             |e| format!("{}: {}", e.code, e.message),
         )))
     }
@@ -478,40 +518,27 @@ impl Client {
     /// [`Error::Unreachable`] if anchord will not talk, [`Error::Protocol`]
     /// if it refuses the attach.
     pub fn attach(&self, session: &str, from: u64) -> Result<Packets, Error> {
-        let stream =
-            UnixStream::connect(&self.path).map_err(|e| Error::Unreachable(e.to_string()))?;
         // The handshake is request/response like any other control call, so
-        // it gets the same bound. Unbounded, a daemon that accepts the
-        // connection and then says nothing parks this thread forever -- and
-        // a parked thread is indistinguishable from a healthy watcher to the
-        // supervisor, which marks the session watched before the thread
-        // starts and only unmarks it when the thread ends (`src/watch.rs`).
-        // That pad loses bell detection for the life of the process, with no
-        // log line to say so.
-        stream
-            .set_read_timeout(Some(TIMEOUT))
-            .map_err(|e| Error::Unreachable(e.to_string()))?;
-        stream
-            .set_write_timeout(Some(TIMEOUT))
-            .map_err(|e| Error::Unreachable(e.to_string()))?;
+        // it gets the same bound, and [`Self::connect`] is where that bound
+        // is set. Unbounded, a daemon that accepts the connection and then
+        // says nothing parks this thread forever -- and a parked thread is
+        // indistinguishable from a healthy watcher to the supervisor, which
+        // marks the session watched before the thread starts and only
+        // unmarks it when the thread ends (`src/watch.rs`). That pad loses
+        // bell detection for the life of the process, with no log line to
+        // say so.
+        let stream = self.connect()?;
         let request = serde_json::json!({
             "id": 1, "op": "attach", "session": session, "from": from, "control": false
         });
         let mut writing = &stream;
-        writing
-            .write_all(format!("{request}\n").as_bytes())
-            .map_err(|e| Error::Unreachable(e.to_string()))?;
-        writing
-            .flush()
-            .map_err(|e| Error::Unreachable(e.to_string()))?;
+        writing.write_all(format!("{request}\n").as_bytes())?;
+        writing.flush()?;
 
         let mut reader = BufReader::new(stream);
         let mut line = String::new();
-        reader
-            .read_line(&mut line)
-            .map_err(|e| Error::Unreachable(e.to_string()))?;
-        let reply: AttachReply =
-            serde_json::from_str(&line).map_err(|e| Error::Protocol(e.to_string()))?;
+        let _read = reader.read_line(&mut line)?;
+        let reply: AttachReply = serde_json::from_str(&line)?;
         if !reply.ok {
             return Err(Error::Protocol(format!("attach refused: {line}")));
         }
@@ -523,14 +550,8 @@ impl Client {
         // ([`Packets::next_packet`]); a read timeout left in place would end
         // every quiet watcher every two seconds. `None` is the blocking
         // default, restored.
-        reader
-            .get_ref()
-            .set_read_timeout(None)
-            .map_err(|e| Error::Unreachable(e.to_string()))?;
-        Ok(Packets {
-            reader,
-            offset: reply.offset,
-        })
+        reader.get_ref().set_read_timeout(None)?;
+        Ok(Packets { reader })
     }
 
     /// Spawn a session and claim a slot with it.
@@ -615,13 +636,12 @@ impl Client {
     /// One control call, with the ok/error split already decided.
     fn op(&self, request: &serde_json::Value) -> Result<OpReply, Error> {
         let line = self.call(&request.to_string())?;
-        let reply: OpReply =
-            serde_json::from_str(&line).map_err(|e| Error::Protocol(e.to_string()))?;
+        let reply: OpReply = serde_json::from_str(&line)?;
         if reply.ok {
             return Ok(reply);
         }
         Err(reply.error.map_or_else(
-            || Error::Protocol("not ok, and no error given".to_owned()),
+            || Error::Protocol(NO_ERROR_GIVEN.to_owned()),
             |e| Error::Refused {
                 code: e.code,
                 message: e.message,
@@ -629,31 +649,30 @@ impl Client {
         ))
     }
 
+    /// A socket to anchord, bounded in both directions.
+    ///
+    /// Shared by [`Self::call`] and [`Self::attach`] because the two
+    /// opened it identically and the six lines drifting apart would be
+    /// the attach quietly losing its handshake bound. `attach` lifts the
+    /// read bound again once it is past the handshake, which is the one
+    /// difference and is argued there.
+    fn connect(&self) -> Result<UnixStream, Error> {
+        let stream = UnixStream::connect(&self.path)?;
+        stream.set_read_timeout(Some(TIMEOUT))?;
+        stream.set_write_timeout(Some(TIMEOUT))?;
+        Ok(stream)
+    }
+
     fn call(&self, request: &str) -> Result<String, Error> {
-        let stream =
-            UnixStream::connect(&self.path).map_err(|e| Error::Unreachable(e.to_string()))?;
-        stream
-            .set_read_timeout(Some(TIMEOUT))
-            .map_err(|e| Error::Unreachable(e.to_string()))?;
-        stream
-            .set_write_timeout(Some(TIMEOUT))
-            .map_err(|e| Error::Unreachable(e.to_string()))?;
+        let stream = self.connect()?;
 
         let mut writing = &stream;
-        writing
-            .write_all(request.as_bytes())
-            .map_err(|e| Error::Unreachable(e.to_string()))?;
-        writing
-            .write_all(b"\n")
-            .map_err(|e| Error::Unreachable(e.to_string()))?;
-        writing
-            .flush()
-            .map_err(|e| Error::Unreachable(e.to_string()))?;
+        writing.write_all(request.as_bytes())?;
+        writing.write_all(b"\n")?;
+        writing.flush()?;
 
         let mut line = String::new();
-        BufReader::new(&stream)
-            .read_line(&mut line)
-            .map_err(|e| Error::Unreachable(e.to_string()))?;
+        let _read = BufReader::new(&stream).read_line(&mut line)?;
         if line.is_empty() {
             return Err(Error::Unreachable(
                 "anchord closed without answering".to_owned(),
@@ -694,20 +713,27 @@ mod tests {
         assert_eq!(s.slot_label(), None);
     }
 
-    #[test]
-    fn an_unknown_state_is_lost_rather_than_guessed_at() {
-        let s = Session {
+    /// A session with only the two fields these tests are about. The
+    /// other eight carried no meaning in either test and were written out
+    /// twice; `src/watch.rs::tests` already does it this way.
+    fn session(state: &str, labels: BTreeMap<String, String>) -> Session {
+        Session {
             id: "x".to_owned(),
-            state: "quantum".to_owned(),
+            state: state.to_owned(),
             exit_code: None,
             lost_reason: None,
-            labels: BTreeMap::new(),
+            labels,
             output_bytes: 0,
             pid: None,
             cwd: None,
             command: None,
             login_shell: false,
-        };
+        }
+    }
+
+    #[test]
+    fn an_unknown_state_is_lost_rather_than_guessed_at() {
+        let s = session("quantum", BTreeMap::new());
         assert_eq!(s.lifecycle(), SessionState::Lost);
     }
 
@@ -716,18 +742,7 @@ mod tests {
         let mut labels = BTreeMap::new();
         drop(labels.insert(LABEL_SLOT.to_owned(), "work:3:5".to_owned()));
         drop(labels.insert(LABEL_MUTE.to_owned(), "1".to_owned()));
-        let s = Session {
-            id: "x".to_owned(),
-            state: "running".to_owned(),
-            exit_code: None,
-            lost_reason: None,
-            labels,
-            output_bytes: 1,
-            pid: None,
-            cwd: None,
-            command: None,
-            login_shell: false,
-        };
+        let s = session("running", labels);
         assert_eq!(s.slot_label(), Some("work:3:5"));
         assert!(s.muted());
         assert!(!s.declared_attention());
@@ -821,7 +836,6 @@ mod tests {
             .expect("write a bogus header");
         let mut packets = Packets {
             reader: BufReader::new(ours),
-            offset: 0,
         };
         assert_eq!(packets.next_packet(), None);
     }
@@ -838,7 +852,6 @@ mod tests {
         });
         let mut packets = Packets {
             reader: BufReader::new(ours),
-            offset: 0,
         };
         match packets.next_packet() {
             Some(Packet::Output { offset, bytes }) => {
@@ -917,11 +930,6 @@ mod tests {
         server.join().expect("server thread");
         let _gone = std::fs::remove_file(&path);
     }
-}
-
-#[cfg(test)]
-mod path_tests {
-    use super::Client;
 
     /// `VAR=` is not `VAR=/path`. Taking an empty value literally turns an
     /// absolute path into a relative one, and the symptom is "anchord
