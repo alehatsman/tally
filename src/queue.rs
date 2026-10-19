@@ -121,9 +121,6 @@ pub fn depth(
 /// read by the room rather than by your current focus
 /// (`docs/05-interaction.md`).
 ///
-/// That difference is this function's whole content: it calls the private
-/// `answering` predicate where `head` and `depth` call `offered`.
-///
 /// Muted slots are excluded by both, for the same reason: mute means
 /// *stop raising this*, and the beat is raising it.
 #[must_use]
