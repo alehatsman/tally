@@ -109,8 +109,7 @@ pub enum Error {
     /// A tmux command failed.
     Tmux {
         /// The tmux command that failed, read off the arguments rather
-        /// than passed alongside them. It used to be a `&'static str`
-        /// hand-copied from `args[0]` at 24 call sites: 24 chances to
+        /// than passed alongside them: a copy of `args[0]` is a chance to
         /// name the wrong command in an error nothing can check.
         what: String,
         /// What tmux said.
@@ -218,12 +217,11 @@ pub trait Jump {
 /// Position holds because nothing tally writes into a line can contain
 /// this: a ULID is alphanumeric, and a `page:row:col` address is fenced
 /// at the source — `src/config.rs::resolve_pages` refuses a page name
-/// containing `|` for exactly this reason. That fence was missing until
-/// review w7 F1, and a page named `a|b` shifted every field after the
-/// slot tag silently, because the session id is read *before* the
-/// damage. The one field tally does not own is `session_name`, which is
-/// why [`row`] refuses a line with a seventh field rather than reading a
-/// shifted one.
+/// containing `|` for exactly this reason. The one field tally does not
+/// own is `session_name`, which is why [`row`] refuses a line with a
+/// seventh field rather than reading a shifted one: a `|` in a value
+/// shifts everything after the slot tag, and the session id is read
+/// *before* the damage, so the jump still looks right.
 const FIELD: char = '|';
 
 /// Args listing every pane, whether it is dead, the two things tally
@@ -266,10 +264,7 @@ pub struct Place {
 /// **Above the addressable column range**, which is 1-8, so no pad can
 /// ever name it. A view parked here cannot wedge anything, is still
 /// reachable by id, and is brought home by the lazy path the next time
-/// its own pad is pressed.
-///
-/// `u16` because nothing stores a park index in a column's width, and
-/// every use of it was converting.
+/// its own pad is pressed — so it is a `u16`, not a column's `u8`.
 const PARK: u16 = 90;
 
 /// The session name for an absolute row: `r07`.
@@ -284,9 +279,9 @@ fn row_session(row: u8) -> String {
 /// The window an address names: the row session, then the index in it.
 ///
 /// **The window index *is* the column** — the central claim of this
-/// module, written out at four call sites and named at none of them
-/// until now. `u16` and not a [`Place`] because a parked squatter gets an
-/// index that is deliberately not a column ([`PARK`]).
+/// module, and the home for it. `u16` and not a [`Place`], because a
+/// parked squatter gets an index that is deliberately not a column
+/// ([`PARK`]).
 fn window_target(row: u8, index: u16) -> String {
     format!("{}:{index}", row_session(row))
 }
@@ -353,8 +348,7 @@ fn new_window_args(place: Place, session: &str, anchor_bin: &str, replace: bool)
 /// deliberately not a column.
 ///
 /// `replace` passes `-k`, and only ever after the occupant has been seen
-/// dead. It goes **before** the `-s` it is aimed with, which is where it
-/// was when it was an `insert(1, …)`.
+/// dead. It goes **before** the `-s` it is aimed with.
 fn move_window_args(pane: &str, row: u8, index: u16, replace: bool) -> Vec<String> {
     let mut args: Vec<String> = vec!["move-window".into()];
     if replace {
@@ -471,9 +465,8 @@ fn automatic_rename_off_args(pane: &str) -> Vec<String> {
 /// Args naming a view's window, which is what a tab reads as.
 ///
 /// Takes the title rather than deriving one, so the window name and the
-/// pane title cannot drift apart — [`Tmux::tag`] computes it once and
-/// hands the same string to both. Neither held that by construction when
-/// each called [`pane_title`] itself.
+/// pane title cannot drift apart: [`Tmux::tag`] computes it once and
+/// hands the same string to both.
 fn rename_window_args(pane: &str, title: &str) -> Vec<String> {
     vec![
         "rename-window".into(),
@@ -594,10 +587,8 @@ fn kill_pane_args(pane: &str) -> Vec<String> {
 
 /// Args listing every attached client and the pane it is looking at.
 ///
-/// In a function like every other command here. It was the one whose
-/// arguments were inlined at the call site, and therefore the one
-/// nothing pinned — an unmarked exception to the rule this section is
-/// named for.
+/// In a function like every other command here, so the arguments are
+/// pinned by a test like every other command's.
 fn list_clients_args() -> Vec<String> {
     vec![
         "list-clients".into(),
@@ -637,10 +628,9 @@ fn pane_title(place: Place, at: &str, session: &str) -> String {
 
 /// The pane a view is in, as one `list-panes` line describes it.
 ///
-/// **Was `View`**, which collided with [`crate::model::View`] — the 8-row
-/// window onto the address space — in a crate where both senses of the
-/// word are load-bearing (`docs/08-daemon.md`). A view is the
-/// concept ([15](../docs/06-views.md)); this is the pane holding one.
+/// Not `View`: that is [`crate::model::View`], the 8-row window onto the
+/// address space. A view is the concept (`docs/06-views.md`); this is the
+/// pane holding one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Pane<'a> {
     /// tmux's id for it, `%N`.

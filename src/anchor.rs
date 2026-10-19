@@ -189,10 +189,8 @@ impl std::error::Error for Error {}
 
 impl From<std::io::Error> for Error {
     /// Every io failure in this module is the same fact: anchord would
-    /// not talk. The conversion was written out at seventeen call sites
-    /// before it was written once here; a site that ever wants an io
-    /// error to mean something else has to say so with `map_err`, which
-    /// is the right way round.
+    /// not talk. A site that ever wants an io error to mean something
+    /// else has to say so with `map_err`, which is the right way round.
     fn from(e: std::io::Error) -> Self {
         Self::Unreachable(e.to_string())
     }

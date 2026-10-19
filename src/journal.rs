@@ -854,14 +854,10 @@ mod tests {
         assert_eq!(Journal::resumed(&dir, &Pages::default()).asking(), 0);
     }
 
-    /// [`Journal::open`] resumes *before* it opens the sink, and the
-    /// functional-update syntax it used to be written with ran those two
-    /// in the opposite order. It passes under either order today, because
-    /// `Sink::open` only appends and the file it creates is empty exactly
-    /// when `resumed` would have found nothing — it is the guard that
-    /// fails the day `Sink::open` stops being append-only, which is the
-    /// day the old order would have eaten the history. Nothing opened a
-    /// `Journal` over a populated file before this.
+    /// [`Journal::open`] resumes *before* it opens the sink. This passes
+    /// under either order today, because [`Sink::open`] only appends — it
+    /// is the guard that fails the day it stops being append-only, which
+    /// is the day the wrong order eats the history.
     #[test]
     fn an_opened_journal_resumes_the_file_it_appends_to() {
         let path = std::env::temp_dir().join("tally-open-resumes.jsonl");
