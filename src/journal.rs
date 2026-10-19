@@ -30,12 +30,8 @@ use crate::slot::{Pages, Slot};
 
 /// Remembers which slots were asking, so only changes are written.
 ///
-/// It owns the file it writes to. The two used to be separate — a
-/// `Journal` here and an `Option<File>` beside it, threaded through two
-/// helpers as a parameter — which meant the rule that a write error
-/// retires the sink was implemented twice, and the second copy was one
-/// `flush` away from losing the transitions the journal exists to count
-/// (`docs/08-daemon.md`).
+/// It owns the file it writes to, so [`Sink`]'s rule is implemented once
+/// rather than at each call site (`docs/08-daemon.md`).
 #[derive(Debug, Default)]
 pub struct Journal {
     /// slot -> (session id, when it started asking)
@@ -46,10 +42,8 @@ pub struct Journal {
 
 /// The append handle, and the one rule about it.
 ///
-/// **A write that fails retires the sink and the daemon carries on.** A
-/// grid that lights up matters more than a log, which is the policy that
-/// was already here; what is new is that it is written down once instead
-/// of at each call site.
+/// **A write that fails retires the sink and the daemon carries on**: a
+/// grid that lights up matters more than a log.
 ///
 /// Unbuffered on purpose, and the flush is part of the rule rather than
 /// the caller's job: this is a few lines a day, and a buffer would hold
@@ -126,24 +120,16 @@ impl Journal {
     /// has no history and that is the normal case, not an exception.
     ///
     /// **Only** a missing file. Every other failure is said out loud, the
-    /// same policy [`Sink::open`] follows for the write half. This arm
-    /// used to be `read_to_string`'s whole `Err`, so invalid UTF-8,
-    /// `EACCES`, `EISDIR` and `EIO` all read back as "first run" without
-    /// a word — and because [`Self::open`] then keeps *appending* to that
-    /// same file, the unreadable file is never replaced. It grows, and
-    /// every restart re-raises every slot that is still asking: the
-    /// duplicate rising edge this module exists to prevent, except now
-    /// once per restart. The F0 number is computed from this file, so a
-    /// silent read failure does not lose the measurement, it falsifies
-    /// it.
+    /// same policy [`Sink::open`] follows for the write half: a silent
+    /// read failure is not a lost measurement but a false one, because
+    /// [`Self::open`] goes on appending to a file it could not read and
+    /// every restart re-raises every slot still asking.
     ///
     /// Bytes rather than a `String`, so a torn write that stopped inside
-    /// a multi-byte sequence costs one line instead of the file: `Sink`
-    /// is unbuffered, a short kernel write copies bytes and not
-    /// characters, and `read_to_string` refuses the whole file for one
-    /// bad byte anywhere in it. `from_utf8_lossy` turns that tail into a
-    /// line `serde_json` rejects, which is the path [`Self::replay`]
-    /// already documents and tests.
+    /// a multi-byte sequence costs one line instead of the file —
+    /// `read_to_string` refuses a whole file for one bad byte anywhere in
+    /// it. `from_utf8_lossy` turns that tail into a line `serde_json`
+    /// rejects, which is the path [`Self::replay`] already tests.
     #[must_use]
     pub fn resumed(path: &Path, pages: &Pages) -> Self {
         let text = match std::fs::read(path) {
@@ -165,12 +151,10 @@ impl Journal {
     /// unopenable one is a daemon that still lights the grid.
     ///
     /// Written as two statements rather than a functional update, because
-    /// the order above is load-bearing and the functional-update syntax
-    /// silently provides the reverse: Rust evaluates field initialisers
-    /// before the base, so `sink: Sink::open(path), ..Self::resumed(..)`
-    /// created the file *before* reading it. Harmless while `Sink::open`
-    /// only ever appends; a future `truncate(true)` there would destroy
-    /// the history between the comment and the code.
+    /// Rust evaluates field initialisers before the base: `sink:
+    /// Sink::open(path), ..Self::resumed(..)` creates the file *before*
+    /// reading it. Harmless while [`Sink::open`] only ever appends; a
+    /// future `truncate(true)` there would destroy the history.
     #[must_use]
     pub fn open(path: &Path, pages: &Pages) -> Self {
         let mut journal = Self::resumed(path, pages);
@@ -243,10 +227,8 @@ impl Journal {
     /// reported there ([`Sink`]), and there has never been a caller that
     /// would do anything else with one.
     ///
-    /// `self` is destructured rather than passed whole so the map and
-    /// the sink are borrowed separately — the map is what the lines are
-    /// computed from, the sink is where they land, and nothing here
-    /// needs both at once.
+    /// `self` is destructured rather than passed whole so the map and the
+    /// sink are borrowed separately.
     pub fn tick(&mut self, resolved: &BTreeMap<Slot, Resolved>, pages: &Pages, now: i64) {
         let Self { asking, sink } = self;
         sink.write(|out| Self::transitions(asking, resolved, pages, now, out));
@@ -290,10 +272,7 @@ impl Journal {
         // Stopped asking: answered, exited, muted, or the pad went empty.
         //
         // Collected rather than iterated because the loop below mutates
-        // `asking_now`. The membership test is a lookup in `resolved`,
-        // which is keyed by the same `Slot`; it used to build a second
-        // `Vec` of the still-asking slots and `contains` it once per
-        // entry, which is a linear scan inside a loop.
+        // `asking_now`.
         let done: Vec<Slot> = asking_now
             .keys()
             .filter(|s| {
@@ -390,19 +369,16 @@ fn nav_next(
 
 /// Record a press of a pad that went somewhere.
 ///
-/// **The gesture the product exists for, and the one the journal did not
-/// write down** ([#43](https://github.com/alehatsman/tally/issues/43)).
-/// `next` and `back` were recorded from the start; a plain tap was not,
-/// so the file held the ambers that were *raised* and almost none
-/// of the ones that were *answered* — and the gate
-/// (`docs/04-signals.md`) asks how many of the raised ones you went to.
+/// **The gesture the product exists for**, and the one the journal did
+/// not write down until
+/// [#43](https://github.com/alehatsman/tally/issues/43): the gate
+/// (`docs/04-signals.md`) asks how many raised ambers you went to, and
+/// most of them are answered by a plain tap rather than by `►`.
 ///
 /// `waited_ms` is `None` when the slot was **not asking**, and that is the
-/// field the whole line is for rather than a missing value. A tap is not
-/// `►`: it can land on a pad that wants nothing, and *going to look at
-/// something quiet* and *answering an amber* are the two things the week
-/// has to tell apart. Present means you answered one; absent means you
-/// went somewhere nothing was waiting.
+/// field the whole line is for rather than a missing value: present means
+/// you answered an amber, absent means you went to look at something
+/// quiet.
 ///
 /// # Errors
 /// Whatever the sink returns.
@@ -448,7 +424,7 @@ fn nav_back(out: &mut impl Write, now: i64, ok: bool) -> io::Result<()> {
 /// [`Asked`] and [`Answered`] do, and deliberately: the three nav shapes
 /// share a `kind`, a `via` discriminator and a reader, so an absent field
 /// is read as "that button carries no slot" rather than as a second
-/// format. The state shapes share none of that. See [`Answered`].
+/// format. A rise and a fall share only the slot.
 #[derive(Debug, Serialize)]
 struct Nav<'a> {
     ms: i64,
@@ -513,11 +489,8 @@ struct Asked<'a> {
 ///
 /// Its own struct rather than `Option` fields on [`Asked`], because the
 /// two shapes genuinely differ: `source` and `title` have no meaning for
-/// a transition *out* of asking, and emitting `"source":null` here would
-/// be a third format rather than an honest one.
-///
-/// [`Nav`] goes the other way on purpose. Three button presses share a
-/// `kind`, a `via` and a reader; a rise and a fall share only the slot.
+/// a transition *out* of asking. [`Nav`] goes the other way on purpose,
+/// and says why.
 #[derive(Debug, Serialize)]
 struct Answered<'a> {
     ms: i64,
@@ -606,8 +579,7 @@ mod tests {
         Slot { page, row, col }
     }
 
-    /// A navigation line records a press, not a slot. Reading one as a
-    /// transition would invent a rise nobody made.
+    /// Reading a nav line as a transition would invent a rise nobody made.
     #[test]
     fn a_nav_line_is_not_a_state_transition() {
         let pages = Pages::default();
