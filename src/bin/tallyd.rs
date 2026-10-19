@@ -872,33 +872,32 @@ fn sweep(tmux: &Tmux, sessions: &[tally::anchor::Session], pages: &Pages) {
     );
 }
 
-fn main() -> ExitCode {
-    install_handlers();
-
+/// Take the single-instance lock, or report who holds it.
+///
+/// `None` is "another instance is running", which `main` turns into a failure
+/// exit -- not an error worth a `Result`, because there is exactly one caller
+/// and exactly one thing it can do about it.
+fn acquire_lock() -> Option<Lock> {
     let lock_path = Lock::default_path();
-    let _lock = match Lock::acquire(&lock_path) {
-        Ok(lock) => lock,
+    match Lock::acquire(&lock_path) {
+        Ok(lock) => Some(lock),
         Err(e) => {
             eprintln!(
                 "tallyd: another instance holds {}: {e}",
                 lock_path.display()
             );
-            return ExitCode::FAILURE;
+            None
         }
-    };
+    }
+}
 
-    let anchor = Client::new(Client::default_path());
-    eprintln!("tallyd: anchord at {}", anchor.path().display());
-
-    // No device is a normal state, not a failure. `tallyd` is started by
-    // launchd and may well come up before the Launchpad is plugged in --
-    // and the thing it is watching is anchord, which it can do blind.
-    let mut link = Link::new();
-
-    // A broken config is reported and then ignored, for the reason
-    // `tally::config`'s module header gives in full: the watching is the
-    // half that is load-bearing, and refusing to start would take it away
-    // to punish a mistake in the spawning.
+/// Load the page config, falling back to defaults.
+///
+/// A broken config is reported and then ignored, for the reason
+/// `tally::config`'s module header gives in full: the watching is the half
+/// that is load-bearing, and refusing to start would take it away to punish a
+/// mistake in the spawning.
+fn load_pages() -> Pages {
     let config_path = config::default_path();
     let pages = config::load(&config_path).unwrap_or_else(|e| {
         eprintln!("tallyd: {}: {e}", config_path.display());
@@ -910,6 +909,45 @@ fn main() -> ExitCode {
         pages.len(),
         config_path.display()
     );
+    pages
+}
+
+/// A reply that says Live mode means the Launchpad was power-cycled under us.
+/// Put it back into programmer mode and repaint from scratch.
+fn handle_reply(reply: &[u8], link: &mut Link) {
+    if tally::surface::sysex::programmer_mode_from(reply) == Some(false) {
+        eprintln!("tallyd: Launchpad came back in Live mode, reprogramming");
+        if let Some(e) = link.device().and_then(|d| d.reprogram().err()) {
+            eprintln!("tallyd: {e}");
+        }
+        link.repaint = true;
+    }
+}
+
+/// anchord stopped answering. Say so once per outage, not once per tick.
+fn report_unreachable(e: &impl std::fmt::Display, reachable: &mut bool) {
+    if *reachable {
+        eprintln!("tallyd: {e}");
+    }
+    *reachable = false;
+}
+
+fn main() -> ExitCode {
+    install_handlers();
+
+    let Some(_lock) = acquire_lock() else {
+        return ExitCode::FAILURE;
+    };
+
+    let anchor = Client::new(Client::default_path());
+    eprintln!("tallyd: anchord at {}", anchor.path().display());
+
+    // No device is a normal state, not a failure. `tallyd` is started by
+    // launchd and may well come up before the Launchpad is plugged in --
+    // and the thing it is watching is anchord, which it can do blind.
+    let mut link = Link::new();
+
+    let pages = load_pages();
 
     let mut chords = Chords::default();
     let watchers = Watchers::new(anchor.clone());
@@ -1074,15 +1112,7 @@ fn main() -> ExitCode {
                 }
                 Event::Reply(r) => {
                     link.heard(elapsed);
-                    // It answered Live mode: it was power-cycled under
-                    // us. Put it back and repaint from scratch.
-                    if tally::surface::sysex::programmer_mode_from(&r) == Some(false) {
-                        eprintln!("tallyd: Launchpad came back in Live mode, reprogramming");
-                        if let Some(e) = link.device().and_then(|d| d.reprogram().err()) {
-                            eprintln!("tallyd: {e}");
-                        }
-                        link.repaint = true;
-                    }
+                    handle_reply(&r, &mut link);
                 }
             }
         }
@@ -1107,12 +1137,9 @@ fn main() -> ExitCode {
                     }
                 }
                 Err(e) => {
-                    if reachable {
-                        eprintln!("tallyd: {e}");
-                    }
                     // Deliberately keep the previous `sessions`: the grid
                     // freezes rather than lying about what is running.
-                    reachable = false;
+                    report_unreachable(&e, &mut reachable);
                 }
             }
             // Both of these are pure functions of state that only moves
