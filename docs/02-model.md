@@ -131,7 +131,6 @@ look.
 | label | holds |
 |---|---|
 | `tl.slot` | `"work:3:5"` — page, row, col. The binding |
-| `tl.spec` | `"claude"` — which spec spawned it |
 | `tl.mute` | `"1"` — this slot never raises attention |
 | `tl.attention` | `"1"` — a hook declared it is waiting |
 | `tl.killed` | `"1"` — tally ended it on purpose, so the pad is dark |
@@ -161,10 +160,9 @@ interpreted by the daemon. What it buys:
 The cost is one unfiltered `list` per reconcile tick, which is the call
 tallyd is making anyway ([01](01-scope.md#what-tally-asks-of-anchor-and-what-it-must-not)).
 
-## Specs live in a file
+## Pages are named in a file
 
-`~/.config/tally/slots.toml`. A spec describes a slot that may have never
-run, so there is no session to hang it on.
+`~/.config/tally/slots.toml`, and it holds one table.
 
 ```toml
 # Order is the layout: the first page's rows come first in the stack.
@@ -172,50 +170,32 @@ run, so there is no session to hang it on.
 name = "work"
 [[page]]
 name = "infra"
-
-[[slot]]
-at   = "work:3:5"
-spec = "claude"
-cwd  = "~/projects/futurumlab/anchor"
-
-[[spec]]
-name = "claude"
-argv = ["claude"]
-login_shell = true
 ```
 
-Three tables, each answering a different question: `[[page]]` is *how an
-address is spelled*, `[[spec]]` is *what to run*, `[[slot]]` is *what is
-where*. A spec is reused across slots and a slot is a position, so they
-cannot be one table.
+**It is optional, and in practice it does not exist.** No file is eight
+unnamed pages (`1`–`8`), and the grid lights up for anything a shell script
+labelled.
 
-**Everything in this file is optional**, and in practice it is empty. A
-`slots.toml` that does not exist is eight unnamed pages (`1`–`8`) and no
-specs: the grid still lights up for anything a shell script labelled, and
-only *spawning from an empty pad* needs the file.
+### There used to be three tables
 
-That is not a hypothetical. This file is **the less-used of the two ways to
-claim a pad**, because it has to name a directory in advance — a prediction
-about work you have not done. The other way is a shell standing in that
-directory: `tally spawn 3:5` ([07](07-cli.md)). On the machine this runs on,
-`tallyd` loads *8 pages, 0 slots*. ([D8](10-decisions.md#d8--slotstoml-as-the-spawn-path))
+`[[spec]]` was *what to run* and `[[slot]]` was *what is where*, and
+pressing a dark pad resolved one against the other and spawned it. All of
+it is cut (#40). What killed it was not neglect but a measurement: **cwd is
+the one fact a config file cannot know in advance and a shell always
+knows**, so declaring a slot meant predicting work you had not done yet.
+`~/.config/tally/` was empty, `tallyd` loaded *8 pages, 0 slots*, and the
+only two spawn paths in daily use — `tally spawn` and the `>` column —
+both take their directory from something that already knows it: a shell,
+or the row's newest session ([D8](10-decisions.md#d8--slotstoml-as-the-spawn-path),
+[07](07-cli.md)).
 
-### What a spawn actually sends
+Gone with them: the `tl.spec` label, the `[[slot]]`/`[[spec]]` tables, and
+**a bare tap on a dark pad does nothing at all** — there is no longer an
+anchord call anywhere on that path. The scope bullet it answered is
+reworded in [01](01-scope.md).
 
-`slots.toml` is tally's vocabulary; `create` is anchor's. The translation is
-three lines and all three are places to be wrong:
-
-| `slots.toml` | `create` | note |
-|---|---|---|
-| `argv = ["claude", "--x"]` | `command: "claude"`, `args: ["--x"]` | anchor splits them; we hold them together because that is how you write a command |
-| `cwd = "~/p/anchor"` | `cwd: "/Users/…/p/anchor"` | **tally expands `~`, not anchord.** `~` is a shell's idea, and nothing between the config file and the PTY is a shell |
-| `env = { … }` | `env` | passed through; anchor never echoes it back |
-
-An empty `argv` is a config error, not a spawn of the empty string.
-
-`tl.spec` is a **name, resolved against the file you have now** — not a copy
-of the spec. Rename or delete the `[[spec]]` and the name points at nothing,
-which is the only answer available: there is nothing left to run.
+A `[[spec]]` or `[[slot]]` table left in an old file is now an unknown
+key, so it is **refused loudly** rather than ignored.
 
 ### Size is not ours
 

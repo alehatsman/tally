@@ -3,13 +3,23 @@
 tally is **a control surface for anchor sessions**. The closed list:
 
 1. **slot** — a durable binding from one pad to one thing you run
-2. **spawn** — claim an empty slot, get a session
+2. **spawn** — from a shell that knows the folder, or from the row that
+   already does: claim an empty slot, get a session
 3. **jump** — press a bound slot, end up looking at its terminal
 4. **state** — the pad's colour says what the session is doing
 5. **attention** — a session that needs an answer says so, loudly
 6. **a few destructive gestures** — kill, forget, move — behind a deliberate chord
 
 Six bullets. Everything not on that list belongs somewhere else.
+
+**Bullet 2 used to read *press an unbound slot, get a session*,** and it
+was reworded rather than kept, because the gesture it described was cut
+(#40). The two spawn paths that exist both take their directory from
+something that already knows it — a shell (`tally spawn`), or the row's
+newest session (the `>` column). A config file could only predict it. The
+word the bullet lost is the one the measurement took: **a bare tap on a
+dark pad now does nothing**
+([02](02-model.md#there-used-to-be-three-tables)).
 
 ## What it is
 

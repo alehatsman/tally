@@ -10,7 +10,6 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::anchor::Session;
 use crate::chord::Action;
-use crate::config::{Config, Launch};
 use crate::effect::{effect, Pad};
 use crate::render::{self, Health};
 use crate::signal::{slot_state, Derived, SessionState, SlotState};
@@ -96,8 +95,6 @@ pub struct Resolved {
     /// slot renders the state *underneath* its attention, so muting is
     /// invisible until you hold the mute button and ask.
     pub muted: bool,
-    /// The spec name from `tl.spec`, if it was spawned with one.
-    pub spec: Option<String>,
     /// The conversation it is running, from `tl.claude`.
     ///
     /// Carried here so the view can be tagged with it on a jump, which is
@@ -163,7 +160,6 @@ pub fn resolve(
                 title,
                 state,
                 muted: session.muted(),
-                spec: session.labels.get(crate::anchor::LABEL_SPEC).cloned(),
                 claude: session.claude().map(ToOwned::to_owned),
             },
         );
@@ -298,8 +294,8 @@ pub fn inherit(sessions: &[Session], pages: &Pages, at: Slot) -> Option<Inherit>
     })
 }
 
-/// The grid, a config and the rows behind it — everything it takes to
-/// answer "what is this pad" for any of the 512 addresses.
+/// The grid and the rows behind it — everything it takes to answer
+/// "what is this pad" for any of the 512 addresses.
 ///
 /// **The one place a [`Pad`] is built.** The preview asks it 64 times a
 /// frame and [`crate::act::Context`] asks it once per press, and because
@@ -307,11 +303,12 @@ pub fn inherit(sessions: &[Session], pages: &Pages, at: Slot) -> Option<Inherit>
 /// they cannot answer differently. They used to: the renderer counted any
 /// `tl.spec` label, the press counted only one that resolved to a
 /// declared `[[spec]]`, and a pad whose spec had been renamed went green
-/// under a held respawn and then did nothing.
+/// under a held respawn and then did nothing. The spec system is cut
+/// (#40) and that particular disagreement is gone with it; the rule it
+/// cost is not.
 #[derive(Debug, Clone, Copy)]
 pub struct Pads<'a> {
     grid: &'a BTreeMap<Slot, Resolved>,
-    config: &'a Config,
     purgeable: &'a BTreeMap<Slot, Vec<String>>,
     /// The pad picked up under a held [`Action::Move`], if any.
     ///
@@ -322,8 +319,8 @@ pub struct Pads<'a> {
 }
 
 impl<'a> Pads<'a> {
-    /// Borrow a resolved grid, the config behind it, and the rows anchord
-    /// would forget ([`purgeable`]).
+    /// Borrow a resolved grid and the rows anchord would forget
+    /// ([`purgeable`]).
     /// `hand` is the pad picked up under a held [`Action::Move`]. It is a
     /// parameter rather than a setter because a [`Pads`] built without it
     /// answers [`effect`] wrongly for every pad on the grid, and a
@@ -331,13 +328,11 @@ impl<'a> Pads<'a> {
     /// drifted apart the first time.
     pub fn new(
         grid: &'a BTreeMap<Slot, Resolved>,
-        config: &'a Config,
         purgeable: &'a BTreeMap<Slot, Vec<String>>,
         hand: Option<Slot>,
     ) -> Self {
         Self {
             grid,
-            config,
             purgeable,
             hand,
         }
@@ -354,25 +349,6 @@ impl<'a> Pads<'a> {
         self.grid
     }
 
-    /// What to spawn here: the `[[slot]]` entry, or failing that the spec
-    /// named by the `tl.spec` label of whatever last ran here.
-    ///
-    /// The label is the fallback rather than the other way round because
-    /// the file is what you edited most recently and meant most
-    /// deliberately. The label is how a session spawned from a shell —
-    /// `anchor create --label tl.spec=claude` — stays respawnable without
-    /// appearing in `slots.toml` at all.
-    ///
-    /// A label naming a spec the file no longer has resolves to `None`,
-    /// which is the honest answer and the one the preview has to show:
-    /// there is nothing left to run.
-    pub fn launch(&self, at: Slot) -> Option<&'a Launch> {
-        self.config.launch(at).or_else(|| {
-            let spec = self.grid.get(&at)?.spec.as_deref()?;
-            self.config.by_spec_name(spec)
-        })
-    }
-
     /// Every session anchord would forget on this pad, newest first.
     /// Empty for a pad with nothing behind it.
     pub fn rows(&self, at: Slot) -> &'a [String] {
@@ -385,7 +361,6 @@ impl<'a> Pads<'a> {
         Pad {
             state: r.map(|r| r.state),
             muted: r.is_some_and(|r| r.muted),
-            spec: self.launch(at).is_some(),
             purgeable: !self.rows(at).is_empty(),
             in_hand: self.hand == Some(at),
         }
@@ -474,15 +449,10 @@ impl View<'_> {
 }
 
 /// Build the frame, resolving and counting purgeable rows on the way.
-pub fn frame(
-    sessions: &[Session],
-    derived: &BTreeMap<String, Derived>,
-    config: &Config,
-    view: &View<'_>,
-) -> Frame {
+pub fn frame(sessions: &[Session], derived: &BTreeMap<String, Derived>, view: &View<'_>) -> Frame {
     let resolved = resolve(sessions, derived, view.pages, view.now);
     let rows = purgeable(sessions, view.pages);
-    frame_from(&Pads::new(&resolved, config, &rows, view.hand), view)
+    frame_from(&Pads::new(&resolved, &rows, view.hand), view)
 }
 
 /// Build the frame from pads already assembled, so a caller that needs
@@ -663,16 +633,12 @@ mod tests {
 
     static NO_BUTTONS: std::sync::LazyLock<BTreeSet<Action>> =
         std::sync::LazyLock::new(BTreeSet::new);
-    /// No `slots.toml`. These tests are about what a session paints, not
-    /// about what an empty pad could spawn; the pads that need a spec
-    /// build their own config.
-    static NO_SPECS: std::sync::LazyLock<Config> = std::sync::LazyLock::new(Config::default);
 
     #[test]
     fn a_labelled_session_lights_its_pad() {
         let pages = Pages::default();
         let sessions = [session("a", "running", Some("1:3:5"))];
-        let f = frame(&sessions, &BTreeMap::new(), &NO_SPECS, &view(&pages));
+        let f = frame(&sessions, &BTreeMap::new(), &view(&pages));
         assert_eq!(f.get(Button::Grid { row: 3, col: 5 }), Cell::Static(GREEN));
     }
 
@@ -681,9 +647,9 @@ mod tests {
     fn a_session_with_no_slot_label_is_not_on_the_grid() {
         let pages = Pages::default();
         let sessions = [session("teleport-owned", "running", None)];
-        let f = frame(&sessions, &BTreeMap::new(), &NO_SPECS, &view(&pages));
+        let f = frame(&sessions, &BTreeMap::new(), &view(&pages));
         assert_eq!(f, {
-            let mut empty = frame(&[], &BTreeMap::new(), &NO_SPECS, &view(&pages));
+            let mut empty = frame(&[], &BTreeMap::new(), &view(&pages));
             empty.set(Button::Logo, f.get(Button::Logo));
             empty
         });
@@ -784,7 +750,7 @@ mod tests {
     fn a_held_modifier_recolours_the_grid() {
         let pages = Pages::default();
         let sessions = [session("a", "running", Some("1:3:5"))];
-        let resting = frame(&sessions, &BTreeMap::new(), &NO_SPECS, &view(&pages));
+        let resting = frame(&sessions, &BTreeMap::new(), &view(&pages));
         assert_eq!(
             resting.get(Button::Grid { row: 3, col: 5 }),
             Cell::Static(GREEN)
@@ -794,7 +760,7 @@ mod tests {
             held: Some(Action::Stop),
             ..view(&pages)
         };
-        let f = frame(&sessions, &BTreeMap::new(), &NO_SPECS, &held);
+        let f = frame(&sessions, &BTreeMap::new(), &held);
         assert_eq!(
             f.get(Button::Grid { row: 3, col: 5 }),
             Cell::Static(RED),
@@ -1027,7 +993,7 @@ mod tests {
         let pages = Pages::default();
         for bad in ["1:9:1", "nope:1:1", "garbage"] {
             let sessions = [session("x", "running", Some(bad))];
-            let f = frame(&sessions, &BTreeMap::new(), &NO_SPECS, &view(&pages));
+            let f = frame(&sessions, &BTreeMap::new(), &view(&pages));
             // Only the controls. Named rather than counted, so a button
             // that starts lighting up says which one it is instead of
             // moving a number: `▼` (there is somewhere to scroll),
@@ -1065,7 +1031,7 @@ mod tests {
         for mode in Action::all() {
             let mut v = view(&pages);
             v.mode = mode;
-            let f = frame(&sessions, &BTreeMap::new(), &NO_SPECS, &v);
+            let f = frame(&sessions, &BTreeMap::new(), &v);
             assert_eq!(
                 f.get(Button::Action(8)),
                 render::action(Some(mode), false),
@@ -1089,7 +1055,7 @@ mod tests {
                 let mut v = view(&pages);
                 v.mode = mode;
                 v.pressed = &held;
-                let f = frame(&sessions, &BTreeMap::new(), &NO_SPECS, &v);
+                let f = frame(&sessions, &BTreeMap::new(), &v);
                 assert_eq!(
                     f.get(Button::Action(8)),
                     Cell::Static(WHITE),
@@ -1149,7 +1115,7 @@ mod tests {
             overview: true,
             ..view(&pages)
         };
-        let f = frame(&sessions, &BTreeMap::new(), &NO_SPECS, &v);
+        let f = frame(&sessions, &BTreeMap::new(), &v);
 
         assert_eq!(
             f.get(Button::Grid { row: 2, col: 5 }),
@@ -1186,7 +1152,7 @@ mod tests {
             overview: true,
             ..view(&pages)
         };
-        let f = frame(&sessions, &BTreeMap::new(), &NO_SPECS, &v);
+        let f = frame(&sessions, &BTreeMap::new(), &v);
         assert_eq!(f.get(Button::Grid { row: 1, col: 1 }), Cell::Static(GREEN));
     }
 
@@ -1202,7 +1168,7 @@ mod tests {
             hand: None,
             ..view(&pages)
         };
-        let f = frame(&sessions, &BTreeMap::new(), &NO_SPECS, &v);
+        let f = frame(&sessions, &BTreeMap::new(), &v);
         assert_eq!(f.get(Button::Grid { row: 1, col: 1 }), Cell::Static(GREEN));
         assert_eq!(f.get(Button::Top(5)), Cell::Static(DARK_GREY), "not held");
     }
@@ -1215,7 +1181,7 @@ mod tests {
         newest.state = "running".to_owned();
         let mut older = session("old", "exited", Some("1:1:1"));
         older.exit_code = Some(1);
-        let f = frame(&[newest, older], &BTreeMap::new(), &NO_SPECS, &view(&pages));
+        let f = frame(&[newest, older], &BTreeMap::new(), &view(&pages));
         assert_eq!(
             f.get(Button::Grid { row: 1, col: 1 }),
             Cell::Static(GREEN),
@@ -1229,7 +1195,7 @@ mod tests {
         let pages = Pages::default();
         let mut done = session("done", "exited", Some("1:2:2"));
         done.exit_code = Some(0);
-        let f = frame(&[done], &BTreeMap::new(), &NO_SPECS, &view(&pages));
+        let f = frame(&[done], &BTreeMap::new(), &view(&pages));
         assert_eq!(f.get(Button::Grid { row: 2, col: 2 }), Cell::Off);
     }
 
@@ -1238,7 +1204,7 @@ mod tests {
         let pages = Pages::default();
         let mut failed = session("bad", "exited", Some("1:2:2"));
         failed.exit_code = Some(1);
-        let f = frame(&[failed], &BTreeMap::new(), &NO_SPECS, &view(&pages));
+        let f = frame(&[failed], &BTreeMap::new(), &view(&pages));
         assert_ne!(f.get(Button::Grid { row: 2, col: 2 }), Cell::Off);
     }
 
@@ -1246,7 +1212,7 @@ mod tests {
     fn only_the_current_page_is_on_the_grid() {
         let pages = Pages::default();
         let sessions = [session("a", "running", Some("2:3:5"))];
-        let f = frame(&sessions, &BTreeMap::new(), &NO_SPECS, &view(&pages));
+        let f = frame(&sessions, &BTreeMap::new(), &view(&pages));
         assert_eq!(
             f.get(Button::Grid { row: 3, col: 5 }),
             Cell::Off,
@@ -1281,7 +1247,7 @@ mod tests {
                 offset,
                 ..view(&pages)
             };
-            let f = frame(&sessions, &BTreeMap::new(), &NO_SPECS, &v);
+            let f = frame(&sessions, &BTreeMap::new(), &v);
             let lit: Option<u8> =
                 (1..=8).find(|&row| f.get(Button::Grid { row, col: 5 }) != Cell::Off);
             assert_eq!(lit, expected, "offset {offset}");
@@ -1301,7 +1267,7 @@ mod tests {
             offset: 7,
             ..view(&pages)
         };
-        let f = frame(&sessions, &BTreeMap::new(), &NO_SPECS, &v);
+        let f = frame(&sessions, &BTreeMap::new(), &v);
         assert_ne!(f.get(Button::Grid { row: 1, col: 1 }), Cell::Off, "1:8:1");
         assert_ne!(f.get(Button::Grid { row: 2, col: 1 }), Cell::Off, "2:1:1");
     }
@@ -1361,7 +1327,7 @@ mod tests {
             offset: 0,
             ..view(&pages)
         };
-        let f = frame(&sessions, &derived, &NO_SPECS, &v);
+        let f = frame(&sessions, &derived, &v);
         assert_eq!(f.get(Button::Logo), Cell::Pulse(AMBER));
     }
 
@@ -1373,7 +1339,6 @@ mod tests {
         let top = frame(
             &[],
             &BTreeMap::new(),
-            &NO_SPECS,
             &View {
                 offset: 0,
                 ..view(&pages)
@@ -1385,7 +1350,6 @@ mod tests {
         let bottom = frame(
             &[],
             &BTreeMap::new(),
-            &NO_SPECS,
             &View {
                 offset: slot::MAX_OFFSET,
                 ..view(&pages)
@@ -1406,7 +1370,7 @@ mod tests {
             queued: 3,
             ..view(&pages)
         };
-        let f = frame(&sessions, &BTreeMap::new(), &NO_SPECS, &v);
+        let f = frame(&sessions, &BTreeMap::new(), &v);
         for index in 7..=crate::surface::TOP_BUTTONS {
             assert_eq!(f.get(Button::Top(index)), Cell::Off, "Top({index})");
         }
@@ -1427,7 +1391,7 @@ mod tests {
             now: NOW + 5_000,
             ..view(&pages)
         };
-        let f = frame(&sessions, &derived, &NO_SPECS, &v);
+        let f = frame(&sessions, &derived, &v);
 
         // The logo still reports it. The top row no longer says *which*
         // page — `►` crosses pages, so you do not navigate to attention
@@ -1448,7 +1412,7 @@ mod tests {
             now: NOW + 5_000,
             ..view(&pages)
         };
-        let f = frame(&sessions, &derived, &NO_SPECS, &v);
+        let f = frame(&sessions, &derived, &v);
         assert_eq!(
             f.get(Button::Logo),
             Cell::Off,
@@ -1466,7 +1430,7 @@ mod tests {
             anchord_reachable: false,
             ..view(&pages)
         };
-        let f = frame(&sessions, &BTreeMap::new(), &NO_SPECS, &v);
+        let f = frame(&sessions, &BTreeMap::new(), &v);
         assert_eq!(f.get(Button::Logo), Cell::Static(DARK_RED));
         assert_eq!(
             f.get(Button::Grid { row: 3, col: 5 }),
@@ -1501,9 +1465,9 @@ mod tests {
             art: true,
             ..view(&pages)
         };
-        let f = frame(&sessions, &BTreeMap::new(), &NO_SPECS, &playing);
+        let f = frame(&sessions, &BTreeMap::new(), &playing);
         assert_eq!(f.get(Button::Top(6)), render::arts(true));
-        let resting = frame(&sessions, &BTreeMap::new(), &NO_SPECS, &view(&pages));
+        let resting = frame(&sessions, &BTreeMap::new(), &view(&pages));
         assert_eq!(resting.get(Button::Top(6)), render::arts(false));
         assert_ne!(f.get(Button::Top(6)), resting.get(Button::Top(6)));
     }

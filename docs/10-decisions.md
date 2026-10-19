@@ -299,8 +299,15 @@ That also made the respawn chord dead on every pad: it required a resolvable
 spec, so its preview could never light and its press could never fire. Zero
 presses in a day, and it *could not* have had any.
 
-**Now:** `tally spawn` is the main path, taking its directory from `$PWD`.
-The file is still supported and still optional.
+**Now:** `tally spawn` is the main path, taking its directory from `$PWD`,
+and the `>` column is the other, taking it from the row.
+
+**Since (#40):** the spawn half of the file is **cut**, not merely unused.
+`[[slot]]`, `[[spec]]`, the `tl.spec` label and the dark-pad press are all
+gone, and `slots.toml` is one table — page names. Leaving a measured-dead
+path in place had already cost something: `Config::by_spec_name`'s doc
+comment still described the respawn chord this entry deleted, so the code
+outlived its own consumer without anyone noticing.
 
 **And the record anchor keeps turned out to be the answer** — `cwd`,
 `command`, `login_shell`, on dead rows too — which went to `>` rather than
