@@ -563,7 +563,15 @@ dependencies = [
  "midir",
  "serde",
  "serde_json",
+ "tallybridge",
  "toml",
+]
+
+[[package]]
+name = "tallybridge"
+version = "0.1.0"
+dependencies = [
+ "midir",
 ]
 
 [[package]]

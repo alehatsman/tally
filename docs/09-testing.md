@@ -8,7 +8,10 @@ has to be named.
 
 386 unit tests in `#[cfg(test)]` modules beside the code, none of them
 needing a device, a daemon or a socket — plus 17 in `tests/relocate.rs`,
-which drive **real tmux** on a scratch socket. The unit half is not
+which drive **real tmux** on a scratch socket, and 8 in `tests/bridge.rs`,
+which put `Device` on a real loopback socket against the bridge's real
+session with a fake Launchpad behind it ([13](13-bridge.md)). The bridge's
+own codec and session tests live in `bridge/` and run on Windows too. The unit half is not
 discipline;
 it is a consequence of where the boundaries were drawn, and it is the
 property to protect:
@@ -149,6 +152,11 @@ never on the calls they make:
   (`-k`), live occupant (swap), absent session (placeholder)
 - `Jump` is a trait with one real implementation, so `tallyd`'s press
   handling runs against a fake that records what it was asked for
+- `device` over the bridge is the one exception to *arguments, not calls*,
+  because a socket can be real without hardware: `tests/bridge.rs` checks
+  that the start-up bytes cross it in the same order a local port gets
+  them, that two back-to-back presses arrive as two events, and that a
+  hang-up fails the very next frame
 
 ## 5. Against real tmux
 

@@ -96,7 +96,7 @@ been argued out in advance.**
 ## Install
 
 ```sh
-cargo install --git https://github.com/alehatsman/tally --tag v0.9.0
+cargo install --git https://github.com/alehatsman/tally --tag v0.9.0 tally
 ```
 
 Then **the four hook lines**, which are the step the product lives on —
@@ -119,12 +119,17 @@ It needs [anchor](https://github.com/alehatsman/anchor) running, tmux, and
 a Launchpad Mini MK3. Not on crates.io: one USB device, one OS, a tag is
 the right size.
 
+**On Windows**, the agents and `tallyd` run in WSL and a small bridge on
+Windows owns the device ([13](docs/13-bridge.md)). Built and tested
+without hardware; it has not yet driven a real Launchpad.
+
 ## The documents
 
 Everything in `01`–`09` is **shipped and running**, and states current
 truth only — no amendments to apply in your head. `10` is why it says
-that, `11` is what is specified and deliberately not built, and `12` is
-how to get it running.
+that, `11` is what is specified and deliberately not built, `12` is how
+to get it running, and `13` is the bridge — built, and owed one session
+with the device.
 
 | | |
 |---|---|
@@ -138,8 +143,9 @@ how to get it running.
 | [08-daemon.md](docs/08-daemon.md) | the loop, the lock, shutdown, failure modes, and why there is no socket |
 | [09-testing.md](docs/09-testing.md) | testing a thing whose output is light, and what a green suite does not prove |
 | [10-decisions.md](docs/10-decisions.md) | **the record** — what was built, what use found, what replaced it |
-| [11-unbuilt.md](docs/11-unbuilt.md) | the level (a veto over a stale amber) and the bridge (Launchpad on Windows, agents in WSL) |
+| [11-unbuilt.md](docs/11-unbuilt.md) | the level (a veto over a stale amber), and the graveyard |
 | [12-install.md](docs/12-install.md) | what a stranger does, in order — including the hook lines the amber does not exist without |
+| [13-bridge.md](docs/13-bridge.md) | the Launchpad on Windows, the agents in WSL: five questions answered on the desk, the wire, and the checklist still owed on hardware |
 
 [ROADMAP.md](ROADMAP.md) is the order it arrived in, and the finish line is
 the only part of this repo that is a plan rather than a record.

@@ -87,8 +87,9 @@ over, with a test suite.
 
 **"Remote control over the network."** No. The device is on the desk, by
 USB. If you are not at the desk, you are on your phone, and that is
-teleport. (The one exception is [the bridge](11-unbuilt.md#the-bridge),
-which splits one process across a USB boundary and is not remote control.)
+teleport. (The one exception is [the bridge](13-bridge.md), which splits
+one process across the WSL line, over loopback only, and is not remote
+control.)
 
 **"Let it hold the control lease so I can type from the pads."** No. One
 writer per PTY is anchor's invariant, and the writer is the terminal you
