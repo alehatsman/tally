@@ -50,7 +50,7 @@ fn main() -> ExitCode {
         Ok(Request::Ls(json)) => ls(json, pages),
         Ok(Request::Spawn(claim)) => spawn(&claim, pages),
         Ok(Request::Fork(f)) => fork(&f, pages),
-        Ok(Request::Attention(on)) => attention(on),
+        Ok(Request::Attention(wants)) => attention(wants),
         Ok(Request::Purge(at)) => purge(at, pages),
         Ok(Request::Mute(at, on)) => mute(at, on, pages),
         Err(e) => {
@@ -242,6 +242,12 @@ fn conversation_write(reported: Option<&str>, recorded: Option<&str>) -> Option<
 /// Set or remove `tl.attention` on whichever session we are inside, and
 /// record which conversation it is running.
 ///
+/// **The word, not the bit.** `Some` writes the value the rising hook
+/// named — `blocked` from `Notification`, `finished` from `Stop`, `1`
+/// from a hook that did not say. Every one of them is an amber, and the
+/// grid cannot tell them apart on purpose: that distinction exists for
+/// readers that are programs (#23, `docs/04-signals.md`).
+///
 /// **Not being under anchor is success**, and that is the whole shape of
 /// this function. It is called from a Claude Code hook, which fires on
 /// every turn of every agent on this machine; all but a handful are not on
@@ -257,7 +263,7 @@ fn conversation_write(reported: Option<&str>, recorded: Option<&str>) -> Option<
 /// `list` — and a second hook would pay it again, per turn, for a value
 /// that changes approximately never
 /// (`docs/06-views.md`).
-fn attention(on: bool) -> ExitCode {
+fn attention(wants: Option<tally::anchor::Wants>) -> ExitCode {
     let client = Client::new(Client::default_path());
     let sessions = match client.list() {
         Ok(sessions) => sessions,
@@ -278,8 +284,13 @@ fn attention(on: bool) -> ExitCode {
     };
 
     let mut set = BTreeMap::new();
-    let remove: &[&str] = if on {
-        let _on = set.insert(tally::anchor::LABEL_ATTENTION.to_owned(), "1".to_owned());
+    // The value names which hook fired; presence is still the whole of
+    // what raises the amber (#23).
+    let remove: &[&str] = if let Some(wants) = wants {
+        let _on = set.insert(
+            tally::anchor::LABEL_ATTENTION.to_owned(),
+            wants.as_str().to_owned(),
+        );
         &[]
     } else {
         &[tally::anchor::LABEL_ATTENTION]
