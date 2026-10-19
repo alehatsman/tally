@@ -139,8 +139,8 @@ definition; what each one *means* is [05](05-interaction.md):
 | entry | colour | used for | on the device |
 |---:|---|---|---|
 | 0 | off | nothing here, and nothing this gesture would touch | unlit — see the note below |
-| 1 | dark grey | **available, not urgent** — a live arrow, a `>` that would launch, `Session`, `Drums`, a pad a held modifier will skip, the overview's window marker, and under a held Move with a pad in hand, every pad it could land on | a dim glow, cooler than "grey" suggests |
-| 3 | white | **what your hand is doing** — a held modifier, `◄` with an origin, `Session` while the map is up | white |
+| 1 | dark grey | **available, not urgent** — a live arrow, a `>` that would launch, `Drums`, a pad a held modifier will skip, and under a held Move with a pad in hand, every pad it could land on | a dim glow, cooler than "grey" suggests |
+| 3 | white | **what your hand is doing** — a held modifier, `◄` with an origin, `Drums` while an art is playing | white |
 | 5 | red | exited non-zero; the corner resting in Stop; a pad that hold would terminate | red |
 | 7 | dark red | *the daemon had a problem* — a `lost` session, an unreachable anchord on the logo; and a pad whose ended rows a held Stop would forget | a deeper red, clearly distinct from 5 |
 | 9 | **amber** | **needs an answer** — and the only thing that moves on the resting surface | orange |

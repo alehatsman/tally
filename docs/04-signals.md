@@ -416,8 +416,13 @@ So tallyd appends one line per transition to
 {"ms":1760000000000,"session":"01J…","slot":"work:3:5","to":"needs_answer","source":"declared","title":"edit tests/pty.rs?"}
 {"ms":1760000061000,"session":"01J…","slot":"work:3:5","to":"answered","after_ms":61000}
 {"ms":1760000090000,"kind":"nav","via":"next","slot":"1:2:1","waited_ms":219722,"queued":4}
-{"ms":1760000120000,"kind":"nav","via":"overview","to":13,"from":0,"lit":7}
+{"ms":1760000120000,"kind":"nav","via":"pad","slot":"1:1:2","waited_ms":274173,"queued":0}
 ```
+
+A fourth shape, `"via":"overview"`, is no longer written: the overview is
+cut (#41) and the nine lines it produced are what cut it. They stay in the
+file, and a reader has to keep tolerating them — a journal is a record, so
+nothing in it is ever retracted.
 
 Transitions only, so it is a few lines a day, not a log. `kind` absent means
 `"state"`, so every line written before navigation was recorded still
@@ -447,7 +452,7 @@ downtime — honest, and visible as such.
 Two findings from reading 55 hours of it, and the second is the larger.
 
 ⚠️ **It did not record the gesture it is measuring. It does now.** There
-was a nav line for `next`, `back` and `overview`, and **none for a plain
+was a nav line for `next`, `back` and the overview, and **none for a plain
 pad tap** — the gesture the product exists for, running at a reported
 341/day against 62 `next` presses in 55 hours. So the file held the ambers
 that were raised and almost none of the answers, and the gate it exists to

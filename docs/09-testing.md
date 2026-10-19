@@ -198,8 +198,7 @@ with its rows upside down. A written checklist, run before each milestone:
 [ ] bottom-left pad is slot (1,1), not (8,1)
 [ ] ▲▼ slide the window one row; ▲ held past 500ms lands on row 1
 [ ] ◄ returns you; ► goes to the longest-waiting amber and scrolls to it
-[ ] hold Session: lit rows and a grey run read as a map; a tap crosses to a
-    far row in one gesture
+[ ] hold Session: nothing happens, on the grid or anywhere else (#41)
 [ ] hold CC19: alive pads red, pads hiding ended rows dark red, the rest dim
 [ ] double-tap CC19: the corner goes turquoise, and the next hold previews
     Move rather than Stop
