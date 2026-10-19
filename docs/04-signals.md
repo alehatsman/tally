@@ -477,6 +477,16 @@ also built [the queue](05-interaction.md#the-queue-and-the-two-buttons-that-read
 slot to the moment it began asking, surviving a restart, is exactly what `►`
 sorts on.
 
+**A move is not a transition.** The map is keyed by slot, but a waiting
+agent is identified by its session id, as `Watchers` already has it.
+`Action::Move` changes a live session's slot and nothing else, so
+`Journal::transitions` matches the session first: an agent still asking at
+another pad keeps its original moment and writes no line. Without that, a
+move wrote an `answered` nobody gave, a second `needs_answer`, and restarted
+the clock the queue and the tempo read. No new verb: replay supersedes an
+earlier address by session, and the first tick after a restart reconciles a
+rise left at an address the session has since quit.
+
 A restart during an unanswered attention still loses nothing, because the
 label does not live here. If the agent was answered while tallyd was down,
 the next tick writes the falling edge with an `after_ms` that includes the
