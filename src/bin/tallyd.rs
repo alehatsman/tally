@@ -296,9 +296,12 @@ fn perform(
 ) -> Hand {
     let (row, col) = (at.row, at.col);
     match gesture {
-        Gesture::Tap { .. } => match ctx.tap(at, pages) {
-            // Occupied: this is a jump, and jumps are not anchord's.
-            Ok(None) => {
+        // A bare tap is a jump or it is nothing. It was also the
+        // spawn-from-a-dark-pad gesture until #40 cut the spec system
+        // that fed it, and with that gone there is no anchord call on
+        // this path at all -- jumps are tmux's business.
+        Gesture::Tap { .. } => {
+            {
                 if let Some(r) = ctx.pads.grid().get(&at) {
                     eprintln!("tallyd: jump {}:{row}:{col} -> {}", at.page, r.session);
                     // The address names the window. Unnamed pages cannot
@@ -324,10 +327,7 @@ fn perform(
                     journal.jumped_pad(now, &label, waited, queued);
                 }
             }
-            Ok(Some(Done::Nothing)) => {}
-            Ok(Some(done)) => eprintln!("tallyd: {}:{row}:{col} {done}", at.page),
-            Err(e) => eprintln!("tallyd: spawn {}:{row}:{col}: {e}", at.page),
-        },
+        }
         Gesture::Chord { action, .. } => {
             return match ctx.chord(action, at, pages) {
                 // The preview already said nothing would happen here, so
@@ -907,13 +907,12 @@ fn main() -> ExitCode {
     let config_path = Config::default_path();
     let config = Config::load(&config_path).unwrap_or_else(|e| {
         eprintln!("tallyd: {}: {e}", config_path.display());
-        eprintln!("tallyd: running on defaults; no pad will spawn anything");
+        eprintln!("tallyd: running on defaults; pages are named 1-8");
         Config::default()
     });
     eprintln!(
-        "tallyd: {} pages, {} slots from {}",
+        "tallyd: {} pages from {}",
         config.pages().len(),
-        config.len(),
         config_path.display()
     );
     let pages = config.pages().clone();
@@ -1047,7 +1046,7 @@ fn main() -> ExitCode {
                                 // Last tick's grid: what the pad the
                                 // finger landed on was showing, which
                                 // is the only honest thing to act on.
-                                pads: model::Pads::new(&grid, &config, &purgeable, grip.hand),
+                                pads: model::Pads::new(&grid, &purgeable, grip.hand),
                             };
                             perform(
                                 &ctx,
@@ -1124,7 +1123,7 @@ fn main() -> ExitCode {
         // The queue, after the journal has been brought up to date: the
         // map it keeps *is* the queue, ordered by when each slot started
         // asking (`docs/05-interaction.md`).
-        let pads = model::Pads::new(&resolved, &config, &purgeable, grip.hand);
+        let pads = model::Pads::new(&resolved, &purgeable, grip.hand);
         let viewing: std::collections::BTreeSet<Slot> = tmux
             .viewing()
             .iter()

@@ -124,8 +124,10 @@ removing — a directory typed by hand — and the shell has a perfectly good
 one already. Scripts that want a different folder can use a subshell, or
 call `anchor create` directly, which stays supported.
 
-**No `tl.spec`.** A spec label is a *name looked up in `slots.toml`*.
-Writing one that no `[[spec]]` declares would be a label that lies.
+**No `tl.spec`.** The label is gone and so is the table it named
+(#40, [02](02-model.md#there-used-to-be-three-tables)). What a session
+carries is `tl.slot` and the state labels; what it ran is anchord's own
+record.
 
 ### It is exactly a pad press, with a folder
 
@@ -189,8 +191,8 @@ forked 01M53KS… from 1:1:1 onto 1:1:2
 
 It is `spawn` with one substitution: **the directory comes from the source
 pad instead of from `$PWD`**. Everything else — the occupancy check, the
-`tl.slot` label, where the view opens, the absence of `tl.spec` — is the
-same code and the same rules.
+`tl.slot` label, where the view opens — is the same code and the same
+rules.
 
 | | | |
 |---|---|---|

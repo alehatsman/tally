@@ -83,13 +83,6 @@ pub struct Pad {
     pub state: Option<SlotState>,
     /// It carries `tl.mute`.
     pub muted: bool,
-    /// Something can be spawned here, and it **resolves**: a `[[slot]]` in
-    /// `slots.toml`, or a `tl.spec` label naming a `[[spec]]` that is
-    /// still in the file. A label alone is not enough — rename the
-    /// `[[spec]]` and the name on the dead session points at nothing, so
-    /// a pad lit on the strength of the label would promise a respawn
-    /// that [`crate::model::Pads::launch`] cannot perform.
-    pub spec: bool,
     /// This is the pad currently **in your hand** under a held
     /// [`Action::Move`]: picked up, not yet put down.
     ///

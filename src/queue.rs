@@ -133,7 +133,6 @@ mod tests {
 
     use super::*;
     use crate::anchor::Session;
-    use crate::config::Config;
     use crate::model::{self, Pads};
     use crate::signal::Source;
     use crate::slot::Pages;
@@ -167,7 +166,6 @@ mod tests {
     struct Fixture {
         resolved: BTreeMap<Slot, model::Resolved>,
         rows: BTreeMap<Slot, Vec<String>>,
-        config: Config,
     }
 
     impl Fixture {
@@ -176,11 +174,10 @@ mod tests {
             Self {
                 resolved: model::resolve(sessions, &BTreeMap::new(), &pages, 0),
                 rows: BTreeMap::new(),
-                config: Config::default(),
             }
         }
         fn pads(&self) -> Pads<'_> {
-            Pads::new(&self.resolved, &self.config, &self.rows, None)
+            Pads::new(&self.resolved, &self.rows, None)
         }
     }
 
