@@ -31,10 +31,10 @@ pub enum Button {
     ///
     /// Named for where it is, not for what it does, because what it does
     /// changed: these were eight page selectors until `docs/16` made the
-    /// row a queue — `▲▼` scroll, `◄` back, `►` next, `Session` holds the
-    /// overview up (`docs/05-interaction.md`), and three carry nothing.
-    /// `Page(5)` meaning *a dark unassigned button* was a name that
-    /// lied.
+    /// row a queue — `▲▼` scroll, `◄` back, `►` next, `Drums` runs the
+    /// arts (`docs/05-interaction.md`), and the fifth, seventh and eighth
+    /// carry nothing. `Page(5)` meaning *a dark unassigned button* was a
+    /// name that lied.
     Top(u8),
     /// Right column, top to bottom: the action modifiers.
     Action(u8),

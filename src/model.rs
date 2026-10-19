@@ -58,10 +58,6 @@ pub struct View<'a> {
     /// leave the board exactly as it was
     /// (`docs/05-interaction.md#move-is-the-missing-verb`).
     pub hand: Option<Slot>,
-    /// `Session` is held, so the grid is the whole 64-row address space
-    /// rather than the eight-row window onto it
-    /// (`docs/05-interaction.md`). Outranks [`Self::held`], which is
-    /// `None` for the same press.
     /// Every action button physically down — which is **not** the same as
     /// [`Self::held`]: two buttons down lights both white and previews
     /// neither, so a fumble is visible rather than merely inert
@@ -369,8 +365,14 @@ impl<'a> Pads<'a> {
 impl View<'_> {
     /// Which grid row shows `at`, or `None` if it is scrolled off.
     ///
-    /// The one place the window is turned into a position, so the renderer
-    /// and the press cannot disagree about which pad is which.
+    /// The renderer's only way to turn the window into a position. The
+    /// press does **not** come through here — `tallyd`'s
+    /// `Gesture::Tap | Gesture::Chord` arm open-codes
+    /// `Slot::at_absolute(offset + row, col)`, which is the same
+    /// arithmetic [`Self::slot_at`] does with a `checked_add`, and is safe
+    /// only because `MAX_OFFSET + WINDOW == ROWS`. That is exactly the
+    /// split [`Pads`] exists to stop one module over, so the press should
+    /// be moved onto [`Self::slot_at`].
     #[must_use]
     pub fn display_row(&self, at: Slot) -> Option<u8> {
         at.absolute_row()
@@ -380,6 +382,9 @@ impl View<'_> {
 
     /// The slot under grid row `row`, column `col`, or `None` past the end
     /// of the address space.
+    ///
+    /// The inverse of [`Self::display_row`], and the only caller today is
+    /// `frame_from`'s preview loop.
     #[must_use]
     pub fn slot_at(&self, row: u8, col: u8) -> Option<Slot> {
         Slot::at_absolute(self.offset.checked_add(row)?, col)
@@ -397,14 +402,19 @@ impl View<'_> {
         if abs <= offset {
             return abs.saturating_sub(1);
         }
-        if abs > offset + 8 {
-            return abs.saturating_sub(8);
+        if abs > offset + slot::WINDOW {
+            return abs.saturating_sub(slot::WINDOW);
         }
         offset
     }
 }
 
 /// Build the frame, resolving and counting purgeable rows on the way.
+///
+/// The convenience entry point, not the one the daemon takes: `tallyd`
+/// and [`crate::queue`] call [`resolve`], [`purgeable`] and [`Pads::new`]
+/// themselves so the press path can hold on to the grid it just drew, and
+/// then call [`frame_from`]. Everything that drives this today is a test.
 pub fn frame(sessions: &[Session], derived: &BTreeMap<String, Derived>, view: &View<'_>) -> Frame {
     let resolved = resolve(sessions, derived, view.pages, view.now);
     let rows = purgeable(sessions, view.pages);
@@ -1137,7 +1147,9 @@ mod tests {
     }
 
     /// Attention scrolled off the window still reaches the logo — that is
-    /// the only thing reporting what you cannot see.
+    /// the only thing reporting what you cannot see. The top row does not
+    /// say *which* page: `►` crosses pages, so you do not navigate to
+    /// attention any more (`docs/05-interaction.md`).
     #[test]
     fn attention_scrolled_off_the_window_reaches_the_logo() {
         let pages = Pages::default();
@@ -1152,7 +1164,7 @@ mod tests {
             ..view(&pages)
         };
         let f = frame(&sessions, &derived, &v);
-        assert_eq!(f.get(Button::Logo), Cell::Pulse(AMBER));
+        assert_eq!(f.get(Button::Logo), Cell::Pulse(AMBER), "logo must say so");
     }
 
     /// Dark does nothing: at the top there is nothing above, at the bottom
@@ -1200,27 +1212,6 @@ mod tests {
         }
         assert_eq!(f.get(Button::Top(3)), Cell::Static(WHITE), "back is live");
         assert_eq!(f.get(Button::Top(4)), Cell::Pulse(AMBER), "next is waiting");
-    }
-
-    #[test]
-    fn attention_on_another_page_reaches_the_logo() {
-        let pages = Pages::default();
-        let mut derived = BTreeMap::new();
-        let mut d = Derived::starting_at(NOW);
-        d.feed(b"ready?\x07", NOW);
-        let _previous = derived.insert("a".to_owned(), d);
-
-        let sessions = [session("a", "running", Some("4:1:1"))];
-        let v = View {
-            now: NOW + 5_000,
-            ..view(&pages)
-        };
-        let f = frame(&sessions, &derived, &v);
-
-        // The logo still reports it. The top row no longer says *which*
-        // page — `►` crosses pages, so you do not navigate to attention
-        // any more (`docs/05-interaction.md`).
-        assert_eq!(f.get(Button::Logo), Cell::Pulse(AMBER), "logo must say so");
     }
 
     #[test]
