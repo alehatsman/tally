@@ -1107,6 +1107,11 @@ fn main() -> ExitCode {
                     watchers.retain_known(&list);
                     sessions = list;
                     reachable = true;
+                    // The journal has been holding its replayed map since
+                    // `open`, because until this line an empty `sessions`
+                    // meant "nobody asked anchord yet" rather than
+                    // "nothing is asking" (`tally::journal::Journal`).
+                    journal.saw_listing();
                     // Once, and only once there is something to audit.
                     if !swept {
                         swept = true;

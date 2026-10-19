@@ -102,6 +102,17 @@ not empty the model.** Lighting the logo and rendering a stale grid is
 honest — those sessions were there a moment ago and probably still are —
 where clearing it asserts they are gone.
 
+**The first failed `list` is a different failure**, and only the journal
+feels it. A stale grid is last tick's truth; at login there is no last
+tick, so the sessions the daemon holds are empty because nobody has been
+asked. Step 4 would read that as every replayed slot having been answered
+and write a fall per slot — `after_ms` spanning the downtime, the queue
+cleared, and a second rise for each the moment anchord comes up, which is
+[#7](https://github.com/alehatsman/tally/issues/7) by another road. So the
+journal is **fall-blind until the first `list` succeeds**
+(`journal::Journal::saw_listing`). Later failures are not guarded: by then
+the map it resolves is the stale truth rather than an empty lie.
+
 **Watchers outlive a failed tick.** They are attached to anchord directly,
 so a tick that could not `list` says nothing about whether a watcher is
 still receiving bytes; tearing them down on a failed poll would turn one
