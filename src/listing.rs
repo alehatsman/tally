@@ -184,7 +184,15 @@ pub fn text(pads: &[Pad], caller: Caller<'_>, pages: &Pages) -> String {
         .iter()
         .filter_map(|&abs| Some((abs, row_label(pages, abs)?)))
         .collect();
-    let width = labels.values().map(String::len).max().unwrap_or(3);
+    // Characters, not bytes. `String::len` counts bytes and the formatter
+    // pads by characters, so a page name with any non-ASCII in it -- which
+    // config.rs permits, fencing only `:`, `|`, `\`, `"` and controls --
+    // over-pads its own column and the headings stop sitting over the cells.
+    let width = labels
+        .values()
+        .map(|label| label.chars().count())
+        .max()
+        .unwrap_or(3);
 
     let _header = writeln!(out, "  {:width$}  1  2  3  4  5  6  7  8", "");
     for abs in &rows {
@@ -522,6 +530,29 @@ mod tests {
         let out = text(&pads, Caller::Outside, &named);
         assert!(out.contains("  infra:4  .  .  #"), "{out}");
         assert!(out.contains("infra:4:3  s  running"), "{out}");
+    }
+
+    /// A page name is fenced against `:`, `|`, `\` and control characters
+    /// and against nothing else, so `naïve` is a legal name. The column is
+    /// measured in characters because the formatter pads in characters; a
+    /// byte count here puts the headings two columns off the cells they
+    /// head, on that reader's grid only.
+    #[test]
+    fn a_multi_byte_page_name_keeps_the_headings_over_their_cells() {
+        let named = Pages::new(["naïve".to_owned(), "infra".to_owned()]);
+        let pads = [pad("s", at(1, 4, 3), SlotState::Quiet, "/repo")];
+        let out = text(&pads, Caller::Outside, &named);
+        let header = out.lines().next().expect("a header");
+        let row = out
+            .lines()
+            .find(|line| line.starts_with("  naïve:4"))
+            .expect("the row its pad is on");
+        assert!(row.contains("  naïve:4  .  .  #"), "{out}");
+        assert_eq!(
+            header.chars().count(),
+            row.chars().count(),
+            "the heading row and the cell row must be the same width:\n{out}"
+        );
     }
 
     #[test]
