@@ -85,7 +85,9 @@ pub struct Device {
     events: Receiver<Event>,
     /// The last frame put on the wire, so the next one can be a diff.
     last: Frame,
-    /// Whether `Drop` should try to put the device back.
+    /// Whether `Drop` should try to put the device back. Armed by
+    /// `open()` only once `PROGRAMMER` has been sent, because before that
+    /// there is no programmer mode to undo.
     restore_on_drop: bool,
 }
 
@@ -156,10 +158,23 @@ impl Device {
             _input: listening,
             events,
             last: Frame::dark(),
-            restore_on_drop: true,
+            // Not armed yet: there is nothing to put back until
+            // `PROGRAMMER` is on the wire. Arming here instead cost four
+            // seconds a go — a port that matches but does not identify (a
+            // Mini MK3 in its bootloader, which `sysex::MODE_APPLICATION`
+            // names, or a port that enumerates a moment before the device
+            // can answer) burned `REPLY_TIMEOUT` on the inquiry and then
+            // another one on a `restore()` of a device still in Live mode,
+            // and printed the Setup-menu alarm at the end of it. That is
+            // the ordinary case firing the alarm that `abandon()`'s doc
+            // says must stay rare.
+            restore_on_drop: false,
         };
         device.confirm_identity()?;
         device.send(&sysex::PROGRAMMER)?;
+        // From here on the device is in a mode we put it in, so every exit
+        // owes it a restore — including the two sends below failing.
+        device.restore_on_drop = true;
         // The device lights a pad when pressed unless told otherwise, which
         // fights the renderer: the model owns every pixel.
         device.send(&sysex::led_feedback(false, false))?;
