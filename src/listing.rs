@@ -13,7 +13,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
-use crate::anchor::Session;
+use crate::anchor::{Session, Wants};
 use crate::model::Resolved;
 use crate::signal::SlotState;
 use crate::slot::{Pages, Slot};
@@ -36,6 +36,14 @@ pub struct Pad {
     pub cwd: Option<String>,
     /// The conversation it is running, from `tl.claude`.
     pub claude: Option<String>,
+    /// What it is waiting for, when it is waiting: the word the rising
+    /// hook wrote into `tl.attention`.
+    ///
+    /// `None` for a pad that is not asking. **Not derived from
+    /// [`Self::state`]** — a muted slot carries the label and renders the
+    /// state underneath it, so the two can disagree and the label is the
+    /// one that answers *why*.
+    pub wants: Option<Wants>,
 }
 
 /// Where the caller is, as far as a listing is concerned.
@@ -73,6 +81,10 @@ pub fn pads(drawn: &BTreeMap<Slot, Resolved>, sessions: &[Session]) -> Vec<Pad> 
                 .find(|s| s.id == held.session)
                 .and_then(|s| s.cwd.clone()),
             claude: held.claude.clone(),
+            wants: sessions
+                .iter()
+                .find(|s| s.id == held.session)
+                .and_then(Session::attention_wants),
         })
         .collect()
 }
@@ -85,9 +97,9 @@ pub fn pads(drawn: &BTreeMap<Slot, Resolved>, sessions: &[Session]) -> Vec<Pad> 
 ///
 /// **`NeedsAnswer` is `wants you`, and the vagueness is the accurate
 /// part.** `tl.attention` is raised by two hooks and the write is
-/// hook-agnostic, so the label carries two states under one bit: *blocked*
-/// on a dialog (`Notification`) and *finished with its turn*
-/// (`Stop`). `Stop` fires every turn and `Notification` rarely, so a
+/// label's **value** names which fired, so the one bit still carries two
+/// states: *blocked* on a dialog (`Notification`) and *finished with its
+/// turn* (`Stop`). `Stop` fires every turn and `Notification` rarely, so a
 /// finished turn is the common case and "waiting for an answer" -- what
 /// this said until `ls` acquired readers that are programs -- was false
 /// most of the times it appeared (`docs/04-signals.md`,
@@ -249,6 +261,11 @@ fn row_label(pages: &Pages, abs: u8) -> Option<String> {
 /// Occupied pads only — a free pad is the absence of an entry, and
 /// sixty-four objects saying "nothing" is not a format.
 ///
+/// `wants` is present whenever a hook declared something, including on a
+/// pad the grid is **not** drawing amber because it is muted. That is the
+/// honest join: the label says what the agent asked for, and mute is an
+/// opinion about whether to light a pad for it.
+///
 /// `free` is stated rather than left to be inferred from `state`: it is
 /// the one thing a reader is deciding on, and re-deriving
 /// [`SlotState::frees_the_pad`] from a string would be exactly the second
@@ -272,6 +289,21 @@ pub fn json(pads: &[Pad], caller: Caller<'_>, pages: &Pages) -> String {
             }
             if let SlotState::Failed { code } = pad.state {
                 let _set = map.insert("exit_code".to_owned(), code.into());
+            }
+            // The key #23 exists for. Absent unless a hook declared
+            // something, and **`state` is left alone**: this document
+            // already tells a program to branch on a key and never on the
+            // sentence (`docs/07-cli.md`), so the fix is another key.
+            if let Some(wants) = pad.wants {
+                let _set = map.insert(
+                    "wants".to_owned(),
+                    match wants {
+                        Wants::Blocked => "blocked",
+                        Wants::Finished => "finished",
+                        Wants::Unstated => "unstated",
+                    }
+                    .into(),
+                );
             }
             Some(entry)
         })
@@ -309,6 +341,7 @@ mod tests {
             state,
             cwd: Some(cwd.to_owned()),
             claude: None,
+            wants: None,
         }
     }
 
@@ -383,6 +416,54 @@ mod tests {
             !declared.contains("question") && !declared.contains("answer"),
             "a finished turn is not waiting for one: {declared}"
         );
+    }
+
+    /// The key #23 exists for: a program can tell *blocked on a dialog*
+    /// from *finished a turn*, and `state` still says neither.
+    #[test]
+    fn json_says_what_the_attention_is_for() {
+        let mut pads = grid();
+        pads[0].state = SlotState::NeedsAnswer {
+            source: crate::signal::Source::Declared,
+        };
+        pads[0].wants = Some(Wants::Blocked);
+        pads[1].state = SlotState::NeedsAnswer {
+            source: crate::signal::Source::Declared,
+        };
+        pads[1].wants = Some(Wants::Finished);
+        let parsed: serde_json::Value =
+            serde_json::from_str(&json(&pads, Caller::Outside, &pages())).expect("valid json");
+        assert_eq!(parsed["pads"][0]["wants"], "blocked");
+        assert_eq!(parsed["pads"][1]["wants"], "finished");
+        assert_eq!(
+            parsed["pads"][0]["state"], parsed["pads"][1]["state"],
+            "the sentence is the same; the key is what split"
+        );
+    }
+
+    /// Absent, not `null`: a pad nothing declared about has no answer to
+    /// this question, and a key that is always there invites a reader to
+    /// branch on its value rather than its presence.
+    #[test]
+    fn json_omits_wants_when_no_hook_declared_anything() {
+        let parsed: serde_json::Value =
+            serde_json::from_str(&json(&grid(), Caller::Outside, &pages())).expect("valid json");
+        assert!(
+            parsed["pads"][0].get("wants").is_none(),
+            "{:?}",
+            parsed["pads"][0]
+        );
+    }
+
+    /// A value from a newer build must read as *wants you*, never as
+    /// *nothing*: a vocabulary that grows cannot be allowed to put a
+    /// light out on a reader that has not caught up.
+    #[test]
+    fn an_unknown_word_is_unstated_and_never_absent() {
+        assert_eq!(Wants::of("1"), Wants::Unstated);
+        assert_eq!(Wants::of("reviewing"), Wants::Unstated);
+        assert_eq!(Wants::of(""), Wants::Unstated);
+        assert_eq!(Wants::of("blocked"), Wants::Blocked);
     }
 
     /// Reclaimable and not are the same colour on the device and the same

@@ -9,6 +9,7 @@
 
 use std::fmt;
 
+use crate::anchor::Wants;
 use crate::slot::{self, Pages, Slot, PAGES};
 
 /// What a bare `tally spawn` runs. The thing this grid is for.
@@ -21,7 +22,7 @@ usage: tally ls    [--json]
        tally fork  [--detach] [--count N] <src> <dst> [-- command [args...]]
        tally purge     <addr>
        tally mute      <addr> [--off]
-       tally attention <on | off>
+       tally attention <blocked | done | off>
 
 An <addr> is row:col, or page:row:col.
 
@@ -89,8 +90,19 @@ lit, nothing on screen.
 
 attention   Say whether the calling session is waiting on a human.
 
-  tally attention on                   it wants you    (sets tl.attention)
-  tally attention off                  it does not     (removes it)
+  tally attention blocked              a dialog or a question is up
+  tally attention done                 the turn ended; it is at its prompt
+  tally attention off                  it wants nothing (removes the label)
+
+Both of the first two raise the same amber: the grid cannot tell them
+apart and is not meant to. The word is for readers that are programs --
+tally ls --json reports it as `wants` -- because a human wants never to
+miss one and a program wants to act only on blocked.
+
+  tally attention on                   a hook that did not say which
+
+`on` is kept and is not an alias: it is a third answer, and the one every
+label written before this distinction carries.
 
 For a Claude Code hook. It takes no address: the session is whichever one
 this process is running inside, found by walking the process tree. Not
@@ -149,12 +161,14 @@ pub enum Request {
     /// so the parser carries the source address and the binary resolves it
     /// (`docs/07-cli.md`).
     Fork(Fork),
-    /// Declare whether the calling session is waiting on a human.
+    /// Declare whether the calling session is waiting on a human, and
+    /// what for.
     ///
-    /// `true` sets `tl.attention`, `false` removes it. There is no address
-    /// because there is nobody to type one: the only caller is a hook
-    /// inside the session it is talking about (`docs/04-signals.md`).
-    Attention(bool),
+    /// `Some` sets `tl.attention` to the word the hook named, `None`
+    /// removes it. There is no address because there is nobody to type
+    /// one: the only caller is a hook inside the session it is talking
+    /// about (`docs/04-signals.md`).
+    Attention(Option<Wants>),
     /// `tally purge <addr>` — forget every ended row behind a pad.
     ///
     /// It has an address because the caller is you, not a hook, and
@@ -268,23 +282,33 @@ pub fn parse(args: impl IntoIterator<Item = String>, pages: &Pages) -> Result<Re
 /// a settings file that somebody wrote once, so there is no ergonomic case
 /// for aliases, and every alias is another spelling to recognise when the
 /// pad is not lighting up.
-fn attention(mut args: impl Iterator<Item = String>) -> Result<bool, Error> {
+fn attention(mut args: impl Iterator<Item = String>) -> Result<Option<Wants>, Error> {
     let Some(word) = args.next() else {
-        return Err(Error::Usage("attention needs `on` or `off`".to_owned()));
+        return Err(Error::Usage(
+            "attention needs `blocked`, `done` or `off`".to_owned(),
+        ));
     };
-    let on = match word.as_str() {
-        "on" => true,
-        "off" => false,
+    // `on` is kept, and it is not an alias for either of the other two:
+    // it is a hook that did not say which it is, which is a third answer
+    // and the one every label written before #23 carries. A settings.json
+    // that was never updated keeps working and keeps raising the amber --
+    // the install is prose in a document (`docs/04-signals.md`), so there
+    // is no upgrade step that could have changed it.
+    let wants = match word.as_str() {
+        "blocked" => Some(Wants::Blocked),
+        "done" => Some(Wants::Finished),
+        "on" => Some(Wants::Unstated),
+        "off" => None,
         other => {
             return Err(Error::Usage(format!(
-                "attention takes `on` or `off`, not {other:?}"
+                "attention takes `blocked`, `done`, `on` or `off`, not {other:?}"
             )))
         }
     };
     if let Some(extra) = args.next() {
         return Err(Error::Usage(format!("unexpected {extra:?}")));
     }
-    Ok(on)
+    Ok(wants)
 }
 
 /// `ls [--json]`, and nothing else.
@@ -600,9 +624,9 @@ mod tests {
         let _trailing = ls_of(&["ls", "--json", "extra"]).unwrap_err();
     }
 
-    fn attention_of(args: &[&str]) -> Result<bool, Error> {
+    fn attention_of(args: &[&str]) -> Result<Option<Wants>, Error> {
         match parse(args.iter().map(|s| (*s).to_owned()), &named())? {
-            Request::Attention(on) => Ok(on),
+            Request::Attention(wants) => Ok(wants),
             other => panic!("asked for attention, got {other:?}"),
         }
     }
@@ -812,10 +836,25 @@ mod tests {
         }
     }
 
+    /// Four words, and the fourth is not an alias for any of the others.
+    /// `on` is *a hook that did not say which*, which is what every label
+    /// written before #23 means and what a settings.json nobody updated
+    /// keeps writing.
     #[test]
-    fn attention_takes_on_and_off() {
-        assert_eq!(attention_of(&["attention", "on"]), Ok(true));
-        assert_eq!(attention_of(&["attention", "off"]), Ok(false));
+    fn attention_takes_a_word_per_rising_hook() {
+        assert_eq!(
+            attention_of(&["attention", "blocked"]),
+            Ok(Some(Wants::Blocked))
+        );
+        assert_eq!(
+            attention_of(&["attention", "done"]),
+            Ok(Some(Wants::Finished))
+        );
+        assert_eq!(
+            attention_of(&["attention", "on"]),
+            Ok(Some(Wants::Unstated))
+        );
+        assert_eq!(attention_of(&["attention", "off"]), Ok(None));
     }
 
     /// No aliases, by decision. The caller is one line in a settings file,
