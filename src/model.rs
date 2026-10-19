@@ -319,11 +319,30 @@ impl<'a> Pads<'a> {
     /// answers [`effect`] wrongly for every pad on the grid, and a
     /// builder you can forget to call is how the preview and the press
     /// drifted apart the first time.
+    ///
+    /// **A hand whose session is no longer alive is an empty hand.** The
+    /// pick-up refuses a dead pad, so the session died *after* it was
+    /// picked up, with the modifier still down — and a failed or lost row
+    /// stays in the grid, so only the pad's state can say so. Resolved
+    /// here, with everything else a pad means, so the preview and the
+    /// press both see the hand empty and neither offers a drop that would
+    /// rewrite the address of a session that has ended
+    /// ([`crate::effect::effect`]). The hand the surface keeps is left
+    /// alone; it clears on release, as it always has.
     pub fn new(
         grid: &'a BTreeMap<Slot, Resolved>,
         purgeable: &'a BTreeMap<Slot, Vec<String>>,
         hand: Option<Slot>,
     ) -> Self {
+        let hand = hand.filter(|h| {
+            grid.get(h).is_some_and(|r| {
+                Pad {
+                    state: Some(r.state),
+                    ..Pad::default()
+                }
+                .alive()
+            })
+        });
         Self {
             grid,
             purgeable,
