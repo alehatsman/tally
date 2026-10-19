@@ -198,8 +198,11 @@ because both move the numbers above and neither is a hop:
   next from *now*, so a 17.9 ms gap (140 bpm) leaves as 32 ms and a
   41.7 ms gap (60 bpm) as 48 ms: the device sees ~78 and ~52 bpm. The
   real `tallyd` at the 60 bpm floor delivered pulses 47.3 ms apart (p50,
-  Windows' clock) across the line. That is `tallyd` on every platform,
-  unchanged here, and worth its own look.
+  Windows' clock) across the line. That was `tallyd` on every platform,
+  and it is **fixed on main since this was measured** — `edcafa3`
+  schedules the next pulse from when it was due, so the emitted rate is
+  the commanded one. The hop numbers above came from a std-only probe, not
+  from `Beat`, so they stand; only the 47.3 ms figure is the old schedule.
 - **WSL's monotonic clock ran ~8% fast against Windows' on this box.**
   Fitting arrival against departure over five runs gave a rate of
   0.917–0.921, and a 10 s sleep in WSL measured 7.37 s on WSL's own
