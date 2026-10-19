@@ -664,12 +664,40 @@ impl Beat {
         }
     }
 
+    /// Is a pulse due at `elapsed`? Claims it if so.
+    ///
+    /// The schedule is **monotonic**: a sent pulse advances `next` by one
+    /// `gap` from where it was *due*, not from the tick that noticed it.
+    /// Re-basing on the tick instead rounds every wait up to a whole
+    /// `TICK`, which does not slow the beat a little — it quantises the
+    /// whole 60..140 ramp onto the two rates 16 ms happens to divide
+    /// into, and everything from 79 bpm up emits identically. The log
+    /// said 140 and the device breathed 78.
+    ///
+    /// Split out from [`Beat::pulse`] so the schedule can be walked
+    /// without a Launchpad in front of it; the emitted rate is the thing
+    /// worth pinning and it is unobservable through a `Device`.
+    fn due(&mut self, elapsed: Duration) -> bool {
+        if elapsed < self.next {
+            return false;
+        }
+        let gap = tempo::gap(self.bpm);
+        self.next += gap;
+        if self.next <= elapsed {
+            // A whole gap went by unserved, so the loop stalled. Missed
+            // pulses are **dropped, not caught up** — a burst would
+            // visibly sprint the breathing — which means re-basing the
+            // phase on now (`docs/05-interaction.md`). Unreachable while
+            // `gap` exceeds the loop's tick, which `tempo.rs` pins.
+            self.next = elapsed + gap;
+        }
+        true
+    }
+
     /// Send the beat.
     ///
-    /// One byte, up to fifty-six times a second. Due pulses are sent and
-    /// missed ones are **dropped, not caught up**: a burst after a stall
-    /// would visibly sprint the breathing, and a skipped beat is the
-    /// honest report of a loop that was busy (`docs/05-interaction.md`).
+    /// One byte, up to fifty-six times a second, on the schedule
+    /// [`Beat::due`] keeps.
     fn pulse(&mut self, device: Option<&mut Device>, elapsed: Duration) {
         let Some(d) = device else {
             // Unplugged. Start again when it comes back.
@@ -680,13 +708,12 @@ impl Beat {
             self.started = d.clock_start().is_ok();
             self.next = elapsed;
         }
-        if elapsed < self.next {
+        if !self.due(elapsed) {
             return;
         }
         if let Err(e) = d.clock() {
             eprintln!("tallyd: clock: {e}");
         }
-        self.next = elapsed + tempo::gap(self.bpm);
     }
 }
 
@@ -1412,6 +1439,81 @@ mod tests {
         assert!(
             !beat.started,
             "a device that is gone has not started a clock"
+        );
+    }
+
+    /// Walk a `Beat` through a loop that ticks every `period`, and report
+    /// the tempo it actually emitted over `span`.
+    ///
+    /// This is the main loop's shape and nothing else: one `due` call per
+    /// tick, one `0xF8` per `true`. The device is the part that cannot be
+    /// in a test; the schedule is the part that was wrong.
+    fn emitted_bpm(bpm: u64, period: Duration, span: Duration) -> f64 {
+        let mut beat = Beat::new();
+        beat.bpm = bpm;
+        let mut pulses = 0u32;
+        let mut elapsed = Duration::ZERO;
+        while elapsed < span {
+            if beat.due(elapsed) {
+                pulses += 1;
+            }
+            elapsed += period;
+        }
+        f64::from(pulses) * 60.0 / (span.as_secs_f64() * tempo::PPQN as f64)
+    }
+
+    /// The tempo that reaches the device is the tempo that was commanded.
+    ///
+    /// `tallyd` logging `tempo 140 bpm` while the grid breathes at 78 is
+    /// the failure this pins: the schedule used to re-base on the tick
+    /// that sent the pulse, so the emitted interval was a whole number of
+    /// `TICK`s and the ramp collapsed onto two rates. Walked at the real
+    /// `TICK`, because the quantisation is a property of the pair.
+    #[test]
+    fn the_commanded_tempo_is_the_emitted_tempo() {
+        for bpm in [tempo::FLOOR_BPM, 79, 100, tempo::CEILING_BPM] {
+            let got = emitted_bpm(bpm, TICK, Duration::from_secs(10));
+            assert!(
+                (got - f64::from(u32::try_from(bpm).expect("bpm fits"))).abs() < 1.0,
+                "commanded {bpm} bpm, emitted {got:.1}"
+            );
+        }
+    }
+
+    /// The one thing the tempo exists to say is *how long* this has been
+    /// waiting, so the ends of the ramp have to arrive as different
+    /// rates. They used to arrive as 52 and 78 — different, but a four
+    /// minute wait and a twenty minute one were both the 78
+    /// (`docs/05-interaction.md`).
+    #[test]
+    fn the_floor_and_the_ceiling_do_not_breathe_alike() {
+        let span = Duration::from_secs(10);
+        let calm = emitted_bpm(tempo::FLOOR_BPM, TICK, span);
+        let urgent = emitted_bpm(tempo::CEILING_BPM, TICK, span);
+        assert!(
+            urgent > calm * 2.0,
+            "the ramp is 60..140; emitted {calm:.1}..{urgent:.1}"
+        );
+    }
+
+    /// A loop that was busy skips beats rather than firing them in a
+    /// burst: the breathing must never sprint to pay off a stall, and a
+    /// dropped pulse is the honest report (`docs/05-interaction.md`).
+    #[test]
+    fn a_stalled_loop_drops_pulses_rather_than_catching_up() {
+        let mut beat = Beat::new();
+        beat.bpm = tempo::CEILING_BPM;
+        assert!(beat.due(Duration::ZERO));
+        // A full second away from the grid is some sixty owed pulses.
+        assert!(beat.due(Duration::from_secs(1)));
+        assert!(
+            !beat.due(Duration::from_secs(1)),
+            "the stall was paid off with one pulse, not sixty"
+        );
+        assert_eq!(
+            beat.next,
+            Duration::from_secs(1) + tempo::gap(tempo::CEILING_BPM),
+            "and the phase starts again from now"
         );
     }
 
