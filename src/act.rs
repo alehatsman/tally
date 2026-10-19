@@ -156,8 +156,9 @@ impl Context<'_> {
             return Ok(Done::Nothing);
         };
         let Some(r) = self.pads.grid().get(&from) else {
-            // It exited between the pick-up and the drop. The next
-            // reconcile draws it dead, which is the truth.
+            // It left the grid between the pick-up and the drop: a clean
+            // exit. One that ended badly is still drawn, and
+            // [`Pads::new`] has already emptied the hand for it.
             return Ok(Done::Nothing);
         };
         let mut set = BTreeMap::new();
@@ -368,5 +369,40 @@ mod tests {
             Done::Nothing,
             "and the press must agree with the pixel"
         );
+    }
+
+    /// A session can die while it is in your hand: the pick-up refuses a
+    /// dead pad, so this is one that ended afterwards with the modifier
+    /// still down. A failed or lost row stays in the grid, so `put_down`
+    /// found it and rewrote the address of a session that had ended —
+    /// the one thing Move must never do. Asserted as the pixel and the
+    /// press agreeing, and the press getting as far as a socket would
+    /// show: `nowhere` has none, so an `Ok` is a write that never began.
+    #[test]
+    fn a_session_that_died_in_your_hand_cannot_be_dropped() {
+        let held = at(2, 2);
+        for dead in [
+            SlotState::Failed { code: 1 },
+            SlotState::Lost { reclaimable: false },
+        ] {
+            let mut grid = BTreeMap::new();
+            let _r = grid.insert(held, resolved(held, dead, false));
+            let (client, purge, pages) = (nowhere(), BTreeMap::new(), Pages::default());
+            let ctx = Context {
+                client: &client,
+                pads: Pads::new(&grid, &purge, Some(held)),
+            };
+
+            assert_eq!(
+                effect(Action::Move, ctx.pads.at(at(5, 5)), ctx.pads.hand()),
+                Effect::None,
+                "{dead:?}: an empty pad is not a landing for a session that ended"
+            );
+            assert_eq!(
+                ctx.chord(Action::Move, at(5, 5), &pages).expect("no call"),
+                Done::Nothing,
+                "{dead:?}: and the press must agree with the pixel"
+            );
+        }
     }
 }
