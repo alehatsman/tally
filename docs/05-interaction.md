@@ -233,7 +233,7 @@ physically printed on the device, and what tally does with it:
 |---|---|---|
 | ▲ ▼ | move the session outline across **scenes** (rows) | scroll the window one row |
 | ◄ ► | move it across **tracks** (columns) | back where you were standing / go to the longest wait |
-| Session | return to the overview | **held**: the grid becomes the whole 64-row map |
+| Session | return to the overview | **nothing.** It held the overview up until #41 |
 | Drums | one-shot sample pads | the arts: 64 pads doing something that is not work |
 | Keys, User | custom modes | nothing. Two buttons, deliberately unspent |
 | `>` | **launch a scene** — the whole row fires | spawn into that row, inheriting its directory |
@@ -255,7 +255,7 @@ an inert button that lights up like a live one is an invitation to press it.
 | `Top(2)` ▼ | 1 dark grey if there is a row below | scroll down one | — |
 | `Top(3)` ◄ | 3 white if an origin is recorded | **back** | — |
 | `Top(4)` ► | 9 amber pulsing if anything waits | **next** — the longest wait | — |
-| `Top(5)` Session | 1 dark grey, always | — | **the map**: 64 rows, tap to go |
+| `Top(5)` Session | 0 dark, always | — | **nothing** (#41) |
 | `Top(6)` Drums | 1 dark grey; 3 white while playing | **arts** | — |
 | `Top(7)` Keys | off | nothing | nothing |
 | `Top(8)` User | off | nothing | nothing |
@@ -265,7 +265,7 @@ an inert button that lights up like a live one is an invitation to press it.
 
 **Dark does nothing, lit does exactly one thing, and there is no state to
 remember.** That is the rule the whole top row runs on, and the one
-exception proves it: `Session` and `Drums` are always lit, because they
+exception proves it: `Drums` is always lit, because it
 always have something to show.
 
 **Brightness answers "where am I" before hue answers anything.** One bright
@@ -317,7 +317,6 @@ running agent, that matters more than the keystroke saving.
 | tap `◄` | **back** — return to where you were standing |
 | tap `►` | **next** — jump to the longest-waiting amber |
 | hold `▲` past 500 ms | **home** — scroll all the way back to row 1 |
-| hold `Session` | the grid becomes a **map** of all 64 rows; tap a pad to go there |
 | tap `Drums` | the grid becomes an **art**; `►` is the only way back |
 | tap `>` (rows 1–7) | **launch** into that row |
 | hold `CC19` + tap slot | **Stop** — terminate what is alive, forget what has ended |
@@ -501,87 +500,57 @@ conditional on anything, so there is no mode to enter and nothing to escape.
 and not a confirm — `◄` is the return gesture, on its own button, visible,
 with an affordance.
 
-## The overview
+## The overview, cut
 
-Every row the journal has ever seen a session in: rows 1, 2, 3, 4, 6, 8 and
-**13**. Seven of sixty-four, and already discontiguous. Reaching row 13 from
-row 1 is five `▼` presses across four rows of nothing, with no way to know
-it is there.
+**It shipped as M11 and it was measured out of the product** (#41).
 
-**Sparsity is the argument for a map, not against it.** A dense 64-row
-overview would be sixty-four lit pads and unreadable. Seven lit pads out of
-sixty-four is instantly legible, and every lit pad is a destination.
+The argument was sparsity: the journal had seen sessions in rows 1, 2, 3,
+4, 6, 8 and **13** — seven of sixty-four, already discontiguous — and
+reaching row 13 from row 1 is five `▼` presses across four rows of
+nothing, with no way to know it is there. A dense 64-row map would be
+sixty-four lit pads and unreadable; seven lit pads is instantly legible.
+So holding `Session` turned the grid into one pad per absolute row, in
+reading order, and a tap put the window there.
 
-**Hold `Session` and the grid becomes the whole address space: one pad per
-absolute row, in reading order.**
+**Then it was used, and the instrument it carried answered against it.**
+Nine presses over 55 hours. `lit` — the number of non-empty rows, logged
+on every press — was **4** every single time and never moved. **All nine
+destinations were rows 1–8**, inside the window they started in. The map
+**never once crossed an empty middle**, which is the case its whole design
+argues from. What it was earning was *one gesture instead of up to seven
+scrolls* — real, and much smaller than a feature.
 
-```text
-pad (r, c)  ⟶  absolute row (r - 1) × 8 + c
+**What was kept, and why the cut stops there.** `▲▼` scrolling and
+hold-`▲` home both survive: they are how you move through a 64-row space,
+they are used, and the address space is **not** shrinking
+([11](11-unbuilt.md#512-slots-for-four-used-rows) stays open). This is one
+feature removed on its own evidence, not a migration.
 
- ┌────┬────┬────┬────┬────┬────┬────┬────┐
- │  1 │  2 │  3 │  4 │  5 │  6 │  7 │  8 │   ← page 1
- │  9 │ 10 │ 11 │ 12 │ 13 │ 14 │ 15 │ 16 │   ← page 2
- │ …                                      │
- │ 57 │ 58 │ 59 │ 60 │ 61 │ 62 │ 63 │ 64 │   ← page 8
- └────┴────┴────┴────┴────┴────┴────┴────┘
-```
+**`Session` is dark now.** It carries nothing, and it is deliberately not
+given a replacement verb — the surface ran out of buttons at M12
+([10](10-decisions.md)) and this is the first one back. An inert button
+that lights up like a live one is an invitation to press it, so it is
+unlit rather than dim.
 
-**Tap a pad and the window lands there**: that row becomes the top of the
-eight-row window, clamped at the bottom of the space.
+Gone with it: `Gesture::Goto`, `View::overview_row`, `model::row_summary`,
+`render::overview`, `render::overview_button`, the window marker, the
+launcher suppression, and the `"via":"overview"` journal line. The nine
+lines already in `attention.jsonl` stay where they are — they are what
+closed this question.
 
-> ⚠️ **Measured, and it is not being used for the thing it was built for.**
-> Nine presses over 55 hours. `lit` was **4** every single time and never
-> moved; **all nine destinations were rows 1–8** — inside the window they
-> started in. The map has **never once crossed an empty middle**, which is
-> the case the whole design argues from. What it is actually earning is
-> *one gesture instead of up to seven scrolls*, which is real but much
-> smaller. The honest follow-up is not a better map: it is whether a
-> sixty-four-row space is the right size at all
-> ([11](11-unbuilt.md#512-slots-for-four-used-rows)).
-
-One pad stands for eight slots, so seven-eighths of the information is
-thrown away. What survives is **the worst thing in the row**: asking →
-amber pulsing, producing output → green pulsing, alive and quiet → green
-static, exited non-zero → red, lost → dark red, nothing → off. Same colours,
-same meanings, no second language. *Which column* is deliberately lost: you
-are choosing a row to stand in, and the eight pads of that row answer the
-rest a half-second later.
-
-Mute needs no rule here. A muted slot never resolves to `NeedsAnswer` at
-all, so it cannot contribute amber to a row — for free, and for the same
-reason it cannot reach the queue.
-
-**Where you are standing** is marked by the only thing that costs nothing: a
-pad inside the window that would be dark is dark grey instead. No new
-colour, no new meaning. A pad inside the window that has content keeps its
-true colour, because state outranks position. The limit, stated rather than
-hidden: a window whose eight rows are all occupied shows no marker at all.
-Survivable because it is rare — and because in that case every pad you are
-looking at is lit, which is its own kind of answer.
-
-**Momentary. Press to show, release to hide, tap a pad to go.** Chosen over
-a latched mode for one reason: a latched overview is a mode, so the grid
-would mean two different things depending on something invisible.
-
-While it is held: `▲▼◄►` **stay live** (scrolling under the map slides the
-grey marker across it, which is a free demonstration of what the marker
-means); `>` ×7 go **dark and inert**, because grid row 3 means *page 3*
-right now, not *row 3*, and a launcher that fires into the wrong row is the
-one mistake that column must not make; holding the corner too is ambiguous,
-so **neither fires** and the overview disappears.
-
-Rejected: **a compacted list** — occupied rows only, packed from the top.
-Fewer dark pads, shorter reach, and it is *the pads move while you reach for
-them* wearing the sparsity argument as a hat. A map whose addresses are
-stable is worth more than a map that is short. **A per-page map** — pages
-stopped being a thing you navigate, and the measured usage crosses a page
-boundary inside one region of interest.
+**What was rejected along the way is still worth keeping**, because both
+rejections outlive the feature: a **compacted list** (occupied rows only,
+packed from the top) is *the pads move while you reach for them* wearing
+the sparsity argument as a hat, and a **per-page map** fails because pages
+stopped being a thing you navigate.
 
 ### Home is hold-`▲`
 
-`Session` cannot be two things, so `⌂` left it — and it did **not** get
-folded into the overview, because the one jump the data describes, row 13
-back to row 1, is worth a single press.
+`⌂` left `Session` because `Session` could not be two things, and it did
+**not** get folded into the overview, because the one jump the data
+describes — row 13 back to row 1 — is worth a single press. The overview
+is gone and this is still where home lives: a verb moved onto a freed
+button is a button that has to be re-learned.
 
 **`▲` scrolls one row on press. Held past 500 ms, it snaps to row 1.** There
 is no tap-versus-hold ambiguity to resolve, because a tap is not withheld
@@ -591,8 +560,11 @@ arrival because `▲` goes dark the moment you are there. It fires **once**
 per press — autorepeat would arrive at the same row by a longer road and
 need a rate nobody has measured.
 
-`▼` gets no hold. The bottom of a 64-row space where seven rows are occupied
-is not a destination, and the overview reaches the deep rows in one gesture.
+`▼` gets no hold. The bottom of a 64-row space where seven rows are
+occupied is not a destination. The overview used to be the other half of
+this argument — *the deep rows are one gesture away* — and with it cut,
+the deep rows are reached by scrolling, which is what the measurement says
+people were doing anyway.
 
 **The clock does not go in `chord.rs`.** That module is pure — presses and
 releases in, gestures out, no `now` — and that purity is what lets the four
@@ -846,16 +818,6 @@ machinery. Deferred, not dead; Stop's preview partly answers it for free by
 showing every pad hiding history.
 
 **Mute and respawn**, for the reasons above.
-
-### The map does not learn about forgotten rows
-
-The overview summarises what `resolve` draws, and `resolve` drops clean
-exits — so a dark-but-purgeable pad contributes **nothing** to the map. Now
-that Stop forgets dead stacks, the map understates exactly where those
-stacks are. Left alone, deliberately: you can never see both (two modifiers
-disarm the surface), and a dead row is not a destination — the overview
-exists to put the window somewhere, and lighting a row whose only content is
-forgettable history would be the map answering a question it was not asked.
 
 ## The arts
 
