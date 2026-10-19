@@ -927,6 +927,91 @@ fn report_unreachable(e: &impl std::fmt::Display, reachable: &mut bool) {
     *reachable = false;
 }
 
+/// Ask anchord for the list and bring up to date everything that moves on
+/// its clock: the watchers, the journal's first listing, the one-shot
+/// drift sweep, and the two expensive answers that are pure functions of
+/// the list. Returns the fresh `purgeable` and `viewed` for the caller to
+/// move into its own.
+///
+/// Lifted out of `main` to keep it inside its length budget, and it is
+/// one job with one name: this is the whole of what happens on the
+/// `RECONCILE` clock rather than on the tick, and nothing else in the
+/// loop runs on it.
+fn reconcile(
+    anchor: &Client,
+    watchers: &Watchers,
+    pages: &Pages,
+    tmux: &Tmux,
+    journal: &mut Journal,
+    sessions: &mut Vec<tally::anchor::Session>,
+    reachable: &mut bool,
+    swept: &mut bool,
+) -> (std::collections::BTreeMap<Slot, Vec<String>>, Vec<String>) {
+    match anchor.list() {
+        Ok(list) => {
+            if !*reachable {
+                eprintln!("tallyd: anchord reachable, {} sessions", list.len());
+            }
+            watchers.reconcile(&list, pages, tally::now_ms());
+            watchers.retain_known(&list);
+            *sessions = list;
+            *reachable = true;
+            // The journal has been holding its replayed map since
+            // `open`, because until this line an empty `sessions`
+            // meant "nobody asked anchord yet" rather than
+            // "nothing is asking" (`tally::journal::Journal`).
+            journal.saw_listing();
+            // Once, and only once there is something to audit.
+            if !*swept {
+                *swept = true;
+                sweep(tmux, sessions, pages);
+            }
+        }
+        Err(e) => {
+            // Deliberately keep the previous `sessions`: the grid
+            // freezes rather than lying about what is running.
+            report_unreachable(&e, reachable);
+        }
+    }
+    // Both of these are pure functions of state that only moves
+    // in this branch, and both are expensive: `purgeable` walks
+    // the session list allocating a `Vec<String>` per occupied
+    // pad, and `viewing` forks two `tmux` processes. On the tick
+    // they ran ~62 times a second each to produce a value that
+    // changes at most twice (review w8 F2, review w4 F3).
+    //
+    // `purgeable` is recomputed on the error arm too, which is
+    // free: `sessions` is deliberately kept on a failed list, so
+    // the answer is the one it already had.
+    (model::purgeable(sessions, pages), tmux.viewing())
+}
+
+/// Read the queue off the journal: which slot `►` would offer, and how
+/// many are asking.
+///
+/// Lifted out of `main` to keep it inside its length budget, and the two
+/// are one answer that is never computed apart ([`Waiting`]). `viewing`
+/// lives here because it exists only to be their argument.
+fn waiting_now(
+    journal: &Journal,
+    pads: &model::Pads<'_>,
+    resolved: &std::collections::BTreeMap<Slot, model::Resolved>,
+    viewed: &[String],
+) -> Waiting {
+    // The list of viewed sessions is the reconcile's; turning it into
+    // pads is this tick's, so a session that moved pad since is drawn
+    // where it is now rather than where it was.
+    let viewing: std::collections::BTreeSet<Slot> = viewed
+        .iter()
+        .filter_map(|id| resolved.values().find(|r| &r.session == id))
+        .map(|r| r.slot)
+        .collect();
+    Waiting {
+        head: queue::head(journal.waiting(), pads, &viewing),
+        queued: queue::depth(journal.waiting(), pads, &viewing),
+    }
+}
+
 fn main() -> ExitCode {
     install_handlers();
 
@@ -1105,44 +1190,16 @@ fn main() -> ExitCode {
 
         if elapsed.saturating_sub(last_reconcile) >= RECONCILE || last_reconcile.is_zero() {
             last_reconcile = elapsed;
-            match anchor.list() {
-                Ok(list) => {
-                    if !reachable {
-                        eprintln!("tallyd: anchord reachable, {} sessions", list.len());
-                    }
-                    watchers.reconcile(&list, &pages, tally::now_ms());
-                    watchers.retain_known(&list);
-                    sessions = list;
-                    reachable = true;
-                    // The journal has been holding its replayed map since
-                    // `open`, because until this line an empty `sessions`
-                    // meant "nobody asked anchord yet" rather than
-                    // "nothing is asking" (`tally::journal::Journal`).
-                    journal.saw_listing();
-                    // Once, and only once there is something to audit.
-                    if !swept {
-                        swept = true;
-                        sweep(&tmux, &sessions, &pages);
-                    }
-                }
-                Err(e) => {
-                    // Deliberately keep the previous `sessions`: the grid
-                    // freezes rather than lying about what is running.
-                    report_unreachable(&e, &mut reachable);
-                }
-            }
-            // Both of these are pure functions of state that only moves
-            // in this branch, and both are expensive: `purgeable` walks
-            // the session list allocating a `Vec<String>` per occupied
-            // pad, and `viewing` forks two `tmux` processes. On the tick
-            // they ran ~62 times a second each to produce a value that
-            // changes at most twice (review w8 F2, review w4 F3).
-            //
-            // `purgeable` is recomputed on the error arm too, which is
-            // free: `sessions` is deliberately kept on a failed list, so
-            // the answer is the one it already had.
-            purgeable = model::purgeable(&sessions, &pages);
-            viewed = tmux.viewing();
+            (purgeable, viewed) = reconcile(
+                &anchor,
+                &watchers,
+                &pages,
+                &tmux,
+                &mut journal,
+                &mut sessions,
+                &mut reachable,
+                &mut swept,
+            );
         }
 
         let now = tally::now_ms();
@@ -1166,18 +1223,7 @@ fn main() -> ExitCode {
         // map it keeps *is* the queue, ordered by when each slot started
         // asking (`docs/05-interaction.md`).
         let pads = model::Pads::new(&resolved, &purgeable, grip.hand);
-        // The list of viewed sessions is the reconcile's; turning it into
-        // pads is this tick's, so a session that moved pad since is drawn
-        // where it is now rather than where it was.
-        let viewing: std::collections::BTreeSet<Slot> = viewed
-            .iter()
-            .filter_map(|id| resolved.values().find(|r| &r.session == id))
-            .map(|r| r.slot)
-            .collect();
-        waiting = Waiting {
-            head: queue::head(journal.waiting(), &pads, &viewing),
-            queued: queue::depth(journal.waiting(), &pads, &viewing),
-        };
+        waiting = waiting_now(&journal, &pads, &resolved, &viewed);
         // How fast the surface breathes: the age of the oldest thing
         // waiting (`docs/05-interaction.md`). The ramp still runs on the
         // device -- only the beat is ours.
