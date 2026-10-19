@@ -1,26 +1,30 @@
-//! `~/.config/tally/slots.toml` — which pads spawn what.
+//! `~/.config/tally/slots.toml` — what the pages of the address space are
+//! called.
 //!
-//! Three tables, each answering a different question
-//! (`docs/02-model.md`): `[[page]]` is *where the top row points*,
-//! `[[spec]]` is *what to run*, `[[slot]]` is *what is where*.
+//! One table (`docs/02-model.md`): `[[page]]` is *how an address is
+//! spelled*. There used to be two more — `[[spec]]` was *what to run* and
+//! `[[slot]]` was *what is where* — and both were cut once the measurement
+//! was in: `~/.config/tally/` was empty, nothing had ever reached them, and
+//! **cwd is the one fact a config file cannot know in advance and a shell
+//! always knows** ([D8](../docs/10-decisions.md#d8--slotstoml-as-the-spawn-path),
+//! #40). Spawning is `tally spawn` and the `>` column.
 //!
 //! **Everything is optional and a missing file is not an error.** No
-//! config is eight unnamed pages and no specs, which is a fully working
-//! grid — it lights up for anything a shell script labelled, and only
-//! spawning from a dark pad needs the file.
+//! config is eight unnamed pages, which is a fully working grid — it
+//! lights up for anything a shell script labelled.
 //!
 //! A *malformed* file is a different matter and is treated differently:
 //! it is reported and then ignored, and tallyd runs on defaults. Refusing
 //! to start would take away the watching to punish a mistake in the
-//! spawning, and watching is the half that is load-bearing.
+//! naming, and watching is the half that is load-bearing.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use crate::slot::{self, Pages, Slot, PAGES};
+use crate::slot::{Pages, PAGES};
 
 /// Why a config file was not usable.
 #[derive(Debug)]
@@ -46,33 +50,10 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-/// Everything a press on a dark pad needs to know.
-///
-/// Flattened at load time: a `[[slot]]` naming a `[[spec]]` becomes one
-/// of these, so nothing downstream has to resolve a name against a table
-/// while a finger is waiting.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Launch {
-    /// The spec's name, which is what goes into `tl.spec` so a respawn
-    /// can find it again without the slot table.
-    pub spec: String,
-    /// `argv[0]`.
-    pub command: String,
-    /// `argv[1..]`.
-    pub args: Vec<String>,
-    /// Absolute, with `~` already expanded. `None` means anchord's cwd.
-    pub cwd: Option<PathBuf>,
-    /// Extra environment for the child.
-    pub env: BTreeMap<String, String>,
-    /// Run it as a login shell.
-    pub login_shell: bool,
-}
-
 /// A parsed, validated `slots.toml`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Config {
     pages: Pages,
-    slots: BTreeMap<Slot, Launch>,
 }
 
 impl Config {
@@ -96,7 +77,7 @@ impl Config {
         let text = match std::fs::read_to_string(path) {
             Ok(text) => text,
             // The common case, and not a problem: M1 was config-free and
-            // a watching-only install stays that way.
+            // the install still is.
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Self::default()),
             Err(e) => return Err(Error::Read(e)),
         };
@@ -117,30 +98,6 @@ impl Config {
     pub fn pages(&self) -> &Pages {
         &self.pages
     }
-
-    /// What pressing this dark pad spawns, if anything.
-    pub fn launch(&self, at: Slot) -> Option<&Launch> {
-        self.slots.get(&at)
-    }
-
-    /// Find a spec by the name in a session's `tl.spec` label.
-    ///
-    /// Respawn goes through the **label**, not the slot table, so a
-    /// session someone spawned from a shell with `--label tl.spec=claude`
-    /// respawns correctly even though no `[[slot]]` mentions its pad.
-    pub fn by_spec_name(&self, name: &str) -> Option<&Launch> {
-        self.slots.values().find(|l| l.spec == name)
-    }
-
-    /// How many slots carry a spec.
-    pub fn len(&self) -> usize {
-        self.slots.len()
-    }
-
-    /// Whether nothing can be spawned from the grid.
-    pub fn is_empty(&self) -> bool {
-        self.slots.is_empty()
-    }
 }
 
 /// The file as TOML sees it, before any rule has been applied.
@@ -149,10 +106,6 @@ impl Config {
 struct File {
     #[serde(default)]
     page: Vec<PageEntry>,
-    #[serde(default)]
-    spec: Vec<SpecEntry>,
-    #[serde(default)]
-    slot: Vec<SlotEntry>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -161,86 +114,12 @@ struct PageEntry {
     name: String,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct SpecEntry {
-    name: String,
-    argv: Vec<String>,
-    #[serde(default)]
-    cwd: Option<String>,
-    #[serde(default)]
-    env: BTreeMap<String, String>,
-    #[serde(default)]
-    login_shell: bool,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct SlotEntry {
-    at: String,
-    spec: String,
-    /// Overrides the spec's `cwd`. One spec, many repos is the common
-    /// shape — `claude` in eight checkouts is eight slots and one spec.
-    #[serde(default)]
-    cwd: Option<String>,
-}
-
 impl File {
     fn resolve(self) -> Result<Config, Error> {
-        let pages = resolve_pages(&self.page)?;
-        let specs = index_specs(&self.spec)?;
-
-        let mut slots: BTreeMap<Slot, Launch> = BTreeMap::new();
-        for entry in &self.slot {
-            let at = slot::parse(&entry.at, &pages).ok_or_else(|| {
-                Error::Invalid(format!(
-                    "slot {:?}: not page:1-8:1-8, or that page is not declared",
-                    entry.at
-                ))
-            })?;
-            let spec = specs.get(entry.spec.as_str()).ok_or_else(|| {
-                Error::Invalid(format!(
-                    "slot {:?} wants spec {:?}, which no [[spec]] declares",
-                    entry.at, entry.spec
-                ))
-            })?;
-            // Two slots on one address is a layout you cannot act on --
-            // and unlike two *sessions* on one pad, there is no "newest"
-            // to prefer. The file is wrong and says so.
-            if slots.contains_key(&at) {
-                return Err(Error::Invalid(format!(
-                    "slot {:?} is declared twice",
-                    entry.at
-                )));
-            }
-            let cwd = entry.cwd.as_ref().or(spec.cwd.as_ref());
-            let _previous = slots.insert(
-                at,
-                Launch {
-                    spec: spec.name.clone(),
-                    command: command_of(spec)?.to_owned(),
-                    args: spec.argv.get(1..).unwrap_or_default().to_vec(),
-                    cwd: cwd.map(|c| expand_tilde(c)),
-                    env: spec.env.clone(),
-                    login_shell: spec.login_shell,
-                },
-            );
-        }
-        Ok(Config { pages, slots })
-    }
-}
-
-fn command_of(spec: &SpecEntry) -> Result<&str, Error> {
-    spec.argv
-        .first()
-        .map(String::as_str)
-        .filter(|c| !c.is_empty())
-        .ok_or_else(|| {
-            Error::Invalid(format!(
-                "spec {:?}: argv is empty, which is not a command",
-                spec.name
-            ))
+        Ok(Config {
+            pages: resolve_pages(&self.page)?,
         })
+    }
 }
 
 fn resolve_pages(entries: &[PageEntry]) -> Result<Pages, Error> {
@@ -296,40 +175,6 @@ fn resolve_pages(entries: &[PageEntry]) -> Result<Pages, Error> {
     Ok(Pages::new(entries.iter().map(|p| p.name.clone())))
 }
 
-fn index_specs(entries: &[SpecEntry]) -> Result<BTreeMap<&str, &SpecEntry>, Error> {
-    let mut specs: BTreeMap<&str, &SpecEntry> = BTreeMap::new();
-    for entry in entries {
-        if specs.insert(entry.name.as_str(), entry).is_some() {
-            return Err(Error::Invalid(format!(
-                "spec {:?} is declared twice",
-                entry.name
-            )));
-        }
-    }
-    Ok(specs)
-}
-
-/// Expand a leading `~`.
-///
-/// **tally does this, not anchord.** `~` is a shell's idea and nothing
-/// between the config file and the PTY is a shell — anchor would take
-/// `~/projects` as a relative directory called `~`, and the spawn would
-/// fail with a path nobody recognises.
-///
-/// Only a leading `~/` or a bare `~`. `~alice` is another user's home and
-/// resolving it needs the password database; leaving it alone is better
-/// than guessing at `/Users/alice`.
-fn expand_tilde(path: &str) -> PathBuf {
-    let Some(home) = crate::env_path("HOME") else {
-        return PathBuf::from(path);
-    };
-    if path == "~" {
-        return home;
-    }
-    path.strip_prefix("~/")
-        .map_or_else(|| PathBuf::from(path), |rest| home.join(rest))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -339,93 +184,21 @@ mod tests {
 name = "work"
 [[page]]
 name = "infra"
-
-[[slot]]
-at   = "work:3:5"
-spec = "claude"
-cwd  = "/tmp/anchor"
-
-[[slot]]
-at   = "infra:1:1"
-spec = "shell"
-
-[[spec]]
-name = "claude"
-argv = ["claude", "--dangerously-skip-permissions"]
-login_shell = true
-
-[[spec]]
-name = "shell"
-argv = ["zsh"]
-cwd  = "/tmp"
 "#;
-
-    fn at(page: u8, row: u8, col: u8) -> Slot {
-        Slot { page, row, col }
-    }
 
     #[test]
     fn the_documented_example_parses() {
         let c = Config::parse(FULL).expect("valid");
         assert_eq!(c.pages().index_of("work"), Some(1));
         assert_eq!(c.pages().index_of("infra"), Some(2));
-        assert_eq!(c.len(), 2);
-
-        let claude = c.launch(at(1, 3, 5)).expect("work:3:5");
-        assert_eq!(claude.command, "claude");
-        assert_eq!(claude.args, ["--dangerously-skip-permissions"]);
-        assert_eq!(claude.cwd.as_deref(), Some(Path::new("/tmp/anchor")));
-        assert!(claude.login_shell);
-        assert_eq!(claude.spec, "claude");
     }
 
-    /// A slot with no `cwd` of its own inherits the spec's.
+    /// Missing is not malformed. This is the whole M1 install, and still
+    /// the whole install.
     #[test]
-    fn a_slot_falls_back_to_its_specs_cwd() {
-        let c = Config::parse(FULL).expect("valid");
-        let shell = c.launch(at(2, 1, 1)).expect("infra:1:1");
-        assert_eq!(shell.cwd.as_deref(), Some(Path::new("/tmp")));
-        assert!(!shell.login_shell);
-    }
-
-    /// The reason `[[slot]]` and `[[spec]]` are two tables: one spec,
-    /// many repos is the shape this is for.
-    #[test]
-    fn one_spec_serves_many_slots() {
-        let c = Config::parse(
-            r#"
-[[page]]
-name = "p"
-[[spec]]
-name = "claude"
-argv = ["claude"]
-[[slot]]
-at = "p:1:1"
-spec = "claude"
-cwd = "/tmp/a"
-[[slot]]
-at = "p:1:2"
-spec = "claude"
-cwd = "/tmp/b"
-"#,
-        )
-        .expect("valid");
-        assert_eq!(
-            c.launch(at(1, 1, 1)).expect("a").cwd.as_deref(),
-            Some(Path::new("/tmp/a"))
-        );
-        assert_eq!(
-            c.launch(at(1, 1, 2)).expect("b").cwd.as_deref(),
-            Some(Path::new("/tmp/b"))
-        );
-    }
-
-    /// Missing is not malformed. This is the whole M1 install.
-    #[test]
-    fn an_absent_file_is_eight_unnamed_pages_and_nothing_to_spawn() {
+    fn an_absent_file_is_eight_unnamed_pages() {
         let c = Config::load(Path::new("/nonexistent/tally/slots.toml")).expect("absence is ok");
         assert_eq!(c.pages(), &Pages::default());
-        assert!(c.is_empty(), "{c:?}");
         assert_eq!(c.pages().index_of("3"), Some(3));
     }
 
@@ -434,69 +207,11 @@ cwd = "/tmp/b"
         assert_eq!(Config::parse("").expect("valid"), Config::default());
     }
 
-    /// A pad that never lights because its page was never declared is the
-    /// worst failure this file has, so it is the one that must not parse.
     #[test]
-    fn a_slot_on_an_undeclared_page_is_refused() {
-        let e = Config::parse(
-            r#"
-[[spec]]
-name = "s"
-argv = ["x"]
-[[slot]]
-at = "nowhere:1:1"
-spec = "s"
-"#,
-        )
-        .expect_err("undeclared page");
-        assert!(matches!(e, Error::Invalid(_)), "{e}");
-    }
-
-    #[test]
-    fn a_slot_naming_an_undeclared_spec_is_refused() {
-        let e = Config::parse(
-            r#"
-[[page]]
-name = "p"
-[[slot]]
-at = "p:1:1"
-spec = "ghost"
-"#,
-        )
-        .expect_err("undeclared spec");
-        assert!(format!("{e}").contains("ghost"), "{e}");
-    }
-
-    #[test]
-    fn two_slots_on_one_address_is_refused() {
-        let e = Config::parse(
-            r#"
-[[page]]
-name = "p"
-[[spec]]
-name = "s"
-argv = ["x"]
-[[slot]]
-at = "p:2:2"
-spec = "s"
-[[slot]]
-at = "p:2:2"
-spec = "s"
-"#,
-        )
-        .expect_err("duplicate");
+    fn a_duplicate_page_name_is_refused() {
+        let e = Config::parse("[[page]]\nname = \"p\"\n[[page]]\nname = \"p\"\n")
+            .expect_err("duplicate");
         assert!(format!("{e}").contains("twice"), "{e}");
-    }
-
-    #[test]
-    fn a_duplicate_page_or_spec_name_is_refused() {
-        for text in [
-            "[[page]]\nname = \"p\"\n[[page]]\nname = \"p\"\n",
-            "[[spec]]\nname = \"s\"\nargv = [\"x\"]\n[[spec]]\nname = \"s\"\nargv = [\"y\"]\n",
-        ] {
-            let e = Config::parse(text).expect_err("duplicate");
-            assert!(format!("{e}").contains("twice"), "{e}");
-        }
     }
 
     /// A colon in a page name makes every `tl.slot` on it unparseable,
@@ -531,8 +246,8 @@ name = "wo\nrk"
 
     /// Nine pages is a ninth page's worth of addresses that cannot be
     /// written. The limit used to be the eight buttons in the top row;
-    /// since `docs/16` it is the depth of the address space itself, which
-    /// is the thing it was always really about.
+    /// since `docs/02-model.md` it is the depth of the address space
+    /// itself, which is the thing it was always really about.
     #[test]
     fn more_pages_than_the_address_space_is_refused() {
         let text = (1..=9).fold(String::new(), |mut acc, n| {
@@ -544,32 +259,25 @@ name = "wo\nrk"
         assert!(format!("{e}").contains("8 pages deep"), "{e}");
     }
 
-    /// An empty argv would otherwise reach anchord as `command: ""`.
-    #[test]
-    fn an_empty_argv_is_not_a_command() {
-        let e = Config::parse(
-            r#"
-[[page]]
-name = "p"
-[[spec]]
-name = "s"
-argv = []
-[[slot]]
-at = "p:1:1"
-spec = "s"
-"#,
-        )
-        .expect_err("empty argv");
-        assert!(format!("{e}").contains("argv"), "{e}");
-    }
-
     /// A typo in a key is a silently-ignored line otherwise -- the kind
     /// that has you staring at a dark pad for ten minutes.
     #[test]
     fn an_unknown_key_is_refused_rather_than_ignored() {
-        let e = Config::parse("[[spec]]\nname = \"s\"\nargv = [\"x\"]\ncdw = \"/tmp\"\n")
-            .expect_err("typo");
+        let e = Config::parse("[[page]]\nname = \"p\"\nnmae = \"q\"\n").expect_err("typo");
         assert!(matches!(e, Error::Syntax(_)), "{e}");
+    }
+
+    /// A table that was cut is a typo now, and says so rather than being
+    /// ignored (#40).
+    #[test]
+    fn a_cut_table_is_refused_rather_than_ignored() {
+        for text in [
+            "[[spec]]\nname = \"s\"\nargv = [\"x\"]\n",
+            "[[slot]]\nat = \"1:1:1\"\nspec = \"s\"\n",
+        ] {
+            let e = Config::parse(text).expect_err("cut table");
+            assert!(matches!(e, Error::Syntax(_)), "{e}");
+        }
     }
 
     #[test]
@@ -578,39 +286,5 @@ spec = "s"
             Config::parse("[[page").expect_err("broken"),
             Error::Syntax(_)
         ));
-    }
-
-    #[test]
-    fn a_leading_tilde_is_expanded_and_nothing_else_is() {
-        let home = crate::env_path("HOME").expect("HOME");
-        assert_eq!(expand_tilde("~"), home);
-        assert_eq!(expand_tilde("~/p/anchor"), home.join("p/anchor"));
-        // Another user's home needs the password database; guessing at
-        // `/Users/alice` is worse than passing it through.
-        assert_eq!(expand_tilde("~alice/p"), PathBuf::from("~alice/p"));
-        assert_eq!(expand_tilde("/abs/p"), PathBuf::from("/abs/p"));
-        assert_eq!(expand_tilde("rel/p"), PathBuf::from("rel/p"));
-        // Not a path component in the middle.
-        assert_eq!(expand_tilde("/a/~/b"), PathBuf::from("/a/~/b"));
-    }
-
-    /// Respawn reads `tl.spec` off the session, so the lookup has to work
-    /// by name as well as by address.
-    #[test]
-    fn a_spec_is_findable_by_the_name_a_label_carries() {
-        let c = Config::parse(FULL).expect("valid");
-        assert_eq!(
-            c.by_spec_name("claude").map(|l| l.command.as_str()),
-            Some("claude")
-        );
-        assert_eq!(c.by_spec_name("nope"), None);
-    }
-
-    /// A spec nothing points at is dead weight, not an error: you are
-    /// mid-edit, and refusing to load would take the whole grid with it.
-    #[test]
-    fn an_unused_spec_is_allowed() {
-        let c = Config::parse("[[spec]]\nname = \"idle\"\nargv = [\"x\"]\n").expect("valid");
-        assert!(c.is_empty(), "{c:?}");
     }
 }

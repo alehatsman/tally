@@ -20,9 +20,8 @@
 
 use std::collections::BTreeMap;
 
-use crate::anchor::{self, Client, Spawn};
+use crate::anchor::{self, Client};
 use crate::chord::Action;
-use crate::config::Launch;
 use crate::effect::{effect, Consequence, Effect};
 use crate::model::Pads;
 use crate::slot::{Pages, Slot};
@@ -30,8 +29,6 @@ use crate::slot::{Pages, Slot};
 /// What a gesture did, for the log line.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Done {
-    /// A new session, and its id.
-    Spawned(String),
     /// A session ended.
     Killed(String),
     /// Ended rows were forgotten, and how many.
@@ -57,7 +54,6 @@ pub enum Done {
 impl std::fmt::Display for Done {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Spawned(id) => write!(f, "spawned {id}"),
             Self::Killed(id) => write!(f, "killed {id}"),
             Self::Forgot(1) => write!(f, "forgot 1 row"),
             Self::Forgot(n) => write!(f, "forgot {n} rows"),
@@ -75,40 +71,18 @@ impl std::fmt::Display for Done {
 /// Everything a press needs in order to act.
 ///
 /// Two fields and no third: the socket, and the same [`Pads`] the frame
-/// was drawn from. A press reads the grid, the config and the purgeable
-/// rows **through** it, so there is nowhere left for this side to form
-/// its own opinion of what a pad is.
+/// was drawn from. A press reads the grid and the purgeable rows
+/// **through** it, so there is nowhere left for this side to form its own
+/// opinion of what a pad is.
 #[derive(Debug, Clone, Copy)]
 pub struct Context<'a> {
     /// Where the sessions live.
     pub client: &'a Client,
-    /// The grid the preview is showing, and what it can spawn.
+    /// The grid the preview is showing.
     pub pads: Pads<'a>,
 }
 
 impl Context<'_> {
-    /// A bare tap: spawn a dark pad, or report that it is a jump.
-    ///
-    /// Returns `Ok(None)` when the pad holds a session — the caller jumps,
-    /// because jumping is tmux's business and not anchord's
-    /// (`docs/06-views.md`).
-    ///
-    /// # Errors
-    /// Whatever `create` returned.
-    pub fn tap(&self, at: Slot, pages: &Pages) -> Result<Option<Done>, anchor::Error> {
-        if self.pads.grid().contains_key(&at) {
-            return Ok(None); // a jump; not ours
-        }
-        let Some(launch) = self.pads.launch(at) else {
-            // A dark pad with no spec. Nothing happens, and nothing
-            // should: which pads spawn what is your layout, and a press
-            // that silently started a shell would be worse than one that
-            // did nothing.
-            return Ok(Some(Done::Nothing));
-        };
-        self.spawn(launch, at, pages).map(Some)
-    }
-
     /// A tap under a held modifier.
     ///
     /// # Errors
@@ -134,25 +108,6 @@ impl Context<'_> {
             Effect::Acts(Consequence::PickedUp) => Ok(Done::Picked(at)),
             Effect::Acts(Consequence::Dropped) => self.put_down(at, pages),
         }
-    }
-
-    fn spawn(&self, launch: &Launch, at: Slot, pages: &Pages) -> Result<Done, anchor::Error> {
-        let Some(address) = at.label(pages) else {
-            return Ok(Done::Nothing);
-        };
-        let mut labels = BTreeMap::new();
-        let _slot = labels.insert(anchor::LABEL_SLOT.to_owned(), address);
-        let _spec = labels.insert(anchor::LABEL_SPEC.to_owned(), launch.spec.clone());
-        self.client
-            .create(&Spawn {
-                command: &launch.command,
-                args: &launch.args,
-                cwd: launch.cwd.as_deref(),
-                env: &launch.env,
-                login_shell: launch.login_shell,
-                labels: &labels,
-            })
-            .map(Done::Spawned)
     }
 
     /// End a session, having first said that we meant to.
@@ -261,7 +216,6 @@ mod tests {
     use std::collections::BTreeSet;
 
     use super::*;
-    use crate::config::Config;
     use crate::model::{frame_from, Resolved, View};
     use crate::render;
     use crate::signal::SlotState;
@@ -271,36 +225,25 @@ mod tests {
         Slot { page: 1, row, col }
     }
 
-    fn resolved(slot: Slot, state: SlotState, muted: bool, spec: Option<&str>) -> Resolved {
+    fn resolved(slot: Slot, state: SlotState, muted: bool) -> Resolved {
         Resolved {
             slot,
             session: "01J".to_owned(),
             title: None,
             state,
             muted,
-            spec: spec.map(str::to_owned),
             claude: None,
         }
     }
 
-    const CONFIG: &str = r#"
-[[spec]]
-name = "claude"
-argv = ["claude"]
-[[slot]]
-at = "1:1:1"
-spec = "claude"
-"#;
-
     fn context<'a>(
         client: &'a Client,
-        config: &'a Config,
         grid: &'a BTreeMap<Slot, Resolved>,
         purgeable: &'a BTreeMap<Slot, Vec<String>>,
     ) -> Context<'a> {
         Context {
             client,
-            pads: Pads::new(grid, config, purgeable, None),
+            pads: Pads::new(grid, purgeable, None),
         }
     }
 
@@ -312,30 +255,6 @@ spec = "claude"
         Client::new("/nonexistent/anchor.sock")
     }
 
-    #[test]
-    fn a_tap_on_an_occupied_pad_is_not_ours() {
-        let mut grid = BTreeMap::new();
-        let _r = grid.insert(at(1, 1), resolved(at(1, 1), SlotState::Quiet, false, None));
-        let (client, config, purge) = (nowhere(), Config::default(), BTreeMap::new());
-        let ctx = context(&client, &config, &grid, &purge);
-        assert_eq!(ctx.tap(at(1, 1), &Pages::default()).expect("no call"), None);
-    }
-
-    #[test]
-    fn a_tap_on_a_dark_pad_with_no_spec_does_nothing() {
-        let (client, config, grid, purge) = (
-            nowhere(),
-            Config::default(),
-            BTreeMap::new(),
-            BTreeMap::new(),
-        );
-        let ctx = context(&client, &config, &grid, &purge);
-        assert_eq!(
-            ctx.tap(at(4, 4), &Pages::default()).expect("no call"),
-            Some(Done::Nothing)
-        );
-    }
-
     /// The preview and the press read one predicate, so a dim pad is
     /// inert for every gesture — checked here rather than trusted.
     #[test]
@@ -344,40 +263,15 @@ spec = "claude"
         // Failed: not killable, not mutable, and respawn needs a spec.
         let _r = grid.insert(
             at(2, 2),
-            resolved(at(2, 2), SlotState::Failed { code: 1 }, false, None),
+            resolved(at(2, 2), SlotState::Failed { code: 1 }, false),
         );
-        let (client, config, purge) = (nowhere(), Config::default(), BTreeMap::new());
-        let ctx = context(&client, &config, &grid, &purge);
+        let (client, purge) = (nowhere(), BTreeMap::new());
+        let ctx = context(&client, &grid, &purge);
         assert_eq!(
             ctx.chord(Action::Stop, at(2, 2), &Pages::default())
                 .expect("no call"),
             Done::Nothing
         );
-    }
-
-    /// `tl.spec` is the fallback, so a session spawned from a shell stays
-    /// respawnable without appearing in `slots.toml`.
-    #[test]
-    fn a_spec_label_makes_a_pad_respawnable_without_a_slot_entry() {
-        let config = Config::parse(CONFIG).expect("valid");
-        let mut grid = BTreeMap::new();
-        // 5:5 is in no `[[slot]]`, but the dead session there names a spec.
-        let _r = grid.insert(
-            at(5, 5),
-            resolved(
-                at(5, 5),
-                SlotState::Failed { code: 1 },
-                false,
-                Some("claude"),
-            ),
-        );
-        let (client, purge) = (nowhere(), BTreeMap::new());
-        let ctx = context(&client, &config, &grid, &purge);
-        assert_eq!(
-            ctx.pads.launch(at(5, 5)).map(|l| l.command.as_str()),
-            Some("claude")
-        );
-        assert!(ctx.pads.at(at(5, 5)).spec, "the preview must light it too");
     }
 
     /// The pad the merged button exists for, and the one that makes it
@@ -390,7 +284,6 @@ spec = "claude"
     /// the newest.
     #[test]
     fn a_dark_pad_with_history_is_dark_until_the_hold_reveals_it() {
-        let config = Config::default();
         let grid = BTreeMap::new(); // nothing drawn here, ever
         let mut purge = BTreeMap::new();
         let _p = purge.insert(
@@ -398,7 +291,7 @@ spec = "claude"
             vec!["01J_c".to_owned(), "01J_b".to_owned(), "01J_a".to_owned()],
         );
         let client = nowhere();
-        let ctx = context(&client, &config, &grid, &purge);
+        let ctx = context(&client, &grid, &purge);
         let pressed = BTreeSet::new();
 
         assert!(
@@ -443,12 +336,12 @@ spec = "claude"
 
     /// The regression the shared [`Pads`] exists to make unrepresentable.
     ///
-    /// Rename or delete a `[[spec]]` and every dead session that named it
-    /// carries a `tl.spec` pointing at nothing. The renderer used to count
-    /// the label alone and the press used to resolve it, so holding
+    /// It was found as a `tl.spec` that no longer resolved: the renderer
+    /// counted the label alone and the press resolved it, so holding
     /// respawn painted the pad green — *this will respawn* — and the press
-    /// returned [`Done::Nothing`]. The preview lied about the only thing
-    /// it is there to be believed about.
+    /// did nothing. The preview lied about the only thing it is there to
+    /// be believed about. Both the label and the respawn chord are gone;
+    /// the invariant they cost is what this still holds.
     ///
     /// Asserted as the two halves agreeing rather than as one expected
     /// colour: what matters is that the pixel and the press tell the same
@@ -464,21 +357,13 @@ spec = "claude"
     /// (`docs/05-interaction.md`), and that case is the test below.
     #[test]
     fn the_preview_and_the_press_agree_about_a_dead_pad() {
-        let config = Config::parse(CONFIG).expect("valid");
         let mut grid = BTreeMap::new();
-        // Nothing in `slots.toml` names `ghost`: the `[[spec]]` it was
-        // spawned from has since been renamed.
         let _r = grid.insert(
             at(5, 5),
-            resolved(
-                at(5, 5),
-                SlotState::Failed { code: 1 },
-                false,
-                Some("ghost"),
-            ),
+            resolved(at(5, 5), SlotState::Failed { code: 1 }, false),
         );
         let (client, purge, pages) = (nowhere(), BTreeMap::new(), Pages::default());
-        let ctx = context(&client, &config, &grid, &purge);
+        let ctx = context(&client, &grid, &purge);
         let pressed = BTreeSet::new();
         let frame = frame_from(
             &ctx.pads,
@@ -510,33 +395,5 @@ spec = "claude"
             Done::Nothing,
             "and the press must agree with the pixel"
         );
-    }
-
-    /// The file wins over the label: it is what you edited most recently
-    /// and meant most deliberately.
-    #[test]
-    fn the_slot_table_outranks_a_stale_spec_label() {
-        let config = Config::parse(CONFIG).expect("valid");
-        let mut grid = BTreeMap::new();
-        let _r = grid.insert(
-            at(1, 1),
-            resolved(
-                at(1, 1),
-                SlotState::Failed { code: 1 },
-                false,
-                Some("ghost"),
-            ),
-        );
-        let (client, purge) = (nowhere(), BTreeMap::new());
-        let ctx = context(&client, &config, &grid, &purge);
-        assert_eq!(
-            ctx.pads.launch(at(1, 1)).map(|l| l.spec.as_str()),
-            Some("claude")
-        );
-    }
-
-    #[test]
-    fn done_says_what_happened() {
-        assert_eq!(Done::Spawned("01J".to_owned()).to_string(), "spawned 01J");
     }
 }

@@ -244,28 +244,16 @@ re-proposed as new.
 
 ## Open scope questions
 
-**Three cuts the evidence suggests and nobody has decided.** They are
-larger than the graveyard above because each removes something that
-*works*, and that is a decision about what this product is rather than a
-cleanup.
+**Two cuts the evidence suggests and nobody has decided.** They are larger
+than the graveyard above because each removes something that *works*, and
+that is a decision about what this product is rather than a cleanup.
 
-### The spec system is unreachable
-
-`~/.config/tally/` is **empty**. `tallyd` loads *8 pages, 0 slots*. So
-`[[slot]]`, `[[spec]]`, the `tl.spec` label and **spawn-from-a-dark-pad**
-are all code nothing can reach — and `Config::by_spec_name`'s own doc
-comment still says *"Respawn reads `tl.spec`"*, for a gesture deleted in
-[D8](10-decisions.md#d8--slotstoml-as-the-spawn-path).
-
-Keeping `[[page]]` and deleting the other two tables would remove a label,
-a code path, a `create` argument and a table from
-[02](02-model.md#specs-live-in-a-file).
-
-**Why it is not just a cleanup:** *"spawn — press an unbound slot, get a
-session"* is one of [01](01-scope.md)'s six bullets. Cutting it edits the
-scope, and the two spawn paths that are actually used — `tally spawn` and
-`>` — are both *outside* that bullet as written.
-[#40](https://github.com/alehatsman/tally/issues/40).
+The third is **decided and done**: the spec system is cut. `[[slot]]`,
+`[[spec]]`, `tl.spec` and spawn-from-a-dark-pad are gone, `slots.toml` is
+one table, and [01](01-scope.md)'s second bullet is reworded to describe
+the spawning that actually happens
+([#40](https://github.com/alehatsman/tally/issues/40),
+[D8](10-decisions.md#d8--slotstoml-as-the-spawn-path)).
 
 ### 512 slots for four used rows
 

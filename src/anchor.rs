@@ -28,8 +28,6 @@ use crate::signal::SessionState;
 pub const PREFIX: &str = "tl.";
 /// Which pad a session is bound to: `page:row:col`.
 pub const LABEL_SLOT: &str = "tl.slot";
-/// Which spec spawned it, for respawn.
-pub const LABEL_SPEC: &str = "tl.spec";
 /// Set to suppress attention for this session.
 pub const LABEL_MUTE: &str = "tl.mute";
 /// Set by a `Notification` hook to declare the agent is waiting.
@@ -690,7 +688,7 @@ mod tests {
     /// Every label we write carries our prefix, so a grep finds all of them.
     #[test]
     fn every_label_is_in_our_namespace() {
-        for label in [LABEL_SLOT, LABEL_SPEC, LABEL_MUTE, LABEL_ATTENTION] {
+        for label in [LABEL_SLOT, LABEL_MUTE, LABEL_ATTENTION] {
             assert!(label.starts_with(PREFIX), "{label} is outside {PREFIX}");
         }
     }

@@ -709,7 +709,6 @@ mod tests {
                     source: Source::Derived,
                 },
                 muted: false,
-                spec: None,
                 claude: None,
             },
         );
@@ -950,7 +949,6 @@ mod tests {
                     source: Source::Derived,
                 },
                 muted: false,
-                spec: None,
                 claude: None,
             },
         );
