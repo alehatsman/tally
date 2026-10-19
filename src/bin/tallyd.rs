@@ -578,9 +578,6 @@ impl Link {
         }
         if elapsed.saturating_sub(self.last_reply) >= DEVICE_SILENCE {
             eprintln!("tallyd: Launchpad stopped answering, dropping it");
-            // It is gone, so do not try to restore it on the way out
-            // and do not warn that the restore failed.
-            d.abandon();
             self.lost();
         }
     }
@@ -604,7 +601,8 @@ impl Link {
             Err(e) => {
                 // The write failed, which on this stack means the port
                 // went away. Drop it and go back to polling; the pads
-                // are dark anyway, because the device is gone.
+                // are dark anyway, because the device is gone. `lost`
+                // abandons it, so no restore is tried on a dead port.
                 eprintln!("tallyd: Launchpad disconnected ({e})");
                 self.lost();
             }
@@ -613,7 +611,16 @@ impl Link {
 
     /// The one departure path. Both callers above reach it, which is the
     /// point of the type: a device that leaves always leaves the same way.
+    ///
+    /// That includes the device being abandoned *here*, not by the caller:
+    /// restoring Live mode on a port that has gone away either prints the
+    /// Setup-menu alarm for what is only an unplug, or blocks this single
+    /// thread for `REPLY_TIMEOUT` waiting on a readback that cannot come
+    /// ([`Device::abandon`]).
     fn lost(&mut self) {
+        if let Some(d) = self.device.as_mut() {
+            d.abandon();
+        }
         self.device = None;
         self.repaint = true;
         self.departed = true;
