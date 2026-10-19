@@ -1,3 +1,4 @@
+use super::grid::pads;
 use crate::surface::palette::{AMBER, GREEN, RED, YELLOW};
 use crate::surface::{Button, Cell, Frame};
 
@@ -81,10 +82,8 @@ pub(super) fn reading(k: u32) -> Option<(u8, u8)> {
 
 /// Fill the whole grid with one cell.
 pub(super) fn fill(f: &mut Frame, cell: Cell) {
-    for row in 1..=8u8 {
-        for col in 1..=8u8 {
-            f.set(Button::Grid { row, col }, cell);
-        }
+    for (row, col) in pads() {
+        f.set(Button::Grid { row, col }, cell);
     }
 }
 
