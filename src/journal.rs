@@ -555,8 +555,8 @@ fn parse_address(text: &str, pages: &Pages) -> Option<Slot> {
         return None;
     }
     let ok = (1..=crate::slot::PAGES).contains(&page)
-        && (1..=8).contains(&row)
-        && (1..=8).contains(&col);
+        && (1..=crate::slot::ROWS_PER_PAGE).contains(&row)
+        && (1..=crate::slot::COLS).contains(&col);
     ok.then_some(Slot { page, row, col })
 }
 
