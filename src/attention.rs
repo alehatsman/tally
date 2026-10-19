@@ -13,6 +13,7 @@
 use std::collections::BTreeMap;
 
 use crate::anchor::Session;
+use crate::signal::SessionState;
 
 /// How far up to walk before giving up.
 ///
@@ -100,10 +101,15 @@ pub fn owning_session<'a>(
         // Terminal rows keep their pid in anchor's history, and a pid is
         // reused by the OS eventually. Only a live session can be the one
         // this hook is running inside.
-        if let Some(s) = sessions
-            .iter()
-            .find(|s| s.pid == Some(pid) && matches!(s.state.as_str(), "running" | "closing"))
-        {
+        //
+        // Through [`Session::lifecycle`] rather than against the raw
+        // strings: this used to match `"running" | "closing"` here, so a
+        // state anchord renamed would have been decided twice, once by
+        // each spelling. `lifecycle` owns the unknown-is-`Lost` rule.
+        if let Some(s) = sessions.iter().find(|s| {
+            s.pid == Some(pid)
+                && matches!(s.lifecycle(), SessionState::Running | SessionState::Closing)
+        }) {
             return Some(s);
         }
         // pid 1 is launchd/init and 0 is the kernel: either is the top.

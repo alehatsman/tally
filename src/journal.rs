@@ -90,8 +90,11 @@ impl Sink {
     }
 
     /// Whether anything written here lands anywhere.
-    #[must_use]
-    pub fn is_open(&self) -> bool {
+    ///
+    /// Only the retire-on-failure tests ask: no caller would do anything
+    /// different with the answer, which is the whole point of [`Sink`].
+    #[cfg(test)]
+    fn is_open(&self) -> bool {
         self.0.is_some()
     }
 }
@@ -223,7 +226,8 @@ impl Journal {
     ///
     /// # Errors
     /// Whatever the sink returns.
-    pub fn record(
+    #[cfg(test)]
+    fn record(
         &mut self,
         resolved: &BTreeMap<Slot, Resolved>,
         pages: &Pages,
@@ -284,14 +288,20 @@ impl Journal {
         }
 
         // Stopped asking: answered, exited, muted, or the pad went empty.
-        let still: Vec<Slot> = resolved
-            .iter()
-            .filter(|(_, r)| matches!(r.state, SlotState::NeedsAnswer { .. }))
-            .map(|(s, _)| *s)
-            .collect();
+        //
+        // Collected rather than iterated because the loop below mutates
+        // `asking_now`. The membership test is a lookup in `resolved`,
+        // which is keyed by the same `Slot`; it used to build a second
+        // `Vec` of the still-asking slots and `contains` it once per
+        // entry, which is a linear scan inside a loop.
         let done: Vec<Slot> = asking_now
             .keys()
-            .filter(|s| !still.contains(s))
+            .filter(|s| {
+                !matches!(
+                    resolved.get(s).map(|r| r.state),
+                    Some(SlotState::NeedsAnswer { .. })
+                )
+            })
             .copied()
             .collect();
         for slot in done {
@@ -313,7 +323,13 @@ impl Journal {
     }
 
     /// How many slots are currently asking.
-    pub fn asking(&self) -> usize {
+    ///
+    /// The replay tests' assertion. The daemon counts the queue through
+    /// [`queue::depth`](crate::queue::depth) over [`Self::waiting`]
+    /// instead, because that count excludes the muted and the pad you are
+    /// already looking at and this one does not.
+    #[cfg(test)]
+    fn asking(&self) -> usize {
         self.asking.len()
     }
 
@@ -328,19 +344,19 @@ impl Journal {
         &self.asking
     }
 
-    /// Record a press of `►` ([`nav_next`]).
+    /// Record a press of `►`, to this journal's own file.
     pub fn jumped_next(&mut self, now: i64, slot: &str, waited_ms: i64, queued: usize) {
         self.sink
             .write(|out| nav_next(out, now, slot, waited_ms, queued));
     }
 
-    /// Record a press of a **pad** ([`nav_pad`]).
+    /// Record a press of a **pad**, to this journal's own file.
     pub fn jumped_pad(&mut self, now: i64, slot: &str, waited_ms: Option<i64>, queued: usize) {
         self.sink
             .write(|out| nav_pad(out, now, slot, waited_ms, queued));
     }
 
-    /// Record a press of `◄` ([`nav_back`]).
+    /// Record a press of `◄`, to this journal's own file.
     pub fn jumped_back(&mut self, now: i64, ok: bool) {
         self.sink.write(|out| nav_back(out, now, ok));
     }
@@ -354,7 +370,7 @@ impl Journal {
 ///
 /// # Errors
 /// Whatever the sink returns.
-pub fn nav_next(
+fn nav_next(
     out: &mut impl Write,
     now: i64,
     slot: &str,
@@ -364,13 +380,10 @@ pub fn nav_next(
     write_line(
         out,
         &Nav {
-            ms: now,
-            kind: "nav",
-            via: "next",
             slot: Some(slot),
             waited_ms: Some(waited_ms),
             queued: Some(queued),
-            ok: None,
+            ..Nav::press(now, "next")
         },
     )
 }
@@ -393,7 +406,7 @@ pub fn nav_next(
 ///
 /// # Errors
 /// Whatever the sink returns.
-pub fn nav_pad(
+fn nav_pad(
     out: &mut impl Write,
     now: i64,
     slot: &str,
@@ -403,13 +416,10 @@ pub fn nav_pad(
     write_line(
         out,
         &Nav {
-            ms: now,
-            kind: "nav",
-            via: "pad",
             slot: Some(slot),
             waited_ms,
             queued: Some(queued),
-            ok: None,
+            ..Nav::press(now, "pad")
         },
     )
 }
@@ -418,17 +428,12 @@ pub fn nav_pad(
 ///
 /// # Errors
 /// Whatever the sink returns.
-pub fn nav_back(out: &mut impl Write, now: i64, ok: bool) -> io::Result<()> {
+fn nav_back(out: &mut impl Write, now: i64, ok: bool) -> io::Result<()> {
     write_line(
         out,
         &Nav {
-            ms: now,
-            kind: "nav",
-            via: "back",
-            slot: None,
-            waited_ms: None,
-            queued: None,
             ok: Some(ok),
+            ..Nav::press(now, "back")
         },
     )
 }
@@ -438,6 +443,12 @@ pub fn nav_back(out: &mut impl Write, now: i64, ok: bool) -> io::Result<()> {
 /// `kind` is what separates these from state lines, and it is written on
 /// every one of them so a reader never has to infer the shape from which
 /// fields happen to be present.
+///
+/// One struct with `Option` fields, which is the opposite of what
+/// [`Asked`] and [`Answered`] do, and deliberately: the three nav shapes
+/// share a `kind`, a `via` discriminator and a reader, so an absent field
+/// is read as "that button carries no slot" rather than as a second
+/// format. The state shapes share none of that. See [`Answered`].
 #[derive(Debug, Serialize)]
 struct Nav<'a> {
     ms: i64,
@@ -451,6 +462,26 @@ struct Nav<'a> {
     queued: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     ok: Option<bool>,
+}
+
+impl Nav<'_> {
+    /// The half every nav line shares, so the three that do not apply stop
+    /// being typed out as `None` at each call site.
+    ///
+    /// `..Nav::press(..)` cannot reorder the wire format: serde writes
+    /// fields in **declaration** order, not in the order a literal lists
+    /// them, and `skip_serializing_if` already governs the absent ones.
+    fn press(ms: i64, via: &'static str) -> Self {
+        Self {
+            ms,
+            kind: "nav",
+            via,
+            slot: None,
+            waited_ms: None,
+            queued: None,
+            ok: None,
+        }
+    }
 }
 
 /// A slot that just started asking.
@@ -484,6 +515,9 @@ struct Asked<'a> {
 /// two shapes genuinely differ: `source` and `title` have no meaning for
 /// a transition *out* of asking, and emitting `"source":null` here would
 /// be a third format rather than an honest one.
+///
+/// [`Nav`] goes the other way on purpose. Three button presses share a
+/// `kind`, a `via` and a reader; a rise and a fall share only the slot.
 #[derive(Debug, Serialize)]
 struct Answered<'a> {
     ms: i64,
@@ -562,6 +596,15 @@ fn parse_address(text: &str, pages: &Pages) -> Option<Slot> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    const T0: i64 = 1_760_000_000_000;
+
+    /// A slot, without the three field names at every call site — the
+    /// same helper `queue.rs::tests` already has.
+    fn at(page: u8, row: u8, col: u8) -> Slot {
+        Slot { page, row, col }
+    }
 
     /// A navigation line records a press, not a slot. Reading one as a
     /// transition would invent a rise nobody made.
@@ -578,14 +621,7 @@ mod tests {
         );
         let j = Journal::replay(text, &pages);
         assert_eq!(j.asking(), 1, "the nav lines changed nothing");
-        let (_, since) = j
-            .waiting()
-            .get(&Slot {
-                page: 1,
-                row: 3,
-                col: 3,
-            })
-            .expect("still asking");
+        let (_, since) = j.waiting().get(&at(1, 3, 3)).expect("still asking");
         assert_eq!(*since, 1000, "and did not move the clock");
     }
 
@@ -611,14 +647,7 @@ mod tests {
             "\n",
         );
         let j = Journal::replay(text, &pages);
-        let (session, since) = j
-            .waiting()
-            .get(&Slot {
-                page: 1,
-                row: 1,
-                col: 1,
-            })
-            .expect("asking");
+        let (session, since) = j.waiting().get(&at(1, 1, 1)).expect("asking");
         assert_eq!(session, "ABC");
         assert_eq!(*since, 4242);
     }
@@ -680,10 +709,6 @@ mod tests {
         );
         assert_eq!(quiet["queued"], 0);
     }
-    use super::*;
-
-    const T0: i64 = 1_760_000_000_000;
-
     fn asking_at(slot: Slot, session: &str) -> BTreeMap<Slot, Resolved> {
         let mut m = BTreeMap::new();
         let _p = m.insert(
@@ -715,11 +740,7 @@ mod tests {
     /// second one being written.
     #[test]
     fn a_restart_does_not_re_ask_a_slot_that_never_stopped() {
-        let slot = Slot {
-            page: 1,
-            row: 3,
-            col: 3,
-        };
+        let slot = at(1, 3, 3);
         let pages = Pages::default();
         let written = r#"{"ms":1792158972550,"session":"01M52FZ9","slot":"1:3:3","to":"needs_answer","source":"derived"}"#;
 
@@ -846,14 +867,14 @@ mod tests {
         std::fs::remove_file(&path).expect("clean up");
     }
 
-    /// Not-found is the first run. Everything else is a fault, and a fault
-    /// that resumes empty while the sink keeps appending re-raises every
-    /// slot still asking, once per restart — so it is reported on stderr
-    /// rather than passed off as a first run. The map is still empty: there
-    /// is nothing else a daemon can do, and the grid is the half that is
-    /// load-bearing. The report itself lands on stderr, which is where the
-    /// operator reads it and not somewhere a test can assert; what is
-    /// locked here is that the fault path exists and stays survivable.
+    /// Not-found is the first run; every other read failure is a fault
+    /// that still resumes empty, and [`Journal::resumed`] says why. The
+    /// stderr report is not something a test can assert — what is locked
+    /// here is that the fault path exists and stays survivable.
+    ///
+    /// Through `resumed` and not [`Journal::open`], which
+    /// `an_unopenable_journal_is_still_a_journal` covers: the read half
+    /// has to survive on its own, whatever the sink did.
     #[test]
     fn an_unreadable_journal_is_not_a_first_run() {
         // A directory is readable as a path and never as a file: EISDIR.
@@ -886,11 +907,7 @@ mod tests {
 
     #[test]
     fn a_pad_that_starts_asking_is_recorded_once() {
-        let slot = Slot {
-            page: 1,
-            row: 3,
-            col: 5,
-        };
+        let slot = at(1, 3, 5);
         let mut j = Journal::default();
         let pages = Pages::default();
         let state = asking_at(slot, "01J");
@@ -914,11 +931,7 @@ mod tests {
 
     #[test]
     fn answering_records_how_long_it_waited() {
-        let slot = Slot {
-            page: 1,
-            row: 3,
-            col: 5,
-        };
+        let slot = at(1, 3, 5);
         let mut j = Journal::default();
         let pages = Pages::default();
         let mut out = Vec::new();
@@ -937,11 +950,7 @@ mod tests {
 
     #[test]
     fn a_second_ask_on_the_same_pad_is_a_second_line() {
-        let slot = Slot {
-            page: 1,
-            row: 1,
-            col: 1,
-        };
+        let slot = at(1, 1, 1);
         let mut j = Journal::default();
         let pages = Pages::default();
         let mut out = Vec::new();
@@ -959,11 +968,7 @@ mod tests {
     #[test]
     fn a_named_page_is_written_by_name() {
         let pages = Pages::new(["work".to_owned()]);
-        let slot = Slot {
-            page: 1,
-            row: 2,
-            col: 4,
-        };
+        let slot = at(1, 2, 4);
         let mut out = Vec::new();
         Journal::default()
             .record(&asking_at(slot, "01J"), &pages, T0, &mut out)
@@ -979,11 +984,7 @@ mod tests {
     #[test]
     fn a_page_name_a_session_or_a_title_full_of_quotes_still_parses() {
         let pages = Pages::new([r#"wo"rk\"#.to_owned()]);
-        let slot = Slot {
-            page: 1,
-            row: 2,
-            col: 4,
-        };
+        let slot = at(1, 2, 4);
         let mut state = BTreeMap::new();
         let _p = state.insert(
             slot,
@@ -1034,11 +1035,7 @@ mod tests {
     /// line, and `null` is what the field has always carried.
     #[test]
     fn a_missing_title_is_written_as_null() {
-        let slot = Slot {
-            page: 1,
-            row: 1,
-            col: 1,
-        };
+        let slot = at(1, 1, 1);
         let mut state = asking_at(slot, "01J");
         if let Some(r) = state.get_mut(&slot) {
             r.title = None;
@@ -1097,5 +1094,32 @@ mod tests {
         let j = Journal::open(&dir, &Pages::default());
         assert!(!j.sink.is_open());
         assert_eq!(j.asking(), 0);
+    }
+
+    /// The nav lines are a **persisted** schema: F0 is computed from this
+    /// file and its history, and the other tests here assert field
+    /// *presence*, which a reordering would survive. This one pins the
+    /// bytes, because [`Nav::press`] is a struct-update base and the
+    /// obvious worry about one is that it moves a field.
+    #[test]
+    fn a_nav_line_is_written_byte_for_byte_as_it_always_was() {
+        let mut out = Vec::new();
+        nav_next(&mut out, 9_000, "1:2:1", 219_722, 4).expect("write");
+        nav_pad(&mut out, 9_200, "1:2:1", Some(219_722), 4).expect("write");
+        nav_pad(&mut out, 9_300, "1:3:7", None, 0).expect("write");
+        nav_back(&mut out, 9_100, false).expect("write");
+        assert_eq!(
+            String::from_utf8(out).expect("utf8"),
+            concat!(
+                r#"{"ms":9000,"kind":"nav","via":"next","slot":"1:2:1","waited_ms":219722,"queued":4}"#,
+                "\n",
+                r#"{"ms":9200,"kind":"nav","via":"pad","slot":"1:2:1","waited_ms":219722,"queued":4}"#,
+                "\n",
+                r#"{"ms":9300,"kind":"nav","via":"pad","slot":"1:3:7","queued":0}"#,
+                "\n",
+                r#"{"ms":9100,"kind":"nav","via":"back","ok":false}"#,
+                "\n",
+            )
+        );
     }
 }
