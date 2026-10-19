@@ -7,12 +7,24 @@
 //! cycle (`docs/08-daemon.md`). Everything here is arranged so that the
 //! restore happens on every path out: normal return, error, panic unwind,
 //! and a signal that the main loop turns into a normal return.
+//!
+//! The device is usually on this machine. When it is on the far side of
+//! the WSL line, [`BRIDGE_ENV`] names the bridge that holds it and the
+//! same bytes cross a socket instead (`docs/13-bridge.md`). **Nothing
+//! above this module can tell which**: it is one type with two ways of
+//! moving bytes, not two devices.
 
 use std::fmt;
+use std::io;
+use std::net::{Shutdown, TcpStream, ToSocketAddrs};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use std::sync::Arc;
+use std::thread;
 use std::time::{Duration, Instant};
 
 use midir::{MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
+use tallybridge::wire::{self, Hello, Kind};
 
 use crate::surface::sysex;
 use crate::surface::{Button, Frame};
@@ -40,6 +52,21 @@ const CLOCK_STOP: [u8; 1] = [0xFC];
 /// `midir` reports.
 pub const PORT_SUBSTRING: &str = "LPMiniMK3 MIDI";
 
+/// Set to an address, and the device is reached through `tallybridge` at
+/// that address rather than through a local MIDI port -- the Launchpad on
+/// a Windows desk, `tallyd` in WSL (`docs/13-bridge.md`).
+///
+/// Unset is the local port, exactly as before. **A Mac with a Launchpad
+/// on it never reaches the other path.**
+pub const BRIDGE_ENV: &str = "TALLY_BRIDGE";
+
+/// How long a connect to the bridge may take.
+///
+/// It bounds a loop tick, not a wait: a loopback connect answers in under
+/// a millisecond (0.4-0.5 ms measured, WSL to Windows), and nothing
+/// listening is refused at once.
+const CONNECT_TIMEOUT: Duration = Duration::from_millis(500);
+
 /// Something the device, or the MIDI stack under it, would not do.
 #[derive(Debug)]
 pub enum Error {
@@ -50,6 +77,10 @@ pub enum Error {
     NotALaunchpad,
     /// The MIDI stack refused.
     Midi(String),
+    /// The bridge could not be reached, or said something other than
+    /// hello. Nothing listening is [`Error::NotFound`] instead: that is
+    /// the bridge's unplugged cable.
+    Bridge(String),
 }
 
 impl fmt::Display for Error {
@@ -58,6 +89,7 @@ impl fmt::Display for Error {
             Self::NotFound => write!(f, "no MIDI port matching {PORT_SUBSTRING:?}"),
             Self::NotALaunchpad => write!(f, "port matched but the device is not a Mini MK3"),
             Self::Midi(e) => write!(f, "midi: {e}"),
+            Self::Bridge(e) => write!(f, "bridge: {e}"),
         }
     }
 }
@@ -88,9 +120,7 @@ pub enum Event {
 /// method you must remember to call, because the failure it prevents is
 /// invisible until the next time you reach for the Setup menu.
 pub struct Device {
-    out: MidiOutputConnection,
-    /// Held so the callback keeps running; never read directly.
-    _input: MidiInputConnection<Sender<Event>>,
+    port: Port,
     events: Receiver<Event>,
     /// The last frame put on the wire, so the next one can be a diff.
     last: Frame,
@@ -103,7 +133,7 @@ pub struct Device {
 impl fmt::Debug for Device {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Device")
-            .field("port", &PORT_SUBSTRING)
+            .field("port", &self.port)
             .finish_non_exhaustive()
     }
 }
@@ -121,6 +151,27 @@ impl Device {
     /// [`Error::NotFound`] if nothing matches, [`Error::NotALaunchpad`] if
     /// the device does not identify correctly, [`Error::Midi`] otherwise.
     pub fn open() -> Result<Self, Error> {
+        match std::env::var(BRIDGE_ENV) {
+            Ok(addr) if !addr.trim().is_empty() => Self::over_bridge(addr.trim()),
+            _ => Self::local(),
+        }
+    }
+
+    /// [`Device::open`], through the bridge at `addr` rather than a local
+    /// port. Everything after the connection -- identity, programmer mode,
+    /// the first repaint -- is the same bytes in the same order.
+    ///
+    /// # Errors
+    /// [`Error::NotFound`] if nothing listens at `addr` or the bridge has
+    /// no Launchpad, [`Error::Bridge`] if it cannot be reached or does not
+    /// speak the wire, and [`Device::open`]'s errors after that.
+    pub fn over_bridge(addr: &str) -> Result<Self, Error> {
+        let (bridge, events) = Bridge::connect(addr)?;
+        Self::take(Port::Bridge(bridge), events)
+    }
+
+    /// The local MIDI port.
+    fn local() -> Result<Self, Error> {
         let mut input = MidiInput::new("tally").map_err(|e| Error::Midi(e.to_string()))?;
         // We depend on SysEx for identity, mode readback and every frame.
         input.ignore(midir::Ignore::None);
@@ -161,10 +212,19 @@ impl Device {
         let out = output
             .connect(&out_port, "tally-out")
             .map_err(|e| Error::Midi(e.to_string()))?;
+        Self::take(
+            Port::Midi {
+                out,
+                _input: listening,
+            },
+            events,
+        )
+    }
 
+    /// Take the device into programmer mode, whatever carries the bytes.
+    fn take(port: Port, events: Receiver<Event>) -> Result<Self, Error> {
         let mut device = Self {
-            out,
-            _input: listening,
+            port,
             events,
             last: Frame::dark(),
             // Not armed yet: there is nothing to put back until
@@ -269,6 +329,12 @@ impl Device {
     /// # Errors
     /// [`Error::Midi`] if the write fails.
     pub fn render(&mut self, frame: &Frame) -> Result<(), Error> {
+        // A frame with nothing new sends nothing, so without this a bridge
+        // that hung up would go unnoticed until the ping went quiet --
+        // seven seconds of every clock pulse failing in the log. Over a
+        // socket a hang-up is a fact; over midir it is not knowable, and
+        // this is a no-op (D17).
+        self.port.alive()?;
         if let Some(msg) = frame.diff(&self.last) {
             self.send(&msg)?;
         }
@@ -358,7 +424,7 @@ impl Device {
     }
 
     fn send(&mut self, bytes: &[u8]) -> Result<(), Error> {
-        self.out.send(bytes).map_err(|e| Error::Midi(e.to_string()))
+        self.port.send(bytes)
     }
 }
 
@@ -367,11 +433,156 @@ impl Drop for Device {
         if !self.restore_on_drop {
             return;
         }
-        if !self.restore() {
+        // Over the bridge, a bridge that already hung up is not a failed
+        // restore: putting the device back is then the bridge's own duty,
+        // and it has done it (`docs/13-bridge.md`).
+        if !self.restore() && self.port.alive().is_ok() {
             // Not a panic: we may already be unwinding, and a double panic
             // aborts without running anything else's destructors.
             eprintln!("tally: the Launchpad did not confirm Live mode -- its Setup menu may still be disabled");
         }
+    }
+}
+
+/// What carries the bytes to the device.
+enum Port {
+    /// A MIDI port on this machine.
+    Midi {
+        out: MidiOutputConnection,
+        /// Held so the callback keeps running; never read directly.
+        _input: MidiInputConnection<Sender<Event>>,
+    },
+    /// A socket to `tallybridge`, which holds the port on another machine.
+    Bridge(Bridge),
+}
+
+impl fmt::Debug for Port {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Midi { .. } => write!(f, "{PORT_SUBSTRING:?}"),
+            Self::Bridge(b) => match b.stream.peer_addr() {
+                Ok(addr) => write!(f, "bridge at {addr}"),
+                Err(_) => write!(f, "bridge, disconnected"),
+            },
+        }
+    }
+}
+
+impl Port {
+    fn send(&mut self, bytes: &[u8]) -> Result<(), Error> {
+        match self {
+            Self::Midi { out, .. } => out.send(bytes).map_err(|e| Error::Midi(e.to_string())),
+            Self::Bridge(b) => {
+                b.alive()?;
+                wire::write(&mut b.stream, Kind::Midi, bytes)
+                    .map_err(|e| Error::Bridge(e.to_string()))
+            }
+        }
+    }
+
+    /// Whether the far end is still there, where that can be known.
+    fn alive(&self) -> Result<(), Error> {
+        match self {
+            Self::Midi { .. } => Ok(()),
+            Self::Bridge(b) => b.alive(),
+        }
+    }
+}
+
+/// The socket to `tallybridge`, and whether its reader has seen it close.
+///
+/// A thread reads frames and turns each into an [`Event`] on the same
+/// channel the `midir` callback feeds, so [`Device::poll`] and the reply
+/// waits cannot tell the two apart.
+struct Bridge {
+    stream: TcpStream,
+    /// Cleared by the reader when the bridge hangs up.
+    open: Arc<AtomicBool>,
+}
+
+impl Bridge {
+    /// Connect, read the hello, start the reader.
+    fn connect(addr: &str) -> Result<(Self, Receiver<Event>), Error> {
+        let named = |e: &dyn fmt::Display| Error::Bridge(format!("{BRIDGE_ENV}={addr}: {e}"));
+        let target = addr
+            .to_socket_addrs()
+            .map_err(|e| named(&e))?
+            .next()
+            .ok_or_else(|| named(&"names no address"))?;
+        let mut stream = match TcpStream::connect_timeout(&target, CONNECT_TIMEOUT) {
+            Ok(s) => s,
+            // The bridge is not running: its version of a cable that is
+            // out, ordinary, and resolved by a later tick.
+            Err(e) if e.kind() == io::ErrorKind::ConnectionRefused => return Err(Error::NotFound),
+            Err(e) => return Err(named(&e)),
+        };
+        // Not an optimisation: the breath is single-byte clock pulses and
+        // Nagle exists to hold those back (`docs/13-bridge.md`).
+        stream.set_nodelay(true).map_err(|e| named(&e))?;
+        stream
+            .set_read_timeout(Some(REPLY_TIMEOUT))
+            .map_err(|e| named(&e))?;
+        match wire::read(&mut stream) {
+            Ok(Some((Kind::Hello, payload))) => {
+                match Hello::decode(&payload).map_err(|e| named(&e))? {
+                    Hello::Present => {}
+                    Hello::Absent => return Err(Error::NotFound),
+                    Hello::Refused(why) => return Err(named(&why)),
+                }
+            }
+            Ok(Some((kind, _))) => return Err(named(&format!("{kind:?} before hello"))),
+            Ok(None) => return Err(named(&"hung up before hello")),
+            // The bridge serves one connection at a time, so a silent one
+            // is usually busy with someone else.
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                ) =>
+            {
+                return Err(named(&"no hello -- is another tallyd connected to it?"))
+            }
+            Err(e) => return Err(named(&e)),
+        }
+        stream.set_read_timeout(None).map_err(|e| named(&e))?;
+
+        let mut reader = stream.try_clone().map_err(|e| named(&e))?;
+        let open = Arc::new(AtomicBool::new(true));
+        let seen = Arc::clone(&open);
+        let (tx, events) = mpsc::channel();
+        thread::Builder::new()
+            .name("tally-bridge".to_owned())
+            .spawn(move || {
+                // One frame is one message, so `decode` sees exactly what a
+                // `midir` callback would have handed it.
+                while let Ok(Some((Kind::Midi, msg))) = wire::read(&mut reader) {
+                    if let Some(event) = decode(&msg) {
+                        if tx.send(event).is_err() {
+                            break;
+                        }
+                    }
+                }
+                seen.store(false, Ordering::Relaxed);
+            })
+            .map_err(|e| named(&e))?;
+        Ok((Self { stream, open }, events))
+    }
+
+    fn alive(&self) -> Result<(), Error> {
+        if self.open.load(Ordering::Relaxed) {
+            Ok(())
+        } else {
+            Err(Error::Bridge("the bridge hung up".to_owned()))
+        }
+    }
+}
+
+impl Drop for Bridge {
+    /// Close both halves. The reader holds a clone of the socket, so
+    /// dropping this one alone would leave it open, and the bridge would
+    /// wait out its silence instead of seeing the hang-up.
+    fn drop(&mut self) {
+        let _closed = self.stream.shutdown(Shutdown::Both);
     }
 }
 

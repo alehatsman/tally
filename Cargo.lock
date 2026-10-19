@@ -563,6 +563,7 @@ dependencies = [
  "midir",
  "serde",
  "serde_json",
+ "tallybridge",
  "toml",
 ]
 
