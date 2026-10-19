@@ -40,7 +40,7 @@ product lives or dies by. The launcher was the easy half.
 | **M14** | `tally fork`, and four at a time | the folder can come from a pad you can see |
 | **M15** | The dead pane names the conversation | anchor's id resumes nothing |
 | **M16** | The arts | a demo, and a pixel test of all 64 at once |
-| **M17** | The bridge | **specified, not built** — see below |
+| **M17** | The bridge | **built 2026-10-20, owed one session with the device** — the five questions answered on the Windows desk, the Launchpad not yet plugged into it ([13](docs/13-bridge.md)) |
 | **M18** | A moved session takes its view with it | the address is a tmux window, and Move only wrote the name |
 
 **M6 is out of order on purpose.** It is M1's work, and it is here rather
@@ -278,7 +278,7 @@ in the README first.
 | the squad | **Closed.** Superseded by `tally ls` ([10](docs/10-decisions.md#the-squad)) |
 | [the level](docs/11-unbuilt.md#the-level) | **Closed by F0.** The pad it guards was never observed across 670 rises, and it cannot see the one case that bit |
 | the words on `tl.attention` | **Closed by #23**, and in the direction that costs least: the bit is untouched and the *value* carries the origin |
-| [the bridge](docs/11-unbuilt.md#the-bridge) | **Cut to a seam and five questions**, deferred until hardware. M17 is not a pending milestone |
+| [the bridge](docs/13-bridge.md) | **Cut to a seam and five questions** on 2026-10-18, deferred until hardware. **Built 2026-10-20** once the Windows desk could answer them: two moved the design, and the device itself is a checklist ([13](docs/13-bridge.md#the-checklist-when-the-launchpad-is-plugged-in)) |
 | peek, teleport-URL, squatter-resolution | **Closed** ([11](docs/11-unbuilt.md#the-graveyard)) |
 | the acting sweep | Held on its own week of `sweep:` lines |
 | [#40](https://github.com/alehatsman/tally/issues/40) — the spec system | **Cut.** `~/.config/tally/` was empty and `tallyd` loaded *8 pages, 0 slots*, so `[[slot]]`, `[[spec]]`, `tl.spec` and spawn-from-a-dark-pad were code nothing could reach. Scope bullet 2 is **reworded rather than kept** — both spawns in daily use were outside it as written ([01](docs/01-scope.md)) |

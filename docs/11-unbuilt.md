@@ -1,8 +1,9 @@
 # 11 — Specified, not built
 
-One spec is held on a measurement, one is deferred until hardware exists,
-and the rest of this file is the list of things that will not be built and
-why. Everything in `01`–`09` is shipped and running; nothing here is.
+One spec is held on a measurement, and the rest of this file is the list
+of things that will not be built and why. Everything in `01`–`09` is
+shipped and running; nothing here is. The bridge left this file when it
+was built ([13](13-bridge.md)), and keeps a short section here saying so.
 
 **Read the verdicts as verdicts.** Each item says what would revive it, and
 for most of them the honest answer is *nothing we expect to happen.*
@@ -153,71 +154,18 @@ failure is slow, so the check can be.**
 
 ---
 
----
-
 ## The bridge
 
-**The Launchpad on a Windows desk, the agents in WSL.**
+**Built, and moved to [13](13-bridge.md).**
 
-> ⚠️ **Verdict, 2026-10-18: cut to this section, deferred until hardware.**
-> It was ~200 lines of codec, wire format, lifecycle table and probe list,
-> written on a Mac with no Windows hardware in reach, with **five of its
-> load-bearing facts never run**. Length is not confidence. Worse, it
-> proposes turning `Device` into a trait for a second implementation that
-> does not exist — which is precisely the move
-> [01](01-scope.md#how-to-reject-a-feature) forbids for a second *grid*:
-> *not until there is a second device in the room.* The rule does not stop
-> applying because the second thing is a transport.
->
-> What is kept is the part that survives not being built: why it is needed
-> at all, where the seam is, and the questions that must be answered before
-> any of it is designed again. **The deleted detail is in git**
-> (`docs/30-the-bridge.md`, before the restructure) if the desk ever
-> becomes real.
-
-**Why it is needed at all.** USB does not cross the WSL line: the stock
-WSL2 kernel is built without `CONFIG_SND_USB_AUDIO`, so `usbipd attach`
-hands over a device that never appears under `/dev/snd` and `midir`'s ALSA
-backend enumerates no port. Building a kernel is the other answer.
-
-**Where the seam is.** `src/device.rs`, already. `Device` finds the port,
-sends SysEx, decodes presses and restores Live mode on drop; `Link` in
-`tallyd.rs` owns one and reconnects it on the reconcile clock. **Nothing
-above `Link` knows a MIDI port exists**, so a remote device is a second
-implementation of one type and changes nothing else. One signature is in
-the way: `poll` returns `impl Iterator`, which is not object-safe.
-
-**The one rule, if it is ever built:** when something could live on either
-side, **it lives in `tallyd`** — the bridge moves bytes and holds no model,
-no chord state, no frame diffing and no idea what a pad means. The single
-deliberate exception is the **Live-mode restore**, which must be the
-bridge's own duty, because the moment it is needed is the moment the WSL
-side can no longer reach the device.
-
-**The five questions, none of them answered:**
-
-1. Does WSL2's `localhost` forwarding reach a listener bound to
-   `127.0.0.1`, or does it need `0.0.0.0`? **If `0.0.0.0` is required the
-   socket is on the local network, there is no authentication on it, and a
-   frame on it drives the grid.** That is a decision, not a detail.
-2. Does `powershell.exe` `AppActivate` actually raise the window, given
-   Windows' restrictions on foreground stealing? **The hook it would hang
-   on already exists**: `TALLY_RAISE_CMD` arrived ahead of this and not for
-   this reason — the test suite needed somewhere to send the raise, because
-   unsetting `TALLY_TERMINAL` does not disable it and every integration
-   jump was taking the screen of whoever ran `cargo test`. The shape is the
-   one a bridge would want, so there is nothing to add here, only something
-   to verify.
-3. Is WSL interop on? If `/etc/wsl.conf` disables it, the raise needs a
-   control frame instead of a shell-out.
-4. Does the device survive a hard `taskkill /F` of the bridge without
-   losing its Setup menu?
-5. Does single-byte MIDI clock at 24 PPQN cross a TCP hop without
-   stuttering the breath? (`TCP_NODELAY` on both ends is the known
-   requirement; whether it is sufficient is not known.)
-
-**Answer those five before designing anything.** Two of them can move the
-design and one of them is a security decision.
+> ✅ **2026-10-20: out of this file.** It was cut here on 2026-10-18 to a
+> seam and five questions, with the rule *answer those five before
+> designing anything*. They were answered on the Windows desk — four by
+> running something, one from the protocol — and two of them moved the
+> design: the bridge listens rather than `tallyd`, and `Device` stays one
+> type instead of becoming the trait [01](01-scope.md#how-to-reject-a-feature)
+> forbids. The answers, what they changed, and the checklist still owed
+> on real hardware are in [13](13-bridge.md).
 
 ---
 
