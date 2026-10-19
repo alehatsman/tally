@@ -1,12 +1,19 @@
 # CI for tally.
 #
-# This file exists because of one sentence in `tests/relocate.rs`: the
-# suite skips when tmux is absent, and a green run that did not run is
-# the pattern `ROADMAP.md` complains about everywhere else. Somewhere has
-# to be the place it is *not* allowed to skip, and this is it.
+# One gate, not two. `provision apply tasks/ci.yml` is what a developer runs
+# before a push and it is what runs here, so the two cannot drift: fmt,
+# clippy, tests, rustdoc, cargo-deny, cargo-machete, lint-block drift, the
+# comment budget and the soft caps all come from rust-quality at the pin in
+# `tasks/tools.yml`.
 #
-# `clippy.toml` and `deny.toml` have been in the repo since M0 and
-# nothing has ever read them.
+# `clippy.toml` and `deny.toml` had been in the repo since M0 and nothing had
+# ever read them. Now something does.
+#
+# What stays hand-written is the part the shared gate has no opinion about:
+# this repo's system dependencies, and the one assertion that gave this file a
+# reason to exist -- the tmux suite is allowed to skip on a contributor's
+# machine and is not allowed to skip here.
+
 name: ci
 
 on:
@@ -23,7 +30,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  check:
+  gate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -44,22 +51,22 @@ jobs:
           sudo apt-get install --no-install-recommends -y libasound2-dev tmux
           tmux -V
 
-      - name: Format
-        run: cargo fmt --all --check
+      - name: Install provision
+        run: cargo install --locked --git https://github.com/alehatsman/provision.git
 
-      # `-D warnings` here and not in `RUSTFLAGS`: a global one is applied
-      # to dependencies too, so a warning in somebody else's crate would
-      # fail this repo's build for something nobody here can fix.
-      - name: Clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+      # Checks out rust-quality at the pin and installs nextest, deny and
+      # machete. The pin lives in tasks/tools.yml and nowhere else.
+      - name: Install the gate's tools
+        run: provision apply tasks/tools.yml
 
-      - name: Test
-        run: cargo test --all-features
+      - name: Gate
+        run: provision apply tasks/ci.yml
 
       # The suite is allowed to skip on a contributor's machine. It is not
       # allowed to skip here, and this is the only thing that can tell the
       # difference: a skip prints its banner to stderr and still exits 0,
-      # so the exit code cannot be the check.
+      # so the exit code cannot be the check. The gate above already ran
+      # this suite; what it cannot do is notice that it ran vacuously.
       - name: The tmux suite really ran
         run: |
           cargo test --test relocate -- --nocapture 2>&1 | tee /tmp/relocate.log
@@ -67,11 +74,3 @@ jobs:
             echo "::error::the tmux integration suite skipped in CI, which is the one place it must not"
             exit 1
           fi
-
-  deny:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: EmbarkStudios/cargo-deny-action@v2
-        with:
-          command: check
