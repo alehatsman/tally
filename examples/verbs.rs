@@ -34,7 +34,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut labels = BTreeMap::new();
     let _slot = labels.insert(tally::anchor::LABEL_SLOT.to_owned(), address.clone());
-    let _spec = labels.insert(tally::anchor::LABEL_SPEC.to_owned(), "verbs".to_owned());
     let env = BTreeMap::new();
     let args = ["-c".to_owned(), "echo VERBS_OK; sleep 120".to_owned()];
 
