@@ -20,6 +20,24 @@ use crate::slot::Pages;
 pub type Signals = BTreeMap<String, Derived>;
 
 /// Supervises one watcher per live slot.
+///
+/// **Every lock here is taken with `if let Ok`, never `unwrap`.** A
+/// poisoned mutex costs signals; a `tallyd` that panics costs the grid,
+/// and the grid falls back to a list that is still truthful. That is the
+/// same policy [`crate::journal::Sink`] writes down for a failing journal,
+/// inherited here rather than restated — except for what it costs, which
+/// is not the same in all three places:
+///
+/// - [`Self::snapshot`] yields an empty map: one dark frame, recovered on
+///   the next tick.
+/// - [`Self::retain_known`] skips one prune: the map grows by a tick,
+///   recovered on the next one.
+/// - [`Self::reconcile`] is the one that does **not** self-heal. `fresh`
+///   is false whenever the `watching` lock is poisoned, so `Self::spawn`
+///   is never called; a mutex stays poisoned for the life of the process,
+///   so no session is watched again until `tallyd` restarts. Survivable
+///   only because the pad is still green and `►` still jumps — the grid
+///   loses derived attention, not the sessions.
 #[derive(Debug, Clone)]
 pub struct Watchers {
     client: Client,
@@ -93,6 +111,14 @@ impl Watchers {
 }
 
 /// Follow one session until it ends or the connection does.
+///
+/// `now` is the *reconcile's* timestamp, not the thread's, so
+/// [`Derived::starting_at`] seeds the output clock from before the attach
+/// rather than after it, and a session can cross the idle threshold by
+/// that much early. The attach is a unix-socket connect against a 30s
+/// threshold, so the error is three orders of magnitude under the thing
+/// it perturbs — but it is the reconcile's clock and not the thread's,
+/// which is not what the signature suggests.
 fn run(client: &Client, id: &str, signals: &Arc<Mutex<Signals>>, now: i64) {
     // From 0 the first time; from `scanned_to` after a drop, so a watcher
     // that fell behind does not re-read the whole log -- worst on exactly

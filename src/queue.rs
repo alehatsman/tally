@@ -65,6 +65,21 @@ fn answering<'a>(
     })
 }
 
+/// `answering`, minus whatever is already filling a terminal.
+///
+/// The second half of the predicate, and the only thing that separates
+/// the queue's two questions from the tempo's one. It is a name rather
+/// than a repeated `.filter(..)` line because the module's whole argument
+/// is that a predicate written twice is a predicate that will eventually
+/// be written differently twice.
+fn offered<'a>(
+    waiting: &'a BTreeMap<Slot, (String, i64)>,
+    pads: &'a Pads<'_>,
+    viewing: &'a BTreeSet<Slot>,
+) -> impl Iterator<Item = (&'a Slot, &'a (String, i64))> {
+    answering(waiting, pads).filter(|(at, _)| !viewing.contains(*at))
+}
+
 /// The longest-waiting slot that is asking, is not muted, and is not
 /// already in front of somebody.
 ///
@@ -78,8 +93,7 @@ pub fn head(
     pads: &Pads<'_>,
     viewing: &BTreeSet<Slot>,
 ) -> Option<Head> {
-    answering(waiting, pads)
-        .filter(|(at, _)| !viewing.contains(*at))
+    offered(waiting, pads, viewing)
         // Oldest first. `min_by_key` takes the first of equal keys and
         // `BTreeMap` iterates in slot order, so ties break by address and
         // the head does not flicker between two pads that rose in the
@@ -101,9 +115,7 @@ pub fn depth(
     pads: &Pads<'_>,
     viewing: &BTreeSet<Slot>,
 ) -> usize {
-    answering(waiting, pads)
-        .filter(|(at, _)| !viewing.contains(*at))
-        .count()
+    offered(waiting, pads, viewing).count()
 }
 
 /// When the oldest thing still asking started asking.
@@ -115,11 +127,8 @@ pub fn depth(
 /// read by the room rather than by your current focus
 /// (`docs/05-interaction.md`).
 ///
-/// That difference is this function's whole content — it is the private
-/// `answering` predicate with the `viewing` filter the other two add left
-/// off,
-/// and now that is visible here rather than inferable from diffing three
-/// bodies.
+/// That difference is this function's whole content: it calls the private
+/// `answering` predicate where `head` and `depth` call `offered`.
 ///
 /// Muted slots are excluded by both, for the same reason: mute means
 /// *stop raising this*, and the beat is raising it.
@@ -133,7 +142,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::*;
-    use crate::anchor::Session;
+    use crate::anchor::{self, Session};
     use crate::model::{self, Pads};
     use crate::signal::Source;
     use crate::slot::Pages;
@@ -145,10 +154,10 @@ mod tests {
     /// A session asking on `slot`, optionally muted.
     fn asking(id: &str, slot: &str, muted: bool) -> Session {
         let mut labels = BTreeMap::new();
-        let _slot = labels.insert("tl.slot".to_owned(), slot.to_owned());
-        let _att = labels.insert("tl.attention".to_owned(), "1".to_owned());
+        let _slot = labels.insert(anchor::LABEL_SLOT.to_owned(), slot.to_owned());
+        let _att = labels.insert(anchor::LABEL_ATTENTION.to_owned(), "1".to_owned());
         if muted {
-            let _m = labels.insert("tl.mute".to_owned(), "1".to_owned());
+            let _m = labels.insert(anchor::LABEL_MUTE.to_owned(), "1".to_owned());
         }
         Session {
             id: id.to_owned(),
