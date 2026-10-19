@@ -38,25 +38,35 @@ the product is sixty-four lamps that are right.
 
 ## Status
 
-**Shipped and driving a real desk.** Eighteen milestones, in daily use. The
-hardware protocol was read out of Novation's manual and verified against the
-device; the grid, the jump, the chords, `tally spawn`, the queue, the tempo,
-the launch column and the overview followed, and then the surface ran out of
-buttons. Every build item in [the roadmap](ROADMAP.md) is done.
+**Shipped and driving a real desk.** Eighteen milestones, in daily use.
+The hardware protocol was read out of Novation's manual and verified
+against the device; the grid, the jump, the chords, `tally spawn`, the
+queue, the tempo and the launch column followed, and then the surface ran
+out of buttons. Every build item in [the roadmap](ROADMAP.md) is done.
 
-**One thing is owed, and it turned out not to be time.** The gate since M1
-has been a week of `attention.jsonl` and a number out of it. Reading 55
-hours of it found that **the journal does not record a plain pad jump** —
-the gesture the product exists for — so it holds the ambers that were
-raised and almost none of the answers, and the gate cannot be computed from
-it at any length ([#43](https://github.com/alehatsman/tally/issues/43)).
+**One thing is owed, and it is now running rather than blocked.** The gate
+since M1 has been a week of `attention.jsonl` and a number out of it.
+Reading 55 hours of it found that the journal **did not record a plain pad
+jump** — the gesture the product exists for — so it held the ambers that
+were raised and almost none of the answers, and the gate could not be
+computed at any length. That was five lines
+([#43](https://github.com/alehatsman/tally/issues/43)), it shipped on
+**2026-10-19**, and the week runs from there.
 
-**And the question needs restating.** Amber used to mean *the detector
+**And the question needed restating.** Amber used to mean *the detector
 believes it rang and went quiet*; since the hooks it means *an agent
 finished a turn*, about ten times an hour. A hook-raised amber is never
-really *wrong* — it can only be **correct and ignored**. So the number owed
-is *how many you went to, and how many aged out*
+really *wrong* — it can only be **correct and ignored**. So the number
+owed is *how many you went to, and how many aged out*
 ([04](docs/04-signals.md#what-the-instrument-cannot-see-and-what-the-signal-now-means)).
+
+**Three features were removed by their own measurements**, which is the
+habit this project is actually built on: the spec system and
+spawn-from-a-dark-pad, because `~/.config/tally/` was empty and a config
+file cannot know a directory in advance; the overview, because `lit` sat
+at 4 on all nine presses and the map never once crossed the empty middle
+its design argues from; and one word, because `tl.attention` meant both
+*blocked* and *finished* to a reader that turned out to be a program.
 
 **The thing worth reading is what a day of use found.** The amber — the
 signal this whole product is a bet on — never fired once against the agent
@@ -65,18 +75,45 @@ terminal bell at all, so the detector was correct, the suite was green, and
 there was nothing to detect.
 
 That is one entry in [the record](docs/10-decisions.md), which is kept on
-purpose: the three greens, the hard amber flash, the title scroll, the green
-working pulse that was legible at a glance and tiring by the afternoon, the
-bell that was never rung, and a row of eight panes that was correct,
-addressable, tested, and on a real screen was eight 23-column slivers nobody
-could read. **Each cost a build to find and none could have been argued out
-in advance.**
+purpose: the three greens, the hard amber flash, the title scroll, the
+green working pulse that was legible at a glance and tiring by the
+afternoon, the bell that was never rung, and a row of eight panes that was
+correct, addressable, tested, and on a real screen was eight 23-column
+slivers nobody could read. **Each cost a build to find and none could have
+been argued out in advance.**
+
+## Install
+
+```sh
+cargo install --git https://github.com/alehatsman/tally --tag v0.9.0
+```
+
+Then **the four hook lines**, which are the step the product lives on —
+without them the grid is a launcher with liveness and the amber never
+fires:
+
+```json
+"Notification":     "tally attention blocked || true"
+"Stop":             "tally attention done    || true"
+"UserPromptSubmit": "tally attention off     || true"
+"PreToolUse":       "tally attention off     || true"
+```
+
+**[docs/12-install.md](docs/12-install.md) is the whole sequence** — what
+it needs first, the real `settings.json` shape, how to check the hooks
+arrived, what to do when a pad never goes amber, and how to take it off
+again.
+
+It needs [anchor](https://github.com/alehatsman/anchor) running, tmux, and
+a Launchpad Mini MK3. Not on crates.io: one USB device, one OS, a tag is
+the right size.
 
 ## The documents
 
-Everything in `01`–`09` is **shipped and running**, and states current truth
-only — no amendments to apply in your head. `10` is why it says that. `11`
-is what is specified and deliberately not built.
+Everything in `01`–`09` is **shipped and running**, and states current
+truth only — no amendments to apply in your head. `10` is why it says
+that, `11` is what is specified and deliberately not built, and `12` is
+how to get it running.
 
 | | |
 |---|---|
@@ -91,6 +128,7 @@ is what is specified and deliberately not built.
 | [09-testing.md](docs/09-testing.md) | testing a thing whose output is light, and what a green suite does not prove |
 | [10-decisions.md](docs/10-decisions.md) | **the record** — what was built, what use found, what replaced it |
 | [11-unbuilt.md](docs/11-unbuilt.md) | the level (a veto over a stale amber) and the bridge (Launchpad on Windows, agents in WSL) |
+| [12-install.md](docs/12-install.md) | what a stranger does, in order — including the hook lines the amber does not exist without |
 
 [ROADMAP.md](ROADMAP.md) is the order it arrived in, and the finish line is
 the only part of this repo that is a plan rather than a record.
@@ -105,8 +143,8 @@ what they mean.
   session id
 - **signals** — working / idle / needs-you / exited. Liveness comes from
   anchor; *needs-you* comes from hooks the agent calls
-- **gestures** — jump, launch into a row, kill, forget, move a pad somewhere
-  else, and one held button that turns the grid into a map of itself
+- **gestures** — jump, launch into a row, kill, forget, and move a pad
+  somewhere else
 - **jump** — the press that puts the real terminal in front of you
 
 ## What it is not
