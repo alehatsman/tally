@@ -246,6 +246,56 @@ pub struct Session {
     pub login_shell: bool,
 }
 
+/// A `Session` for tests: the two fields anchord always sends, and the
+/// defaults for the eight that carry `#[serde(default)]`.
+///
+/// Five test modules hand-wrote this ten-field literal — `anchor`, `model`,
+/// `attention`, `watch` and `queue` — which declared the defaults twice:
+/// once on the field, once in every fixture. Adding a field meant editing
+/// five unrelated files, and a fixture that drifted from the struct was a
+/// test passing against a session anchord would never send.
+///
+/// The local `session(..)` helpers stay. They read well at the call site
+/// and each takes the arguments its own module varies; what they no longer
+/// do is restate what a default is.
+#[cfg(test)]
+impl Session {
+    pub(crate) fn fixture(id: &str, state: &str) -> Self {
+        Self {
+            id: id.to_owned(),
+            state: state.to_owned(),
+            exit_code: None,
+            lost_reason: None,
+            labels: BTreeMap::new(),
+            output_bytes: 0,
+            pid: None,
+            cwd: None,
+            command: None,
+            login_shell: false,
+        }
+    }
+
+    pub(crate) fn labelled(mut self, key: &str, value: &str) -> Self {
+        let _previous = self.labels.insert(key.to_owned(), value.to_owned());
+        self
+    }
+
+    pub(crate) fn with_labels(mut self, labels: BTreeMap<String, String>) -> Self {
+        self.labels = labels;
+        self
+    }
+
+    pub(crate) fn with_pid(mut self, pid: i32) -> Self {
+        self.pid = Some(pid);
+        self
+    }
+
+    pub(crate) fn with_output(mut self, bytes: u64) -> Self {
+        self.output_bytes = bytes;
+        self
+    }
+}
+
 impl Session {
     /// This session's lifecycle state, as the renderer wants it.
     ///
@@ -717,18 +767,7 @@ mod tests {
     /// other eight carried no meaning in either test and were written out
     /// twice; `src/watch.rs::tests` already does it this way.
     fn session(state: &str, labels: BTreeMap<String, String>) -> Session {
-        Session {
-            id: "x".to_owned(),
-            state: state.to_owned(),
-            exit_code: None,
-            lost_reason: None,
-            labels,
-            output_bytes: 0,
-            pid: None,
-            cwd: None,
-            command: None,
-            login_shell: false,
-        }
+        Session::fixture("x", state).with_labels(labels)
     }
 
     #[test]

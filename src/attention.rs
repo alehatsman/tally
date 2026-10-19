@@ -130,18 +130,7 @@ mod tests {
     use super::*;
 
     fn session(id: &str, pid: i32, state: &str) -> Session {
-        Session {
-            id: id.to_owned(),
-            state: state.to_owned(),
-            exit_code: None,
-            lost_reason: None,
-            labels: BTreeMap::new(),
-            output_bytes: 0,
-            pid: Some(pid),
-            cwd: None,
-            command: None,
-            login_shell: false,
-        }
+        Session::fixture(id, state).with_pid(pid)
     }
 
     /// The whole point: the hook is three levels under the agent anchord
