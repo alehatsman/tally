@@ -21,20 +21,60 @@ use tally::config::Config;
 use tally::jump::{Jump, Tmux};
 use tally::listing::{self, Caller};
 use tally::model;
-use tally::signal::SlotState;
 use tally::slot::{self, Pages, Slot};
 
 /// Bad typing. Conventional, and distinguishable by a script from a spawn
 /// that was asked for correctly and failed anyway.
 const USAGE_ERROR: u8 = 2;
 
+/// anchord, and everything it is holding.
+///
+/// The prologue of every subcommand but `help`, and the failure is the
+/// same in all of them: with anchord down there is no grid, and an empty
+/// list would read as "nothing is running" when what we have is "I cannot
+/// tell" ([`tally::anchor::Error::Unreachable`]). It was six copies of
+/// this block, four of them byte-identical, and three of the six carried
+/// no comment at all -- which is the tell that they were pasted rather
+/// than decided.
+fn connected() -> Result<(Client, Vec<tally::anchor::Session>), ExitCode> {
+    let client = Client::new(Client::default_path());
+    match client.list() {
+        Ok(sessions) => Ok((client, sessions)),
+        Err(e) => {
+            eprintln!("tally: {e}");
+            Err(ExitCode::FAILURE)
+        }
+    }
+}
+
+/// How an address is spelled, or the refusal for a page nothing names.
+///
+/// An undeclared page has no spelling, so there is no `tl.slot` to write
+/// and nothing to print: the address the user typed cannot be said back
+/// to them. Four subcommands reach this and said so in four places.
+fn address_of(at: Slot, pages: &Pages) -> Result<String, ExitCode> {
+    at.label(pages).ok_or_else(|| {
+        eprintln!("tally: that address has no page name");
+        ExitCode::FAILURE
+    })
+}
+
+/// Run a subcommand, turning its early exits back into an [`ExitCode`].
+///
+/// The `?` in the helpers above needs a `Result` to return into; `main`
+/// needs an `ExitCode`. This is the one line that joins them.
+fn report(outcome: Result<ExitCode, ExitCode>) -> ExitCode {
+    match outcome {
+        Ok(code) | Err(code) => code,
+    }
+}
+
 fn main() -> ExitCode {
     let config = match Config::load(&Config::default_path()) {
         Ok(config) => config,
-        // tallyd carries on with defaults here, because a grid that stops
-        // lighting up over a typo is worse than one with unnamed pages.
-        // A spawn is different: the page names decide where the session
-        // lands, and guessing is how you lose one.
+        // A spawn stops where tallyd carries on: the page names decide
+        // where the session lands. Both halves of that are argued in
+        // [`tally::config`].
         Err(e) => {
             eprintln!("tally: {}: {e}", Config::default_path().display());
             return ExitCode::FAILURE;
@@ -47,12 +87,12 @@ fn main() -> ExitCode {
             print!("{USAGE}");
             ExitCode::SUCCESS
         }
-        Ok(Request::Ls(json)) => ls(json, pages),
-        Ok(Request::Spawn(claim)) => spawn(&claim, pages),
-        Ok(Request::Fork(f)) => fork(&f, pages),
-        Ok(Request::Attention(wants)) => attention(wants),
-        Ok(Request::Purge(at)) => purge(at, pages),
-        Ok(Request::Mute(at, on)) => mute(at, on, pages),
+        Ok(Request::Ls(json)) => report(ls(json, pages)),
+        Ok(Request::Spawn(claim)) => report(spawn(&claim, pages)),
+        Ok(Request::Fork(f)) => report(fork(&f, pages)),
+        Ok(Request::Attention(wants)) => report(attention(wants)),
+        Ok(Request::Purge(at)) => report(purge(at, pages)),
+        Ok(Request::Mute(at, on)) => report(mute(at, on, pages)),
         Err(e) => {
             eprint!("{USAGE}");
             eprintln!("\ntally: {e}");
@@ -73,17 +113,8 @@ fn main() -> ExitCode {
 /// failure**. The grid is a thing you can look at from outside, and most
 /// shells on this machine are outside; what is missing is the `@`, not
 /// the answer.
-fn ls(json: bool, pages: &Pages) -> ExitCode {
-    let client = Client::new(Client::default_path());
-    let sessions = match client.list() {
-        Ok(sessions) => sessions,
-        // The one real failure. With anchord down there is no grid to
-        // show, and an empty one would read as "nothing is running".
-        Err(e) => {
-            eprintln!("tally: {e}");
-            return ExitCode::FAILURE;
-        }
-    };
+fn ls(json: bool, pages: &Pages) -> Result<ExitCode, ExitCode> {
+    let (_client, sessions) = connected()?;
 
     // The same resolve `spawn` checks against and the frame is drawn
     // from, run with no watchers -- so a live session arrives as `Quiet`
@@ -115,7 +146,7 @@ fn ls(json: bool, pages: &Pages) -> ExitCode {
     } else {
         print!("{}", listing::text(&pads, caller, pages));
     }
-    ExitCode::SUCCESS
+    Ok(ExitCode::SUCCESS)
 }
 
 /// Forget every ended row behind a pad, and close its view.
@@ -125,23 +156,13 @@ fn ls(json: bool, pages: &Pages) -> ExitCode {
 /// subcommand to defer to (anchor#14). Deleting the gesture without
 /// replacing it would leave rows accumulating with no remedy anywhere
 /// (`docs/05-interaction.md`).
-fn purge(at: Slot, pages: &Pages) -> ExitCode {
-    let Some(address) = at.label(pages) else {
-        eprintln!("tally: that address has no page name");
-        return ExitCode::FAILURE;
-    };
-    let client = Client::new(Client::default_path());
-    let sessions = match client.list() {
-        Ok(sessions) => sessions,
-        Err(e) => {
-            eprintln!("tally: {e}");
-            return ExitCode::FAILURE;
-        }
-    };
+fn purge(at: Slot, pages: &Pages) -> Result<ExitCode, ExitCode> {
+    let address = address_of(at, pages)?;
+    let (client, sessions) = connected()?;
     let rows = model::purgeable(&sessions, pages);
     let Some(ids) = rows.get(&at).filter(|ids| !ids.is_empty()) else {
         println!("nothing to purge on {address}");
-        return ExitCode::SUCCESS;
+        return Ok(ExitCode::SUCCESS);
     };
     let mut gone = 0;
     for id in ids {
@@ -151,7 +172,7 @@ fn purge(at: Slot, pages: &Pages) -> ExitCode {
             Err(tally::anchor::Error::Refused { ref code, .. }) if code == "not_found" => {}
             Err(e) => {
                 eprintln!("tally: {e}");
-                return ExitCode::FAILURE;
+                return Err(ExitCode::FAILURE);
             }
         }
         // Purge clears the pad, so it clears the view
@@ -160,7 +181,7 @@ fn purge(at: Slot, pages: &Pages) -> ExitCode {
         let _closed = Tmux::default().close(id);
     }
     println!("purged {gone} on {address}");
-    ExitCode::SUCCESS
+    Ok(ExitCode::SUCCESS)
 }
 
 /// Stop a slot raising attention, or let it again.
@@ -168,23 +189,13 @@ fn purge(at: Slot, pages: &Pages) -> ExitCode {
 /// The starvation hatch for `►` and the tempo: a prompt you are never
 /// going to answer otherwise sits at the head of the queue forever and
 /// drives the breathing up with it (`docs/05-interaction.md`).
-fn mute(at: Slot, on: bool, pages: &Pages) -> ExitCode {
-    let Some(address) = at.label(pages) else {
-        eprintln!("tally: that address has no page name");
-        return ExitCode::FAILURE;
-    };
-    let client = Client::new(Client::default_path());
-    let sessions = match client.list() {
-        Ok(sessions) => sessions,
-        Err(e) => {
-            eprintln!("tally: {e}");
-            return ExitCode::FAILURE;
-        }
-    };
+fn mute(at: Slot, on: bool, pages: &Pages) -> Result<ExitCode, ExitCode> {
+    let address = address_of(at, pages)?;
+    let (client, sessions) = connected()?;
     let drawn = model::resolve(&sessions, &BTreeMap::new(), pages, tally::now_ms());
     let Some(held) = drawn.get(&at) else {
         eprintln!("tally: nothing is on {address}");
-        return ExitCode::FAILURE;
+        return Err(ExitCode::FAILURE);
     };
     let mut set = BTreeMap::new();
     let remove: &[&str] = if on {
@@ -196,11 +207,11 @@ fn mute(at: Slot, on: bool, pages: &Pages) -> ExitCode {
     match client.label(&held.session, &set, remove) {
         Ok(()) => {
             println!("{} {address}", if on { "muted" } else { "unmuted" });
-            ExitCode::SUCCESS
+            Ok(ExitCode::SUCCESS)
         }
         Err(e) => {
             eprintln!("tally: {e}");
-            ExitCode::FAILURE
+            Err(ExitCode::FAILURE)
         }
     }
 }
@@ -243,10 +254,8 @@ fn conversation_write(reported: Option<&str>, recorded: Option<&str>) -> Option<
 /// record which conversation it is running.
 ///
 /// **The word, not the bit.** `Some` writes the value the rising hook
-/// named — `blocked` from `Notification`, `finished` from `Stop`, `1`
-/// from a hook that did not say. Every one of them is an amber, and the
-/// grid cannot tell them apart on purpose: that distinction exists for
-/// readers that are programs (#23, `docs/04-signals.md`).
+/// named and every one of them is an amber; which word, and why the grid
+/// is not meant to tell them apart, is [`tally::anchor::Wants`].
 ///
 /// **Not being under anchor is success**, and that is the whole shape of
 /// this function. It is called from a Claude Code hook, which fires on
@@ -263,24 +272,17 @@ fn conversation_write(reported: Option<&str>, recorded: Option<&str>) -> Option<
 /// `list` — and a second hook would pay it again, per turn, for a value
 /// that changes approximately never
 /// (`docs/06-views.md`).
-fn attention(wants: Option<tally::anchor::Wants>) -> ExitCode {
-    let client = Client::new(Client::default_path());
-    let sessions = match client.list() {
-        Ok(sessions) => sessions,
-        // A real failure, and the one case that says anything. With anchord
-        // down we cannot tell "not under anchor" from "could not look", so
-        // we report rather than guess — see `docs/07-cli.md` for why the
-        // hook line ends in `|| true` regardless.
-        Err(e) => {
-            eprintln!("tally: {e}");
-            return ExitCode::FAILURE;
-        }
-    };
+fn attention(wants: Option<tally::anchor::Wants>) -> Result<ExitCode, ExitCode> {
+    // The one subcommand with a second reason to fail hard here: with
+    // anchord down we cannot tell "not under anchor" -- which is success,
+    // below -- from "could not look". See `docs/07-cli.md` for why the
+    // hook line ends in `|| true` regardless.
+    let (client, sessions) = connected()?;
 
     let ancestry = Ancestry::read();
     let me = std::process::id().cast_signed();
     let Some(session) = tally::attention::owning_session(&sessions, me, &ancestry) else {
-        return ExitCode::SUCCESS;
+        return Ok(ExitCode::SUCCESS);
     };
 
     let mut set = BTreeMap::new();
@@ -302,41 +304,34 @@ fn attention(wants: Option<tally::anchor::Wants>) -> ExitCode {
         let _conversation = set.insert(tally::anchor::LABEL_CLAUDE.to_owned(), id);
     }
     match client.label(&session.id, &set, remove) {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(()) => Ok(ExitCode::SUCCESS),
         // The session ended between the list and the write. Nothing to
         // label, nothing wrong: a pad for a session that is gone is a pad
         // that renders its exit.
         Err(tally::anchor::Error::Refused { ref code, .. }) if code == "not_found" => {
-            ExitCode::SUCCESS
+            Ok(ExitCode::SUCCESS)
         }
         Err(e) => {
             eprintln!("tally: {e}");
-            ExitCode::FAILURE
+            Err(ExitCode::FAILURE)
         }
     }
 }
 
 /// Claim a pad for a session started in the current directory.
-fn spawn(claim: &Claim, pages: &Pages) -> ExitCode {
+fn spawn(claim: &Claim, pages: &Pages) -> Result<ExitCode, ExitCode> {
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
         Err(e) => {
             eprintln!("tally: cannot read the current directory: {e}");
-            return ExitCode::FAILURE;
+            return Err(ExitCode::FAILURE);
         }
     };
     let command = claim
         .command
         .clone()
         .unwrap_or_else(|| cli::DEFAULT_COMMAND.to_owned());
-    let client = Client::new(Client::default_path());
-    let sessions = match client.list() {
-        Ok(sessions) => sessions,
-        Err(e) => {
-            eprintln!("tally: {e}");
-            return ExitCode::FAILURE;
-        }
-    };
+    let (client, sessions) = connected()?;
     claim_pads(
         &client,
         &sessions,
@@ -357,25 +352,15 @@ fn spawn(claim: &Claim, pages: &Pages) -> ExitCode {
 /// rather than from `$PWD` — which is why the whole of it below is
 /// resolving that one fact and then calling the same function
 /// (`docs/07-cli.md#tally-fork-src-dst`).
-fn fork(fork: &Fork, pages: &Pages) -> ExitCode {
-    let Some(source) = fork.from.label(pages) else {
-        eprintln!("tally: that address has no page name");
-        return ExitCode::FAILURE;
-    };
-    let client = Client::new(Client::default_path());
-    let sessions = match client.list() {
-        Ok(sessions) => sessions,
-        Err(e) => {
-            eprintln!("tally: {e}");
-            return ExitCode::FAILURE;
-        }
-    };
+fn fork(fork: &Fork, pages: &Pages) -> Result<ExitCode, ExitCode> {
+    let source = address_of(fork.from, pages)?;
+    let (client, sessions) = connected()?;
     // The newest session that pad has ever held, dead rows included:
     // anchord keeps `cwd` on rows that have exited, which is the whole
     // reason forking a finished agent works at all.
     let Some(inherit) = model::inherit(&sessions, pages, fork.from) else {
         eprintln!("tally: nothing has ever run on {source}, so there is no directory to inherit");
-        return ExitCode::FAILURE;
+        return Err(ExitCode::FAILURE);
     };
     claim_pads(
         &client,
@@ -404,22 +389,6 @@ struct Source {
     from: Option<String>,
 }
 
-/// The addresses a claim lands on: `count` consecutive pads, rightwards.
-///
-/// The parser has already refused a count that would run past column 8,
-/// so this cannot produce an address off the row.
-fn targets(claim: &Claim, pages: &Pages) -> Option<Vec<(Slot, String)>> {
-    (0..claim.count)
-        .map(|n| {
-            let at = Slot {
-                col: claim.at.col + n,
-                ..claim.at
-            };
-            at.label(pages).map(|label| (at, label))
-        })
-        .collect()
-}
-
 /// Check every pad, then claim every pad.
 ///
 /// **The check runs over all of them before the first create**, which is
@@ -432,24 +401,22 @@ fn claim_pads(
     pages: &Pages,
     claim: &Claim,
     source: &Source,
-) -> ExitCode {
-    let Some(targets) = targets(claim, pages) else {
+) -> Result<ExitCode, ExitCode> {
+    let Some(targets) = claim.targets(pages) else {
         eprintln!("tally: that address has no page name");
-        return ExitCode::FAILURE;
+        return Err(ExitCode::FAILURE);
     };
 
     // The same predicate the grid previews with, run without watchers: a
-    // pad holding something live refuses, a free one spawns. If these two
-    // ever disagree, the grid is lying about what pressing it does.
+    // pad holding something live refuses, a free one spawns. Literally
+    // the same one -- it was a second copy of the `matches!` here, and a
+    // grid that disagrees with the CLI is a grid that lies about what
+    // pressing it does ([`SlotState::frees_the_pad`], #9).
     let drawn = model::resolve(sessions, &BTreeMap::new(), pages, tally::now_ms());
     let mut reclaiming = Vec::new();
     for (at, address) in &targets {
         if let Some(held) = drawn.get(at) {
-            let free = matches!(
-                held.state,
-                SlotState::Lost { reclaimable: true } | SlotState::Failed { .. }
-            );
-            if !free {
+            if !held.state.frees_the_pad() {
                 eprintln!(
                     "tally: {address} is held by {} ({})",
                     held.session,
@@ -462,7 +429,7 @@ fn claim_pads(
                     "tally: if it is really gone: anchor label {} tl.slot- tl.attention-",
                     held.session
                 );
-                return ExitCode::FAILURE;
+                return Err(ExitCode::FAILURE);
             }
             // A row anchord lost to its own restart keeps its `tl.slot` and
             // its scrollback, and the newest session on a pad is the one the
@@ -510,21 +477,17 @@ fn claim_pads(
             // for, so the honest answer is the list above plus this line.
             Err(e) => {
                 eprintln!("tally: {address}: {e}");
-                return ExitCode::FAILURE;
+                return Err(ExitCode::FAILURE);
             }
         }
     }
-    ExitCode::SUCCESS
+    Ok(ExitCode::SUCCESS)
 }
 
 /// Put the view where the pad says.
 ///
-/// **Your shell is not touched.** `tally spawn` used to replace it with
-/// the attach, which made the pane you ran it from the view — and a pane
-/// on your personal tmux server cannot be a view on tally's, which is
-/// where every view lives now (`docs/06-views.md`). The folder
-/// still comes from where you are standing, which was always the half
-/// worth having.
+/// Your shell is not touched; what `--detach` declines is the view, and
+/// the story behind the name is on [`cli::Claim::detach`].
 ///
 /// Placement is **not** fatal. The session exists by the time control
 /// gets here, so a tmux that would not cooperate costs you a view that
