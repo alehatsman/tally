@@ -285,9 +285,12 @@ you just finished, to tidy a list you were not looking at.
   `name:1-8:1-8` with a declared page name is **ignored, not clamped and not
   repaired** — it was written by something that disagrees with us about the
   address space, and putting it somewhere arbitrary is worse than leaving it
-  off the grid. An ignored row is logged once, at `warn`, with the offending
-  value.
+  off the grid. Nothing is logged: `resolve` is a pure function that runs
+  every 16 ms and from `tally ls` too, so a line per tick is a flood and
+  debouncing it would need state the function does not have. To find a
+  session that never lit, read `anchor ls` — the offending value is in its
+  `tl.slot` label.
 - Two sessions claiming the same slot: the **newest wins** and the older is
-  logged and left off the grid. anchor lists newest-first, so this costs
-  nothing to implement and is the behaviour you want — you just spawned the
-  new one. The cost is named in [07](07-cli.md#the-occupancy-check-is-advisory).
+  left off the grid, silently — respawning onto a used pad is the normal
+  case. anchor lists newest-first, so this costs nothing to implement and is
+  the behaviour you want — you just spawned the new one. The cost is named in [07](07-cli.md#the-occupancy-check-is-advisory).
