@@ -194,22 +194,44 @@ built on *bright means where you are*).
 
 ### The logo is the health light
 
-`CC99` is not a slot. It is the status of the stack behind the surface:
+`CC99` is not a slot. It is the status of the stack behind the surface,
+and **nothing else**:
 
 | logo | means |
 |---|---|
-| off | tallyd running, anchord reachable, nothing to say |
+| 21 green, static | tallyd running, anchord reachable — **the stack is up** |
 | 7 dark red, static | **anchord unreachable** |
-| 9 amber, pulsing | a session off the visible window needs an answer |
+| off | **tallyd is not running** |
 
-Unreachable wins. If anchord is down there is no session list, so there is
-nothing that could be known to want you, and a logo doing both at once would
-have to alternate — two meanings on the one light whose whole job is being
-unambiguous.
+Three states, one question: *is the thing behind this surface working?* The
+light answers it and answers nothing else, which is the whole reason it is
+not a slot.
+
+Off used to mean *healthy*, and that was the bug. Dark is also what the
+surface looks like with no daemon at all — `tallyd` clears all 81 LEDs on
+the way out ([08](08-daemon.md#shutdown-is-not-optional)) — so the resting state of a
+working system was indistinguishable from a dead one. A lit idle costs one
+LED and makes the difference free to see from across the room.
 
 An unreachable anchord lighting the logo rather than clearing the grid is
 the point. Sixty-four dark pads mean "nothing is running". They must never
 mean "I cannot tell".
+
+Green here is the same green as a live session, spent on something that is
+not one. That is legal for the reason the Stop corner is allowed to be red:
+**position disambiguates before hue has to**. The logo is off the grid, it
+is the only thing where it sits, and it means what green always means —
+*alive*.
+
+**Removed: the amber pulse.** The logo used to add a third meaning — *a
+session off the visible window needs an answer* — and from the desk it read
+as a fault, because scrolling the window lit a light that had been dark.
+Health and attention are different questions and the surface already
+separates them everywhere else; one light answering both could only be read
+by remembering which. `►` keeps that job, where it always belonged: it
+pulses amber for the same fact and it is the thing you press. The honest
+cost is that an art owning the grid now reports off-window attention on
+`►` alone — one light instead of two, and the one you can act on.
 
 ## The layout
 
@@ -261,7 +283,7 @@ an inert button that lights up like a live one is an invitation to press it.
 | `Top(8)` User | off | nothing | nothing |
 | `Action(1..7)` `>` | 1 dark grey if the row can inherit | **launch** into that row | — |
 | `Action(8)` `CC19` | 5 red in Stop, 37 turquoise in Move | double-tap **swaps the verb** | the modifier |
-| `CC99` logo | the health light | — | — |
+| `CC99` logo | 21 green up, 7 dark red if anchord is unreachable | — | — |
 
 **Dark does nothing, lit does exactly one thing, and there is no state to
 remember.** That is the rule the whole top row runs on, and the one
@@ -287,9 +309,11 @@ survivable because it is not on the grid — it is the bottom corner of the
 right column, where the silkscreen says *Stop*. Position disambiguates
 before hue has to.
 
-An amber `►` says **that something wants you**; the logo says **that it is
-off the window you are looking at**. Both, deliberately: the logo is visible
-from further away and `►` is what you act on.
+An amber `►` says **that something wants you**, and it says it alone. The
+logo used to say the scrolled-off half of it from further away; that second
+voice is gone, because the light it borrowed answers a different question
+(*is the stack up*) and could not hold both without a legend. One fact, one
+light, and that light is the one you press.
 
 Both animations are the device's own — set once, no repaint loop. A
 host-driven blink drifts, stutters under load, and keeps blinking for one
@@ -873,11 +897,12 @@ nothing on the surface able to report it, discovered only on coming out
 ([D9](10-decisions.md#d9--two-correct-modules-in-the-wrong-order)).
 
 **What the art is not allowed to hide: the amber.** It is the signal the
-whole thing is a bet on, and a toy that can swallow it is a defect. So the
-logo tells the truth, unchanged, at full brightness — and while the grid is
-a plasma field, *all* attention is attention you cannot see — and `►` stays
-lit when something is queued. Everything else goes dark. The art owns the 64
-pads; it does not own the three lights that report.
+whole thing is a bet on, and a toy that can swallow it is a defect. So `►`
+stays amber whenever anything is queued — and while the grid is a plasma
+field *every* waiting session is one you cannot see, so `►` is carrying all
+of it. The logo keeps reporting health, unchanged, because an art does not
+make the stack any more or less up. Everything else goes dark. The art owns
+the 64 pads; it does not own the three lights that report.
 
 ### The nine pieces
 
