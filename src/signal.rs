@@ -117,6 +117,15 @@ pub enum SessionState {
 #[derive(Debug, Default, Clone)]
 pub struct Derived {
     /// When a BEL was last seen. `None` if never.
+    ///
+    /// **Recorded, not consulted.** No predicate reads it, and the one
+    /// that looks like it should must not: `docs/04-signals.md` writes
+    /// "bell since the last output" as a timestamp comparison, and the
+    /// BEL arrives *inside* an output chunk, so this and `last_output_ms`
+    /// are set to the same instant and `>=` versus `>` flips the answer.
+    /// The outstanding-bell flag is a flag for exactly that reason. Kept
+    /// because it is the only record of *when* a session last rang, and
+    /// the spec's mechanism sketch names it.
     pub last_bell_ms: Option<i64>,
     /// When output last arrived.
     pub last_output_ms: i64,
