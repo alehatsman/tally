@@ -1,0 +1,24 @@
+[package]
+name = "tallybridge"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "The Windows half of tally: owns the Launchpad, moves its bytes to tallyd in WSL"
+repository = "https://github.com/alehatsman/tally"
+publish = false
+
+# One package, two targets, and the split is the point. The library is the
+# wire -- the codec and the session -- and `tally` depends on it, so both
+# ends of the socket compile one definition (docs/13-bridge.md). The binary
+# is the part that only means anything on Windows.
+[lints]
+workspace = true
+
+[[bin]]
+name = "tallybridge"
+path = "src/main.rs"
+
+# Nothing tally does not already have. `midir` speaks WinMM on Windows with
+# no feature flags; everything else is std.
+[dependencies]
+midir = "0.11.1"
