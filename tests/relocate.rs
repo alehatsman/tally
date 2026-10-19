@@ -34,9 +34,13 @@ const fn at(row: u8, col: u8) -> Place {
     Place { row, col }
 }
 
-/// The address string a pad carries for row/col on page 1.
+/// The address string a pad carries for row/col on the first page.
+///
+/// The page name is **not** numeric on purpose. Every address in this
+/// file was `1:row:col` until review w7 F1, and that is why nothing here
+/// caught a page name reaching the pane listing unfenced.
 fn addr(row: u8, col: u8) -> String {
-    format!("1:{row}:{col}")
+    format!("work:{row}:{col}")
 }
 
 /// Press a pad: make the view if it is not there, move it if it is out of
@@ -75,7 +79,12 @@ fn a_move_within_a_row_leaves_the_view_at_the_window_its_label_names() {
 
         let v = s.view("S1");
         assert!(v.at("r01", 2), "S1 should be at r01:2 — {}", s.dump());
-        assert_eq!(v.slot, "1:1:2", "the label follows the pane — {}", s.dump());
+        assert_eq!(
+            v.slot,
+            addr(1, 2),
+            "the label follows the pane — {}",
+            s.dump()
+        );
         assert!(
             s.view("S2").at("r01", 3),
             "S2 must not have been disturbed — {}",
@@ -188,8 +197,8 @@ fn two_live_views_trade_places() {
         let _drifted = s.sh(&["move-window", "-s", &squatter, "-t", "r01:2"]);
         assert_eq!(
             s.view("S2").slot,
-            "1:1:5",
-            "still claims 1:1:5 — {}",
+            addr(1, 5),
+            "still claims its own address — {}",
             s.dump()
         );
 
@@ -199,7 +208,7 @@ fn two_live_views_trade_places() {
 
         let p = s.view("S1");
         assert!(p.at("r01", 2), "S1 lands at its address — {}", s.dump());
-        assert_eq!(p.slot, "1:1:2", "and wears it — {}", s.dump());
+        assert_eq!(p.slot, addr(1, 2), "and wears it — {}", s.dump());
 
         let o = s.view("S2");
         assert!(o.at("r01", 1), "S2 took S1's old window — {}", s.dump());
@@ -210,7 +219,12 @@ fn two_live_views_trade_places() {
             s.dump()
         );
         assert!(!o.dead, "nothing was closed to make room — {}", s.dump());
-        assert_eq!(o.slot, "1:1:5", "its own claim is untouched — {}", s.dump());
+        assert_eq!(
+            o.slot,
+            addr(1, 5),
+            "its own claim is untouched — {}",
+            s.dump()
+        );
     });
 }
 
@@ -328,7 +342,7 @@ fn a_corpse_claiming_another_address_does_not_wedge_the_pad() {
         s.wait_until_dead(&corpse);
         assert_eq!(
             s.view("S2").slot,
-            "1:1:5",
+            addr(1, 5),
             "claims elsewhere — {}",
             s.dump()
         );
@@ -407,7 +421,7 @@ fn the_audit_reports_drift_and_changes_nothing() {
 
         assert_eq!(drift.len(), 1, "only S2 is out of place: {drift:?}");
         assert_eq!(drift[0].session, "S2");
-        assert_eq!(drift[0].claims, "1:1:5");
+        assert_eq!(drift[0].claims, addr(1, 5));
         assert_eq!(drift[0].sits_at, "r01:7");
         assert_eq!(
             before,

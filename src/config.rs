@@ -148,6 +148,19 @@ fn resolve_pages(entries: &[PageEntry]) -> Result<Pages, Error> {
                 entry.name
             )));
         }
+        // A page name is also the first field of the address tally writes
+        // into `@tally_slot`, and `src/jump.rs::FIELD` splits the pane
+        // listing on '|' positionally. A pipe in a name shifts every field
+        // after the tag, and it shifts them *silently*: the session id sits
+        // ahead of the damage, so the jump still lands while the geometry
+        // under it -- corpse reclaim, park collision, drift audit -- reads
+        // the wrong columns.
+        if entry.name.contains('|') {
+            return Err(Error::Invalid(format!(
+                "page {:?}: a name cannot contain '|', which separates the fields of tally's tmux pane listing",
+                entry.name
+            )));
+        }
         // The same name is written into a JSON string in the attention
         // journal and into a tmux window name, and a quote, a backslash
         // or a control character is wrong in at least one of them. The
@@ -220,6 +233,21 @@ name = "infra"
     fn a_page_name_cannot_contain_a_colon() {
         let e = Config::parse("[[page]]\nname = \"a:b\"\n").expect_err("colon");
         assert!(format!("{e}").contains("':'"), "{e}");
+    }
+
+    /// A pipe in a page name shifts every field after the slot tag in
+    /// `src/jump.rs::row`, and it does it silently -- the session id is
+    /// parsed before the damage, so the jump lands and only the geometry
+    /// under it is wrong (review w7 F1).
+    #[test]
+    fn a_page_name_cannot_contain_a_pipe() {
+        let e = Config::parse("[[page]]\nname = \"a|b\"\n").expect_err("pipe");
+        let msg = format!("{e}");
+        assert!(msg.contains("'|'"), "{msg}");
+        assert!(
+            msg.contains("pane listing"),
+            "the refusal names the reason: {msg}"
+        );
     }
 
     /// A page name is written into the attention journal as part of a
