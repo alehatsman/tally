@@ -38,7 +38,10 @@ const TICK: Duration = Duration::from_millis(16);
 /// How long without a reply before the device counts as gone.
 ///
 /// Generous against the ~2ms warm round trip, because the cost of being
-/// wrong is a needless reconnect, and three missed probes is not a blip.
+/// wrong is a needless reconnect. The probe rides the [`RECONCILE`] clock
+/// (`Link::probe`), so three missed probes is `RECONCILE` × 3 = 6s, and
+/// the seventh second is slack for a loop that was busy. Move `RECONCILE`
+/// and this number buys a different number of probes.
 const DEVICE_SILENCE: Duration = Duration::from_secs(7);
 
 /// How long `▲` must be held before it means *all the way up*.
@@ -105,16 +108,6 @@ fn reraise(signum: i32) -> ! {
     std::process::abort();
 }
 
-/// Carry out one gesture and say what happened.
-///
-/// A jump is tmux's and everything else is anchord's, which is the same
-/// split as `docs/06-views.md`: `tally::act` never opens a terminal and
-/// `tally::jump` never opens a socket.
-///
-/// Errors are printed and dropped. The next reconcile redraws from a
-/// fresh `list`, so a kill that did not land shows as a pad that is still
-/// green — the truth, and better than an error state invented for the
-/// surface.
 /// The `CC19` double-tap, tracked across presses.
 ///
 /// A tap is a press and a release close together with **no chord fired
@@ -122,10 +115,9 @@ fn reraise(signum: i32) -> ! {
 /// hold, the gesture chord rule 4 promises will do nothing. Two of them
 /// inside [`DOUBLE_TAP`] toggle the mode.
 ///
-/// The clock is here and not in `chord.rs` because that module is pure —
-/// presses in, gestures out, no `now` — and that purity is what lets the
-/// four chord rules be tested without a device or a timeline. Same shape
-/// as `home_press`, and the same precedent (`docs/05-interaction.md`).
+/// The clock is here and not in [`tally::chord`], which has none. Same
+/// shape as [`Grip::home_due`], and the same precedent
+/// (`docs/05-interaction.md`).
 #[derive(Debug, Clone, Copy, Default)]
 struct Corner {
     /// When it went down, while it is down.
@@ -151,7 +143,7 @@ impl Corner {
         // a half-double behind for the next one to pair with.
         //
         // The third is not hypothetical: an art swallows the **press**
-        // and not the release (`left_art` answers `false` for `!down`),
+        // and not the release ([`art_press`] answers `false` for `!down`),
         // so while a piece is playing this is handed a release with no
         // matching press. `is_none_or` on `None` is what catches it, and
         // the test below is what keeps that true — the alternative is a
@@ -181,12 +173,9 @@ impl Corner {
 
 /// The gestures that need a clock, and the pad one of them is carrying.
 ///
-/// These three were loose `let mut`s in `main` and were passed back to
-/// three helpers by `&mut`, one field at a time
-/// (`docs/08-daemon.md`). They belong together for the
-/// reason each of them is here at all: `chord.rs` is pure and has no
-/// `now`, so every gesture that is *timed* or spans more than one press
-/// is held by the loop instead (`docs/05-interaction.md`).
+/// Together, because they are all here for one reason: [`tally::chord`]
+/// has no `now`, so a gesture that is *timed* or spans more than one
+/// press is the loop's to hold (`docs/08-daemon.md`).
 #[derive(Debug, Clone, Copy, Default)]
 struct Grip {
     /// The `CC19` double-tap.
@@ -287,12 +276,8 @@ enum Hand {
 }
 
 impl Hand {
-    /// Fold this into the loop's hand.
-    ///
-    /// A method rather than a `match` at the call site for the same
-    /// reason [`Grip::feel`] exists: `main` is at the
-    /// cognitive-complexity cap and this is the kind of three-arm
-    /// bookkeeping that belongs next to the enum it is about.
+    /// Fold this into the loop's hand. A method and not a `match` in
+    /// `main`, which is at its cognitive-complexity cap.
     fn apply(self, hand: &mut Option<Slot>) {
         match self {
             Self::Unchanged => {}
@@ -302,6 +287,16 @@ impl Hand {
     }
 }
 
+/// Carry out one gesture and say what happened.
+///
+/// A jump is tmux's and everything else is anchord's, which is the same
+/// split as `docs/06-views.md`: `tally::act` never opens a terminal and
+/// `tally::jump` never opens a socket.
+///
+/// Errors are printed and dropped. The next reconcile redraws from a
+/// fresh `list`, so a kill that did not land shows as a pad that is still
+/// green — the truth, and better than an error state invented for the
+/// surface.
 fn perform(
     ctx: &Context<'_>,
     gesture: Gesture,
@@ -318,31 +313,29 @@ fn perform(
         // that fed it, and with that gone there is no anchord call on
         // this path at all -- jumps are tmux's business.
         Gesture::Tap { .. } => {
-            {
-                if let Some(r) = ctx.pads.grid().get(&at) {
-                    eprintln!("tallyd: jump {}:{row}:{col} -> {}", at.page, r.session);
-                    // The address names the window. Unnamed pages cannot
-                    // happen for a slot that parsed, but an empty string
-                    // is a legal name and falls back to the old form.
-                    let label = at.label(pages).unwrap_or_default();
-                    if let Err(e) = tmux.jump(&r.session, r.claude.as_deref(), &label, at.place()) {
-                        eprintln!("tallyd: {e}");
-                    }
-                    // The gesture the product exists for, written down at
-                    // last (#43). `None` when this pad was not asking,
-                    // which is the distinction the week needs: a tap can
-                    // land on something quiet, and `►` never can.
-                    //
-                    // Both numbers are last tick's, like the grid the
-                    // finger landed on -- the queue as it was when the
-                    // press happened, not as it is after it.
-                    let now = tally::now_ms();
-                    let waited = journal
-                        .waiting()
-                        .get(&at)
-                        .map(|(_, since)| now.saturating_sub(*since));
-                    journal.jumped_pad(now, &label, waited, queued);
+            if let Some(r) = ctx.pads.grid().get(&at) {
+                eprintln!("tallyd: jump {}:{row}:{col} -> {}", at.page, r.session);
+                // The address names the window. Unnamed pages cannot
+                // happen for a slot that parsed, but an empty string
+                // is a legal name and falls back to the old form.
+                let label = at.label(pages).unwrap_or_default();
+                if let Err(e) = tmux.jump(&r.session, r.claude.as_deref(), &label, at.place()) {
+                    eprintln!("tallyd: {e}");
                 }
+                // The gesture the product exists for, written down at
+                // last (#43). `None` when this pad was not asking,
+                // which is the distinction the week needs: a tap can
+                // land on something quiet, and `►` never can.
+                //
+                // Both numbers are last tick's, like the grid the
+                // finger landed on -- the queue as it was when the
+                // press happened, not as it is after it.
+                let now = tally::now_ms();
+                let waited = journal
+                    .waiting()
+                    .get(&at)
+                    .map(|(_, since)| now.saturating_sub(*since));
+                journal.jumped_pad(now, &label, waited, queued);
             }
         }
         Gesture::Chord { action, .. } => {
@@ -758,21 +751,11 @@ fn launch(
     true
 }
 
-/// The four top-row gestures: move the window, or move you.
-///
-/// Lifted out of `main` because none of them touches anchord and all of
-/// them act on the queue the last tick computed -- `head` and `queued` are
-/// deliberately **stale**, because they are what the finger was looking at
-/// when it landed. Recomputing here would act on a grid the eye never saw.
-fn navigate(
-    gesture: Gesture,
-    offset: &mut u8,
-    head: Option<&queue::Head>,
-    queued: usize,
-    pages: &Pages,
-    tmux: &impl Jump,
-    journal: &mut Journal,
-) {
+/// Move the window. **The offset and nothing else** — no session list, no
+/// queue, no tmux and no journal, which is why `⌂`'s other call site
+/// ([`Grip::home_due`]) reaches this and not [`navigate`]: handing those
+/// five to an arm that provably never reads them reads as a trap.
+fn scroll(gesture: Gesture, offset: &mut u8) {
     match gesture {
         // One row, not one page. A page boundary is not a thing you can
         // feel; a row is.
@@ -784,7 +767,7 @@ fn navigate(
             };
             if n != *offset {
                 *offset = n;
-                eprintln!("tallyd: rows {}-{}", n + 1, n + 8);
+                eprintln!("tallyd: rows {}-{}", n + 1, n + slot::WINDOW);
             }
         }
         Gesture::Home => {
@@ -793,6 +776,33 @@ fn navigate(
                 eprintln!("tallyd: home");
             }
         }
+        Gesture::Tap { .. }
+        | Gesture::Chord { .. }
+        | Gesture::Launch { .. }
+        | Gesture::Arts
+        | Gesture::Next
+        | Gesture::Back => {}
+    }
+}
+
+/// The top-row gestures: move the window ([`scroll`]), or move you.
+///
+/// Lifted out of `main` because none of them touches anchord. `head` and
+/// `queued` are deliberately **stale** -- they are what the finger was
+/// looking at when it landed, and recomputing here would act on a grid
+/// the eye never saw. Only `►` and `◄` read them, which is the whole
+/// reason [`scroll`] is a separate name.
+fn navigate(
+    gesture: Gesture,
+    offset: &mut u8,
+    head: Option<&queue::Head>,
+    queued: usize,
+    pages: &Pages,
+    tmux: &impl Jump,
+    journal: &mut Journal,
+) {
+    match gesture {
+        Gesture::PageUp | Gesture::PageDown | Gesture::Home => scroll(gesture, offset),
         Gesture::Next => {
             let Some(h) = head else {
                 return;
@@ -885,9 +895,10 @@ fn main() -> ExitCode {
     // and the thing it is watching is anchord, which it can do blind.
     let mut link = Link::new();
 
-    // A broken config is reported and then ignored. Refusing to start
-    // would take away the watching to punish a mistake in the spawning,
-    // and the watching is the half that is load-bearing.
+    // A broken config is reported and then ignored, for the reason
+    // `tally::config`'s module header gives in full: the watching is the
+    // half that is load-bearing, and refusing to start would take it away
+    // to punish a mistake in the spawning.
     let config_path = Config::default_path();
     let config = Config::load(&config_path).unwrap_or_else(|e| {
         eprintln!("tallyd: {}: {e}", config_path.display());
@@ -973,9 +984,8 @@ fn main() -> ExitCode {
                 Event::Press { button, down } => {
                     // Captured before `feed`, which answers `None` for
                     // plenty of presses and would skip this with the
-                    // `continue` below. The clock deliberately lives
-                    // here and not in `chord.rs`: that module is pure
-                    // and has no `now` (`docs/05-interaction.md`).
+                    // `continue` below. The clock is here because
+                    // [`tally::chord`] has none ([`Grip`]).
                     grip.aim(button, down, elapsed);
                     // Before the corner's clock and before `feed`:
                     // an art swallows the press whole, so neither
@@ -1035,7 +1045,8 @@ fn main() -> ExitCode {
                             // The window turns a pad into an address.
                             // Past the end of the address space there
                             // is no pad, and nothing happens.
-                            let Some(at) = Slot::at_absolute(offset + row, col) else {
+                            let Some(at) = Slot::at_absolute(offset.saturating_add(row), col)
+                            else {
                                 continue;
                             };
                             let ctx = Context {
@@ -1119,10 +1130,6 @@ fn main() -> ExitCode {
             viewed = tmux.viewing();
         }
 
-        let pressed: std::collections::BTreeSet<Action> = Action::all()
-            .into_iter()
-            .filter(|&a| chords.is_held(a))
-            .collect();
         let now = tally::now_ms();
         // `resolve` and `journal.tick` stay on the fast clock while the
         // listing above does not, and the reason is `now`: amber, the
@@ -1164,45 +1171,52 @@ fn main() -> ExitCode {
         // `▲` held past the threshold means *all the way up*
         // ([`Grip::home_due`]).
         if grip.home_due(elapsed) {
-            navigate(
-                Gesture::Home,
-                &mut offset,
-                waiting.head.as_ref(),
-                waiting.queued,
-                &pages,
-                &tmux,
-                &mut journal,
-            );
+            scroll(Gesture::Home, &mut offset);
         }
 
-        // Which `>` would act, from the same resolution the press uses.
-
-        let launchable: std::collections::BTreeSet<u8> = (1..=7u8)
-            .filter(|row| {
-                model::row_launch(&sessions, &pages, &resolved, offset.saturating_add(*row))
-                    .is_some()
-            })
-            .collect();
-
-        let view = View {
-            pages: &pages,
-            offset,
-            launchable: &launchable,
-            anchord_reachable: reachable,
-            now,
-            can_go_back: tmux.can_go_back(),
-            queued: waiting.queued,
-            held: chords.modifier(),
-            hand: grip.hand,
-            art: reel.is_some(),
-            pressed: &pressed,
-            mode: chords.mode(),
-        };
-        let frame = model::frame_from(&pads, &view);
         advance_art(reel.as_mut(), &mut art_wake);
-        let frame = reel
-            .as_ref()
-            .map_or(frame, |r| art_surface(r, reachable, waiting.queued));
+        // The art is the **branch**, not a fallback over a grid that was
+        // built and dropped. `frame_from` walks every resolved pad and
+        // `launchable` is seven `row_launch` calls over the session list;
+        // behind a piece neither is ever drawn, so on a 16 ms tick that
+        // was ~62 wasted boards a second for the length of the piece.
+        // Same shape as c85b141, "the tick does what the tick is for" --
+        // this is the one it missed. The arts read `reachable` and
+        // `waiting.queued` and nothing else, and both are already up
+        // there (review w2 F3).
+        let frame = if let Some(r) = reel.as_ref() {
+            art_surface(r, reachable, waiting.queued)
+        } else {
+            // Which `>` would act, from the same resolution the
+            // press uses.
+            let pressed: std::collections::BTreeSet<Action> = Action::all()
+                .into_iter()
+                .filter(|&a| chords.is_held(a))
+                .collect();
+            let launchable: std::collections::BTreeSet<u8> = (1..=7u8)
+                .filter(|row| {
+                    model::row_launch(&sessions, &pages, &resolved, offset.saturating_add(*row))
+                        .is_some()
+                })
+                .collect();
+            let view = View {
+                pages: &pages,
+                offset,
+                launchable: &launchable,
+                anchord_reachable: reachable,
+                now,
+                can_go_back: tmux.can_go_back(),
+                queued: waiting.queued,
+                held: chords.modifier(),
+                hand: grip.hand,
+                // `false` by construction: the arm above is the only
+                // one that draws while a piece is playing.
+                art: false,
+                pressed: &pressed,
+                mode: chords.mode(),
+            };
+            model::frame_from(&pads, &view)
+        };
         link.paint(&frame);
 
         // Hand this tick's resolution to `grid`, which is what the next
@@ -1304,7 +1318,7 @@ mod tests {
 
     /// A release whose press never arrived is not a tap.
     ///
-    /// `left_art` swallows the press that exits an art but lets the
+    /// [`art_press`] swallows the press that exits an art but lets the
     /// release through, so this is the real shape of pressing `CC19`
     /// while a piece is playing. If it counted as a tap, the mode could
     /// toggle behind an animation with nothing on the surface able to
