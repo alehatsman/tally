@@ -70,17 +70,32 @@ do not.
 
 ## The reconcile loop
 
-One loop, 2 s, doing four things in order:
+One loop, 16 ms, doing four things in order — but only two of them on
+every wake:
 
 ```text
 1. device?    poll midir ports; (re)connect, enter programmer mode, repaint
-2. anchord?   list all sessions, keep those with a tl.slot key, resolve
-              each against slots.toml; on error light the logo red and
-              leave the model alone
+                                                           (every wake)
+2. anchord?   list all sessions; on error light the logo red and leave the
+              model alone. With it: which rows anchord would forget, and
+              which panes a tmux client is looking at -- everything
+              asked of another process, asked on one clock
+                                                           (every 2 s)
 3. watchers   start one per live slot session that lacks one; reap the
               finished
-4. render     model -> frame, diff against last, emit one SysEx
+                                                           (every 2 s)
+4. resolve    the sessions from step 2 against slots.toml and the signal
+              map, then model -> frame, diff against last, emit one SysEx
+                                                           (every wake)
 ```
+
+Step 4 is on the fast clock and the other half of step 2 is not, and that
+split is the whole shape: **resolving is a function of `now`**, so amber,
+the journal's rising edges and the tempo all move inside a tick. *Listing*
+is a question for another process, and asking it 62 times a second to hear
+the same answer 124 times out of 125 is a fork storm, not freshness
+(review w8 F2). A press that changes the world — a tap, `►`, `◄` — pulls
+the reconcile forward to the next wake rather than waiting out the 2 s.
 
 Step 2's error branch is the one to get right: **an unreachable anchord must
 not empty the model.** Lighting the logo and rendering a stale grid is

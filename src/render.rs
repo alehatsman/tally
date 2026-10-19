@@ -243,7 +243,7 @@ pub fn preview(effect: Effect) -> Cell {
         // spot exactly. It also means *this gesture will not touch it*
         // under a held Stop — two meanings for one value, and they
         // never share a frame: with a hand full, `Effect::Skips` is
-        // unreachable (`model::effect`), which
+        // unreachable (`effect::effect`), which
         // `a_full_hand_never_dims_for_the_other_reason` pins.
         Effect::Acts(Consequence::Dropped) => Cell::Static(DARK_GREY),
         // The pad in your hand: turquoise, like every other occupied
