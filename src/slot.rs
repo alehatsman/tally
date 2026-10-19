@@ -191,17 +191,21 @@ impl Pages {
 pub fn parse(label: &str, pages: &Pages) -> Option<Slot> {
     let mut parts = label.split(':');
     let page = pages.index_of(parts.next()?)?;
-    let row = coordinate(parts.next()?)?;
-    let col = coordinate(parts.next()?)?;
+    let row = coordinate(parts.next()?, ROWS_PER_PAGE)?;
+    let col = coordinate(parts.next()?, COLS)?;
     if parts.next().is_some() {
         return None; // "a:1:2:3" is not an address with a suffix, it is a typo
     }
     Some(Slot { page, row, col })
 }
 
-fn coordinate(text: &str) -> Option<u8> {
+/// One coordinate, checked against the bound of *its own axis*. The caller
+/// names the bound ([`ROWS_PER_PAGE`] for a row, [`COLS`] for a column)
+/// because the two are only equal by coincidence; a shared bound would
+/// let a row past the page validate and land inside the next page.
+fn coordinate(text: &str, bound: u8) -> Option<u8> {
     let n: u8 = text.parse().ok()?;
-    (1..=COLS).contains(&n).then_some(n)
+    (1..=bound).contains(&n).then_some(n)
 }
 
 #[cfg(test)]
@@ -214,7 +218,7 @@ mod tests {
     fn a_label_parses_back_to_the_slot_that_wrote_it() {
         let pages = Pages::new(["work".to_owned(), "infra".to_owned()]);
         for page in 1..=2 {
-            for (row, col) in [(1, 1), (3, 5), (8, 8)] {
+            for (row, col) in [(1, 1), (3, 5), (ROWS_PER_PAGE, COLS)] {
                 let at = Slot { page, row, col };
                 let label = at.label(&pages).expect("declared page");
                 assert_eq!(parse(&label, &pages), Some(at), "{label}");
@@ -240,6 +244,16 @@ mod tests {
             .label(&pages),
             None
         );
+    }
+
+    /// Each axis is bounded by its own constant, not by the other's.
+    #[test]
+    fn each_coordinate_is_bounded_by_its_own_axis() {
+        let pages = named();
+        assert!(parse(&format!("work:{ROWS_PER_PAGE}:1"), &pages).is_some());
+        assert!(parse(&format!("work:{}:1", ROWS_PER_PAGE + 1), &pages).is_none());
+        assert!(parse(&format!("work:1:{COLS}"), &pages).is_some());
+        assert!(parse(&format!("work:1:{}", COLS + 1), &pages).is_none());
     }
 
     fn named() -> Pages {
