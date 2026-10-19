@@ -23,6 +23,15 @@ use crate::surface::{Button, Frame};
 /// (~345ms measured in M0) where a warm one is ~2ms.
 const REPLY_TIMEOUT: Duration = Duration::from_secs(2);
 
+/// MIDI realtime clock. Not `SysEx`, so it is named here and not beside
+/// [`sysex::PROGRAMMER`] — but an unnamed byte on the wire is a byte
+/// nothing can check.
+const CLOCK: [u8; 1] = [0xF8];
+/// MIDI realtime start: the transport is running.
+const CLOCK_START: [u8; 1] = [0xFA];
+/// MIDI realtime stop: the transport is not.
+const CLOCK_STOP: [u8; 1] = [0xFC];
+
 /// The substring that identifies the port we want.
 ///
 /// Never an exact string and never an index. M0 confirmed this matches both
@@ -319,7 +328,7 @@ impl Device {
     /// # Errors
     /// Whatever the MIDI stack said.
     pub fn clock(&mut self) -> Result<(), Error> {
-        self.send(&[0xF8])
+        self.send(&CLOCK)
     }
 
     /// Begin owning the beat.
@@ -331,7 +340,7 @@ impl Device {
     /// # Errors
     /// Whatever the MIDI stack said.
     pub fn clock_start(&mut self) -> Result<(), Error> {
-        self.send(&[0xFA])
+        self.send(&CLOCK_START)
     }
 
     /// Hand the beat back to the device's own 120 bpm.
@@ -345,7 +354,7 @@ impl Device {
     /// # Errors
     /// Whatever the MIDI stack said.
     pub fn clock_stop(&mut self) -> Result<(), Error> {
-        self.send(&[0xFC])
+        self.send(&CLOCK_STOP)
     }
 
     fn send(&mut self, bytes: &[u8]) -> Result<(), Error> {
@@ -453,7 +462,7 @@ mod tests {
     #[test]
     fn noise_is_ignored_rather_than_guessed_at() {
         assert_eq!(decode(&[]), None);
-        assert_eq!(decode(&[0xF8]), None); // clock
+        assert_eq!(decode(&CLOCK), None);
         assert_eq!(decode(&[0xC0, 1, 0]), None); // program change
         assert_eq!(decode(&[0x90, 200, 127]), None); // off-surface index
     }

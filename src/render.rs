@@ -45,10 +45,9 @@ use crate::surface::Cell;
 pub fn slot(state: SlotState) -> Cell {
     match state {
         SlotState::Empty => Cell::Off,
-        // One colour for alive. The working/quiet distinction is still
-        // *known* -- it drives the attention signal and the queue's
-        // ranking -- it just stopped being *shown*, because showing it
-        // cost the only thing motion had left to say (module header).
+        // Working and quiet are still *known* -- they drive the attention
+        // signal and the queue's ranking -- they just stopped being
+        // *shown*; the module header says what that bought.
         SlotState::Working | SlotState::Quiet => Cell::Static(GREEN),
         // Breathing, not blinking. A hard 50% flash reads as urgent for
         // about a minute and as stressful for an afternoon, and this is a
@@ -142,14 +141,11 @@ pub fn back(available: bool) -> Cell {
 /// `►` means that thing: *look at me*. It needs no colour of its own and
 /// must not get one.
 ///
-/// **This row used to say which page wanted you.** The rule it replaced
-/// was paid for in real confusion — *"I am confused which one is selected,
-/// the white one or the turquoise one"* — and said: exactly one page
-/// button is bright, and it is always the one you are on. It is gone, with
-/// the per-page amber, because `►` crosses pages. You no longer navigate
-/// *to* attention; attention navigates to you. The defence is one number,
-/// pages used 70 : 2, and it is written down in `docs/05-interaction.md` so
-/// it can be revisited if pages ever become load-bearing.
+/// This row used to say which page wanted you, and the per-page amber
+/// went with the page buttons: `►` crosses pages, so you no longer
+/// navigate *to* attention. The number that decided it — pages used
+/// 70 : 2 — is in `docs/05-interaction.md`, so it can be revisited if
+/// pages ever become load-bearing.
 pub fn next(waiting: bool) -> Cell {
     if waiting {
         Cell::Pulse(AMBER)
@@ -204,8 +200,9 @@ pub fn action(button: Option<Action>, held: bool) -> Cell {
 /// the target and dim is what will be spared. Under a held Move with a
 /// pad in hand it inverts: most of the grid is a legal destination, so
 /// dim is the target and bright is what is in the way. The two readings
-/// cannot collide, because `Effect::Skips` is unreachable with a full
-/// hand (`docs/05-interaction.md#picking-something-up-flips-the-question-not-the-board`).
+/// cannot collide; the [`Consequence::Dropped`] arm below says why, and
+/// names the test that pins it
+/// (`docs/05-interaction.md#picking-something-up-flips-the-question-not-the-board`).
 #[expect(
     clippy::match_same_arms,
     reason = "skipped and droppable are the same pixel for different reasons, \
@@ -228,22 +225,13 @@ pub fn preview(effect: Effect) -> Cell {
         // instead (`docs/05-interaction.md#picking-something-up-flips-the-question-not-the-board`).
         Effect::Acts(Consequence::PickedUp) | Effect::Occupied => Cell::Static(TURQUOISE),
         // Where it can land, at the dimmest level the language has.
+        // [`DARK_GREY`]'s own doc is where dim-rather-than-bright is
+        // argued, and it is also the entry's canonical home.
         //
-        // Not bright, and that is the correction: with a hand full,
-        // *most of the grid* is a legal destination, so lighting
-        // destinations brightly lights two thirds of the surface and
-        // the one pad you care about stops standing out. Dim inverts
-        // it — the room reads as room, and the two things that matter
-        // (what is occupied, what is in your hand) are the only bright
-        // things left.
-        //
-        // [`DARK_GREY`] rather than a new entry because it is the only
-        // dim level in the language and it already means *available,
-        // not urgent* (`docs/03-surface.md#colour`), which is a landing
-        // spot exactly. It also means *this gesture will not touch it*
-        // under a held Stop — two meanings for one value, and they
-        // never share a frame: with a hand full, `Effect::Skips` is
-        // unreachable (`effect::effect`), which
+        // The same value means *this gesture will not touch it* under a
+        // held Stop — two meanings for one entry, and they never share a
+        // frame: with a hand full, `Effect::Skips` is unreachable
+        // (`effect::effect`), which
         // `a_full_hand_never_dims_for_the_other_reason` pins.
         Effect::Acts(Consequence::Dropped) => Cell::Static(DARK_GREY),
         // The pad in your hand: turquoise, like every other occupied
@@ -265,12 +253,8 @@ pub fn preview(effect: Effect) -> Cell {
         // is what a pad that is no longer anywhere should say half the
         // time.
         //
-        // This is the single exemption to both *only amber animates*
-        // and *nothing blinks*, and it costs nothing either rule was
-        // protecting: those were measured on a surface somebody sits
-        // beside all day. This lasts as long as your thumb, it is
-        // exactly one pad, and a held modifier has already painted
-        // amber off the grid it is on.
+        // The single exemption to both *only amber animates* and
+        // *nothing blinks*; the module header is where that is argued.
         Effect::Holds => Cell::Flash {
             b: TURQUOISE,
             a: OFF,
