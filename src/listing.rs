@@ -16,7 +16,7 @@ use std::fmt::Write as _;
 use crate::anchor::{Session, Wants};
 use crate::model::Resolved;
 use crate::signal::SlotState;
-use crate::slot::{Pages, Slot};
+use crate::slot::{self, Pages, Slot};
 
 /// One occupied pad, with the facts a listing prints.
 ///
@@ -156,6 +156,17 @@ pub fn glyph(state: SlotState) -> char {
 /// attention.
 const YOU: char = '@';
 
+/// The legend under the grid — every glyph the listing can print.
+///
+/// Public because `cli::USAGE` prints this line too, and the two copies
+/// drifted: the usage string still said `? waiting` long after #23 removed
+/// that word, and it is the text a first-time user reads *before* they ever
+/// run `ls`. A `const` cannot be spliced into another `const` — `concat!`
+/// takes literals only, and making `USAGE` a `LazyLock<String>` would be
+/// public-API churn to bind two strings. So the binding is a test:
+/// `cli::tests::the_usage_legend_is_the_listings`.
+pub const KEY: &str = "  @ you   # running   ? wants you   ! failed   x lost   . free";
+
 /// The width the state column is padded to, so the directories line up.
 /// The longest state is `lost, and may still be running`.
 const STATE_WIDTH: usize = 30;
@@ -186,7 +197,7 @@ pub fn text(pads: &[Pad], caller: Caller<'_>, pages: &Pages) -> String {
             continue; // an undeclared page has no name to print
         };
         let _row = write!(out, "  {label:width$}");
-        for col in 1..=8 {
+        for col in 1..=slot::COLS {
             let mark = match Slot::at_absolute(*abs, col) {
                 Some(at) if caller == Caller::At(at) => YOU,
                 Some(at) => by_slot.get(&at).map_or('.', |p| glyph(p.state)),
@@ -199,10 +210,7 @@ pub fn text(pads: &[Pad], caller: Caller<'_>, pages: &Pages) -> String {
         let _end = writeln!(out);
     }
 
-    let _key = writeln!(
-        out,
-        "\n  {YOU} you   # running   ? wants you   ! failed   x lost   . free"
-    );
+    let _key = writeln!(out, "\n{KEY}");
 
     if !pads.is_empty() {
         let _blank = writeln!(out);

@@ -241,7 +241,7 @@ pub fn row_launch(
     })?;
     let cwd = newest.cwd.clone()?;
     let command = newest.command.clone()?;
-    let at = (1..=8).find_map(|col| {
+    let at = (1..=slot::COLS).find_map(|col| {
         let at = Slot::at_absolute(abs, col)?;
         (!drawn.contains_key(&at)).then_some(at)
     })?;
@@ -375,7 +375,7 @@ impl View<'_> {
     pub fn display_row(&self, at: Slot) -> Option<u8> {
         at.absolute_row()
             .checked_sub(self.offset)
-            .filter(|row| (1..=8).contains(row))
+            .filter(|row| (1..=slot::WINDOW).contains(row))
     }
 
     /// The slot under grid row `row`, column `col`, or `None` past the end
@@ -441,8 +441,8 @@ pub fn frame_from(pads: &Pads<'_>, view: &View<'_>) -> Frame {
     // ones: a dark pad can be a spawn or a pile of clean exits waiting to
     // be forgotten, and both are things the preview exists to reveal.
     if let Some(action) = view.held {
-        for row in 1..=8 {
-            for col in 1..=8 {
+        for row in 1..=slot::WINDOW {
+            for col in 1..=slot::COLS {
                 let Some(at) = view.slot_at(row, col) else {
                     continue;
                 };

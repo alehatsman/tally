@@ -13,8 +13,34 @@
 
 use crate::surface::Button;
 
-/// How many pages the top row can select.
+/// How many pages an address can name.
+///
+/// It used to read *how many pages the top row can select*, and the top row
+/// stopped selecting them: a page is still how an address is written and
+/// what `slots.toml` declares, but it is no longer somewhere you jump —
+/// see [`ROWS`]. The count outlived the gesture that justified it.
 pub const PAGES: u8 = 8;
+
+/// Columns in a row — the grid's left-to-right edge.
+///
+/// Named because the bare `8` was doing four different jobs here: this,
+/// [`ROWS_PER_PAGE`], [`WINDOW`], and [`PAGES`]. Only the last had a name,
+/// and it is the one that merely *coincides* with the others — nothing says
+/// a page must hold as many rows as a row holds columns. They are equal on
+/// this device and they are not the same number.
+pub const COLS: u8 = 8;
+
+/// Rows on one page.
+///
+/// What a page boundary is made of: the stride between `page` and the
+/// absolute row it starts at.
+pub const ROWS_PER_PAGE: u8 = 8;
+
+/// Rows the hardware can show at once — the height of the scrolling window.
+///
+/// This is a property of the Launchpad's 8x8 grid, not of the address
+/// space, which is why [`MAX_OFFSET`] subtracts it rather than a page.
+pub const WINDOW: u8 = 8;
 
 /// Every row the address space has, stacked: eight pages of eight.
 ///
@@ -23,10 +49,10 @@ pub const PAGES: u8 = 8;
 /// still how an address is written and what `slots.toml` declares — but
 /// they stopped being a thing you jump between, because a page boundary is
 /// not a thing you can feel and a row is.
-pub const ROWS: u8 = PAGES * 8;
+pub const ROWS: u8 = PAGES * ROWS_PER_PAGE;
 
 /// The furthest the window can be scrolled and still be full.
-pub const MAX_OFFSET: u8 = ROWS - 8;
+pub const MAX_OFFSET: u8 = ROWS - WINDOW;
 
 /// A resolved address: a page *index*, and a position on it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -47,7 +73,7 @@ impl Slot {
     /// boundary without anything special happening — nothing special does.
     #[must_use]
     pub fn absolute_row(self) -> u8 {
-        (self.page.saturating_sub(1)) * 8 + self.row
+        (self.page.saturating_sub(1)) * ROWS_PER_PAGE + self.row
     }
 
     /// The slot at absolute row `abs` and column `col`.
@@ -57,12 +83,12 @@ impl Slot {
     /// nothing is the honest answer.
     #[must_use]
     pub fn at_absolute(abs: u8, col: u8) -> Option<Self> {
-        if abs == 0 || abs > ROWS || col == 0 || col > 8 {
+        if abs == 0 || abs > ROWS || col == 0 || col > COLS {
             return None;
         }
         Some(Self {
-            page: (abs - 1) / 8 + 1,
-            row: (abs - 1) % 8 + 1,
+            page: (abs - 1) / ROWS_PER_PAGE + 1,
+            row: (abs - 1) % ROWS_PER_PAGE + 1,
             col,
         })
     }
@@ -177,7 +203,7 @@ pub fn parse(label: &str, pages: &Pages) -> Option<Slot> {
 
 fn coordinate(text: &str) -> Option<u8> {
     let n: u8 = text.parse().ok()?;
-    (1..=8).contains(&n).then_some(n)
+    (1..=COLS).contains(&n).then_some(n)
 }
 
 #[cfg(test)]
