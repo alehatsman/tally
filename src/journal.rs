@@ -19,7 +19,7 @@
 
 use std::collections::BTreeMap;
 use std::fs::{File, OpenOptions};
-use std::io::{self, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -62,7 +62,14 @@ impl Sink {
         let opened = path
             .parent()
             .map_or(Ok(()), std::fs::create_dir_all)
-            .and_then(|()| OpenOptions::new().create(true).append(true).open(path));
+            .and_then(|()| {
+                OpenOptions::new()
+                    .create(true)
+                    .read(true)
+                    .append(true)
+                    .open(path)
+            })
+            .and_then(|mut file| end_torn_line(&mut file).map(|()| file));
         match opened {
             Ok(file) => Self(Some(file)),
             Err(e) => {
@@ -525,9 +532,41 @@ struct Line {
 /// Serialising these structs cannot fail on its own (no non-string map
 /// keys, no floats), so any error is the sink's and is reported as the
 /// `io::Error` it is.
+///
+/// Built whole and handed over in one `write_all`, because the sink is
+/// unbuffered: `to_writer` straight onto a [`File`] is many small writes,
+/// and a `SIGKILL` between any two of them tears the line. One write
+/// narrows that window to the kernel's own; [`end_torn_line`] repairs
+/// the tear that still happens.
 fn write_line(out: &mut impl Write, line: &impl Serialize) -> io::Result<()> {
-    serde_json::to_writer(&mut *out, line).map_err(io::Error::from)?;
-    writeln!(out)
+    let mut bytes = serde_json::to_vec(line).map_err(io::Error::from)?;
+    bytes.push(b'\n');
+    out.write_all(&bytes)
+}
+
+/// Terminate a last line a `SIGKILL` left without its newline.
+///
+/// Replay skips a torn line, but the file is append-only: without this
+/// the first record of the next run is written onto the same physical
+/// line, and is skipped too — by [`Journal::replay`] and by `jq` alike.
+/// If it was a rise, a later restart re-raises a slot that is already
+/// asking. The torn bytes stay as one invalid line; nothing is lost
+/// beyond what the tear already cost.
+///
+/// Appends and never truncates, so it keeps [`Journal::open`]'s order:
+/// the file has been resumed before this touches it.
+fn end_torn_line(file: &mut File) -> io::Result<()> {
+    let len = file.seek(SeekFrom::End(0))?;
+    if len == 0 {
+        return Ok(());
+    }
+    file.seek(SeekFrom::End(-1))?;
+    let mut last = [0_u8; 1];
+    file.read_exact(&mut last)?;
+    if last[0] == b'\n' {
+        return Ok(());
+    }
+    file.write_all(b"\n")
 }
 
 /// `page:row:col`, falling back to the index for a page with no name.
@@ -837,6 +876,36 @@ mod tests {
 
         let j = Journal::resumed(&path, &Pages::default());
         assert_eq!(j.asking(), 1, "the intact line was thrown away too");
+        std::fs::remove_file(&path).expect("clean up");
+    }
+
+    /// A torn last line is skipped on replay, and the next run's first
+    /// record must not be welded onto it and lost too. Through the real
+    /// `Sink` and back through `resumed`, because the bug lived in the
+    /// seam between the two.
+    #[test]
+    fn a_record_after_a_torn_line_is_not_lost_with_it() {
+        let path = std::env::temp_dir().join("tally-sink-torn-then-append.jsonl");
+        let mut written = br#"{"ms":1,"session":"A","slot":"1:3:3","to":"needs_answer"}"#.to_vec();
+        written.push(b'\n');
+        written.extend_from_slice(br#"{"ms":2,"session":"B","slot":"1:6:"#);
+        std::fs::write(&path, &written).expect("seed");
+
+        let mut sink = Sink::open(&path);
+        sink.write(|out| {
+            write_line(
+                out,
+                &serde_json::json!({"ms":3,"session":"C","slot":"1:4:4","to":"needs_answer"}),
+            )
+        });
+        assert!(sink.is_open());
+
+        let j = Journal::resumed(&path, &Pages::default());
+        assert_eq!(
+            j.asking(),
+            2,
+            "the record after the tear was welded onto it"
+        );
         std::fs::remove_file(&path).expect("clean up");
     }
 
