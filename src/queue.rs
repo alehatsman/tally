@@ -44,11 +44,7 @@ pub struct Head {
 /// Every slot that is asking and not muted, oldest-first by nothing —
 /// the iterator the three questions below are all asked of.
 ///
-/// **The predicate, written once.** It used to be written three times,
-/// character-identical in two of them, under a doc comment arguing that
-/// one predicate is the whole point (`docs/08-daemon.md`).
-/// Three copies agreed by coincidence of having been typed in one
-/// sitting.
+/// **The predicate, written once** (`docs/08-daemon.md`).
 ///
 /// Re-checked against the grid rather than trusted: the journal map is
 /// updated once per reconcile and a press can land between two of them.
@@ -68,10 +64,8 @@ fn answering<'a>(
 /// `answering`, minus whatever is already filling a terminal.
 ///
 /// The second half of the predicate, and the only thing that separates
-/// the queue's two questions from the tempo's one. It is a name rather
-/// than a repeated `.filter(..)` line because the module's whole argument
-/// is that a predicate written twice is a predicate that will eventually
-/// be written differently twice.
+/// the queue's two questions from the tempo's one. A name rather than a
+/// repeated `.filter(..)` line, for [`answering`]'s reason.
 fn offered<'a>(
     waiting: &'a BTreeMap<Slot, (String, i64)>,
     pads: &'a Pads<'_>,
