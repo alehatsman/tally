@@ -115,8 +115,9 @@ pub fn depth(
 /// read by the room rather than by your current focus
 /// (`docs/05-interaction.md`).
 ///
-/// That difference is this function's whole content — it is
-/// [`answering`] with the `viewing` filter the other two add left off,
+/// That difference is this function's whole content — it is the private
+/// `answering` predicate with the `viewing` filter the other two add left
+/// off,
 /// and now that is visible here rather than inferable from diffing three
 /// bodies.
 ///

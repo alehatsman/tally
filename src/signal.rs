@@ -86,7 +86,7 @@ impl SlotState {
     /// Dark, failed, or held only by a row anchord lost to its own
     /// restart. **One predicate, and it lives on the state rather than on
     /// a pad** because the two things that ask are a grid and a shell, and
-    /// only one of them has a [`crate::model::Pad`] to ask with. They did
+    /// only one of them has a [`crate::effect::Pad`] to ask with. They did
     /// not share one before, and a grid that disagrees with the CLI about
     /// what a pad is, is a grid that lies about what pressing it does
     /// ([#9](https://github.com/alehatsman/tally/issues/9)).
