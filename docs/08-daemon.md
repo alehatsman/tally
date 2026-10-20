@@ -131,6 +131,22 @@ so a tick that could not `list` says nothing about whether a watcher is
 still receiving bytes; tearing them down on a failed poll would turn one
 slow response into a full re-attach storm.
 
+**A third clock, and it is slow.** The drift sweep
+([06](06-views.md#a-week-of-lines-and-what-the-first-instrument-could-not-give))
+rides the reconcile branch but not its cadence: it runs on the first
+successful `list`, on **every reconnect after an unreachable stretch**,
+and otherwise every **15 minutes**. The reconnect edge is not decoration
+— anchord dropping its connections is the event that killed seven view
+panes on 2026-10-20, and a sweep that only ever ran once could not have
+seen it. It costs one `list-panes`, which a single press already pays.
+
+**The first line names the build.** `tallyd: tally 0.9.0 (ab12cd3)`, with
+`+` appended to the hash when the tree was dirty, from `build.rs` at
+compile time. A log that cannot say which binary wrote it cannot
+attribute a collision to a build, and refusing to attribute 77 of them is
+what made this necessary (`ROADMAP.md`). `unknown` when git is not there
+to ask — a tarball build is a normal state, not a failure.
+
 Two seconds is teleport's reconcile cadence for the same job. **Presses are
 not on this loop** — input is event-driven off the MIDI callback and renders
 immediately. The loop is for things that appear without telling us. It wakes

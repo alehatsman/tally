@@ -64,6 +64,7 @@ next. M18's own gate is what found them.
 | `renumber-windows off` | tally's server holds its own indexes. A measured ✅ that was a config option ([#20](https://github.com/alehatsman/tally/issues/20), [D10](docs/10-decisions.md#d10--a-measurement-that-was-a-config)) |
 | the swap | two live views trade places, and an address is not written onto a pane whose window does not hold it ([#19](https://github.com/alehatsman/tally/issues/19), [D19](docs/10-decisions.md#d19--a-live-pane-at-a-views-destination-was-left-alone)) |
 | the drift | the collision repairs itself, and a sweep **counts** it. The acting sweep is held on its own number ([#22](https://github.com/alehatsman/tally/issues/22), [D25](docs/10-decisions.md#d25--a-corpse-was-only-found-at-the-address-it-claimed)) |
+| the instrument | and then the sweep was found **blind to a pane that died in place**, sampling once per daemon lifetime, unstamped. Two faults, three occasions, `ms=` and a build id ([D30](docs/10-decisions.md#d30--the-sweep-answered-where-and-the-panes-had-died-in-place)) |
 
 ### What M18's gate found that its spec did not predict
 
@@ -308,6 +309,19 @@ kept, #23 shipped. What is open is
 held on its own week of `sweep:` lines — and that is a *measurement* that
 has not finished, not a decision nobody has made. **It is the only one
 open.**
+
+**Its week had not started, and now it has.** On 2026-10-20 the sweep was
+found blind to the case that motivated the question: seven view panes died
+**at the addresses they claimed** when anchord dropped its connections, and
+a sweep that answers *where* counted every one as zero drift. It also ran
+once per daemon lifetime with no timestamp and no build id, so a week of
+its lines could not have been ordered, attributed, or trusted. The
+instrument now reports two faults, runs on every reconnect and every 15
+minutes, and the daemon's first line names the commit
+([D30](docs/10-decisions.md#d30--the-sweep-answered-where-and-the-panes-had-died-in-place),
+[06](docs/06-views.md#a-week-of-lines-and-what-the-first-instrument-could-not-give)).
+**The clock on #22 starts from this build**, which is what the build id is
+for.
 
 [#69](https://github.com/alehatsman/tally/issues/69) — a moved session
 keeping the self-address its SessionStart note gave it — **closed

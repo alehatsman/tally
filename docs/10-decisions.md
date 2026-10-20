@@ -587,6 +587,51 @@ would answer the question by erasing it.**
 
 → [06](06-views.md#drift-that-nothing-was-looking-for)
 
+### D30 — The sweep answered *where* and the panes had died in place
+
+**Shipped:** a sweep that compares every view's address with the window it
+sits in, so drift stops being invisible — [D25](#d25--a-corpse-was-only-found-at-the-address-it-claimed)'s
+instrument.
+
+**Found 2026-10-20:** anchord dropped its connections without restarting,
+and **seven view panes died while their sessions stayed alive — each at the
+window its own address names.** `relocation()` answers *where a pane should
+go* and returns `None` for one already in place, **dead or alive**, so the
+sweep reported zero drift on a grid where seven pads cost a wasted press.
+Sharing the move path's pure function was the right call and is still the
+right call; it was answering a different question from the one the sweep
+needed.
+
+**Now:** two faults, not one. `drifted` is still `relocation()`. `dead view`
+is *right window, dead pane, live session* — and that third clause is the
+one that matters: a corpse at its own address under a session that has also
+exited is what **finished** looks like, and counting it would bury the
+signal under the ordinary end of every session. **The predicate is liveness
+and address, not address alone.**
+
+**Liveness is the daemon's opinion.** `jump` cannot ask anchord anything, so
+the daemon hands it `alive` per session, the same way it already hands over
+the `Place` it cannot derive without the page table. One boundary, now
+carrying two facts.
+
+**And the instrument's reach was the second half of the finding.** The sweep
+ran **once per daemon lifetime**, with no time on the line and no build id
+in the log. So drift that healed lazily between restarts was never sampled,
+two sweep lines could not be ordered against anything, and an old collision
+could not be attributed to a build — which is exactly why 77 `in use` lines
+were refused as evidence in `ROADMAP.md`. It now runs on every reconnect —
+**the event that killed the seven panes** — and every 15 minutes, stamps
+`ms=` in the journal's unit, and the daemon's first line names the commit.
+
+**What this cost to learn:** the counting sweep was built to decide whether
+the acting sweep is worth its blast radius, and a week of its output would
+have read *zero drift* while the case that motivated the question was
+happening. **An instrument that samples once, unstamped, is not weak
+evidence — it is evidence of the wrong thing.**
+
+→ [06](06-views.md#the-sweep-counts-and-does-not-touch),
+[#22](https://github.com/alehatsman/tally/issues/22)
+
 ### D20 — Identity at window scope
 
 **Built:** `@tally_session` as a window option.
