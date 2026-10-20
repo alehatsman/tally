@@ -40,7 +40,7 @@ product lives or dies by. The launcher was the easy half.
 | **M14** | `tally fork`, and four at a time | the folder can come from a pad you can see |
 | **M15** | The dead pane names the conversation | anchor's id resumes nothing |
 | **M16** | The arts | a demo, and a pixel test of all 64 at once |
-| **M17** | The bridge | **built and run on a Launchpad 2026-10-20** — the five questions answered on the Windows desk, then checklist steps 1–6 passed on a real Mini MK3; the kills, the unplug and a day beside it are still owed ([13](docs/13-bridge.md#the-checklist-when-the-launchpad-is-plugged-in)) |
+| **M17** | The bridge | **built and run on a Launchpad 2026-10-20** — four of the five questions answered on the Windows desk and one from the protocol, then checklist steps 1–6 passed on a real Mini MK3; the kills, the unplug and a day beside it are still owed ([13](docs/13-bridge.md#the-checklist-when-the-launchpad-is-plugged-in)) |
 | **M18** | A moved session takes its view with it | the address is a tmux window, and Move only wrote the name |
 
 **M6 is out of order on purpose.** It is M1's work, and it is here rather
@@ -266,9 +266,9 @@ tmux suite runs rather than skips.
   work out — a pad that never goes amber looks exactly like a pad with
   nothing to say
 
-**What is left is the tag itself**, and it waits on F0's number, because
-the version this ships as is `1.0` and [F5](#f5--v10) says what has to be
-in the README first.
+**What is left is the tag itself**, because the version this ships as is
+`1.0` and [F5](#f5--v10) says what has to be in the README first. F0 has
+closed; what it waits on now is F1's live re-run.
 
 ### F4 — Close scope ✅
 
@@ -283,7 +283,7 @@ in the README first.
 | the acting sweep | Held on its own week of `sweep:` lines |
 | [#40](https://github.com/alehatsman/tally/issues/40) — the spec system | **Cut.** `~/.config/tally/` was empty and `tallyd` loaded *8 pages, 0 slots*, so `[[slot]]`, `[[spec]]`, `tl.spec` and spawn-from-a-dark-pad were code nothing could reach. Scope bullet 2 is **reworded rather than kept** — both spawns in daily use were outside it as written ([01](docs/01-scope.md)) |
 | [#41](https://github.com/alehatsman/tally/issues/41) — 512 slots | **Closed, in two halves.** The overview is gone: `lit` sat at **4** on all nine presses and the map never once crossed the empty middle its design argues from. `▲▼` and hold-`▲` home **stay** — they are how you move through the space and they are used. With those two judged on their own merits, nothing was left for the size to pay for: `ROWS` is a bounds check and a `MAX_OFFSET`, nothing iterates the space, and an empty row costs one comparison. **The address space stays at 64 rows** — shrinking it would migrate live `tl.slot` labels to reclaim nothing |
-| [#42](https://github.com/alehatsman/tally/issues/42) — nine art pieces | **Kept, closed on taste.** 2,157 lines of pure, zero-coupling leaf code with its own tests, in nobody's way. Three pieces cover both stated jobs and six do not, and that is not a reason to delete something that works and that someone enjoys |
+| [#42](https://github.com/alehatsman/tally/issues/42) — nine art pieces | **Kept, closed on taste.** 2,227 lines of pure, zero-coupling leaf code with its own tests, in nobody's way. Three pieces cover both stated jobs and six do not, and that is not a reason to delete something that works and that someone enjoys |
 
 ### F5 — v1.0
 
@@ -304,7 +304,9 @@ and it is true as of this file: #40 cut, #41 closed in both halves, #42
 kept, #23 shipped. What is open is
 [#22](https://github.com/alehatsman/tally/issues/22) — the acting sweep,
 held on its own week of `sweep:` lines — and that is a *measurement* that
-has not finished, not a decision nobody has made.
+has not finished, not a decision nobody has made. The other open issue,
+[#69](https://github.com/alehatsman/tally/issues/69), is a defect: a moved
+session keeps the self-address its SessionStart note gave it.
 
 ### Sequencing
 
@@ -315,8 +317,8 @@ F1  the jump subsystem  ✅ code — M18's live re-run is all that remains,
                            and it needs hands on the device (docs/09)
 F2  the documents       ✅ #23 the keystone, #14, the restructure
 F3  release eng         ✅ CI, version 0.9.0, install story with the hooks
-                           — the v1.0 tag itself waits on F0
-F4  close scope         ✅ #40 cut, #41 half cut, #42 kept
+                           — the v1.0 tag itself waits on F1's gate
+F4  close scope         ✅ #40 cut, #41 closed in both halves, #42 kept
 F5  v1.0                needs F1's gate run
 ```
 
