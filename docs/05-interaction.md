@@ -286,7 +286,7 @@ an inert button that lights up like a live one is an invitation to press it.
 | `Top(7)` Keys | off | nothing | nothing |
 | `Top(8)` User | off | nothing | nothing |
 | `Action(1..7)` `>` | 1 dark grey if the row can inherit | **launch** into that row | — |
-| `Action(8)` `CC19` | 5 red in Stop, 37 turquoise in Move | double-tap **swaps the verb** | the modifier |
+| `Action(8)` `CC19` | 5 red in Stop, 37 turquoise in Move | double-tap **swaps the verb** | the modifier; 3 white while down |
 | `CC99` logo | 21 green up, 7 dark red if anchord is unreachable | — | — |
 
 **Dark does nothing, lit does exactly one thing, and there is no state to
