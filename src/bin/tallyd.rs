@@ -21,7 +21,6 @@ use tally::jump::{Jump, Tmux};
 use tally::lock::Lock;
 use tally::model::{self, View};
 use tally::queue;
-use tally::signal::SessionState;
 use tally::slot::{self, Pages, Slot};
 use tally::surface::{Button, Frame};
 use tally::tempo;
@@ -49,9 +48,11 @@ const SWEEP: Duration = Duration::from_mins(15);
 /// that killed seven view panes. But anchord flapping produces one edge
 /// per [`RECONCILE`], and the damage is done by the first drop: re-flaps
 /// inside this window report the same faults again and would spend a
-/// week of [`SWEEP`]'s line budget in an hour. 30s is [`RECONCILE`] x 15,
-/// which caps a restart loop at two sweeps a minute instead of thirty.
-const SWEEP_FLOOR: Duration = Duration::from_secs(30);
+/// week of [`SWEEP`]'s line budget in an hour. [`RECONCILE`] x 3 caps a
+/// restart loop at ten sweeps a minute instead of thirty, while staying
+/// shorter than a window a human can act inside: a press and a second
+/// restart 25s later must not hide the view that press made.
+const SWEEP_FLOOR: Duration = Duration::from_secs(RECONCILE.as_secs() * 3);
 /// How often the loop wakes. Input is drained at this rate so a press
 /// feels immediate rather than waiting out a reconcile.
 const TICK: Duration = Duration::from_millis(16);
@@ -891,8 +892,9 @@ fn navigate(
 /// nothing else (`src/slot.rs`, `tally::jump::Want`).
 ///
 /// Returns whether a sample was taken. `false` means no session claimed
-/// a pad, nothing was forked and nothing was printed — the caller's
-/// [`SWEEP`] clock should not count it as a sweep.
+/// a pad, or no view pane existed to examine (tmux restarted under a
+/// live anchord) -- the caller's [`SWEEP`] clock should not count it as
+/// a sweep, or the next real sample is deferred a full fifteen minutes.
 fn sweep(tmux: &Tmux, sessions: &[tally::anchor::Session], pages: &Pages) -> bool {
     let want: Vec<tally::jump::Want> = sessions
         .iter()
@@ -908,13 +910,7 @@ fn sweep(tmux: &Tmux, sessions: &[tally::anchor::Session], pages: &Pages) -> boo
                 session: s.id.clone(),
                 at: at.to_owned(),
                 place: slot.place(),
-                // Not an allow-list. `lifecycle` maps any state this
-                // build has not heard of to `Lost`, so naming the live
-                // states would let a word anchord learns later put out
-                // the `dead view` light for every session wearing it --
-                // the blindness this fault was added to end. Only an
-                // explicit `exited` makes a corpse unremarkable.
-                alive: s.lifecycle() != SessionState::Exited,
+                alive: is_alive(s),
             })
         })
         .collect();
@@ -947,7 +943,19 @@ fn sweep(tmux: &Tmux, sessions: &[tally::anchor::Session], pages: &Pages) -> boo
         drifted,
         seen.faults.len() - drifted,
     );
-    true
+    seen.examined > 0
+}
+
+/// Whether a session's pane is still owed a view.
+///
+/// Not an allow-list, and not `lifecycle()`: that maps any state this
+/// build has not heard of to `Lost`, so denying `Lost` would deny every
+/// word anchord learns later and put out the `dead view` light for it.
+/// Only the two words that mean a corpse deny -- `exited`, and a literal
+/// `lost` (an anchord restart takes every PTY with it, `Session::lost_to_restart`).
+/// Everything else, known or not, is alive.
+fn is_alive(s: &tally::anchor::Session) -> bool {
+    !matches!(s.state.as_str(), "exited" | "lost")
 }
 
 /// Take the single-instance lock, or report who holds it.
@@ -1432,6 +1440,24 @@ mod tests {
 
     fn ms(n: u64) -> Duration {
         Duration::from_millis(n)
+    }
+
+    /// `lifecycle()` folds unknown words into `Lost`, so liveness is read
+    /// off the raw state. `lost` (the `daemon_restart` outcome) is a corpse;
+    /// a word from the future is not.
+    #[test]
+    fn lost_is_dead_and_an_unknown_state_is_not() {
+        use tally::anchor::Session;
+        use tally::signal::SessionState;
+        let session = |st: &str| -> Session {
+            serde_json::from_value(serde_json::json!({"id": "a", "state": st})).unwrap()
+        };
+        let alive = |st: &str| is_alive(&session(st));
+        assert!(alive("running") && alive("closing"));
+        assert!(!alive("exited") && !alive("lost"));
+        assert!(alive("hibernating"), "a word this build has not heard of");
+        let unknown = session("hibernating");
+        assert_eq!(unknown.lifecycle(), SessionState::Lost, "the trap itself");
     }
 
     /// Two quick taps, and the corner flips.

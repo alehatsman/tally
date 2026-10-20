@@ -885,7 +885,7 @@ So the sweep now runs on three occasions, and says when and from what:
 | | |
 |---|---|
 | the first `list` | unchanged — not at process start, where there is nothing to audit |
-| **every reconnect** | anchord coming back is the event that killed seven panes. The sweep that would have seen it runs on that edge, but not twice inside 30s — anchord flapping produces one edge per reconcile, and the damage is done by the first drop |
+| **every reconnect** | anchord coming back is the event that killed seven panes. The sweep that would have seen it runs on that edge, but not twice inside 6s (reconcile x 3) — anchord flapping produces one edge per reconcile, and the damage is done by the first drop; the floor stays under what a human can do between two restarts |
 | **every 15 minutes** | the slow clock, so lazy healing between restarts is sampled rather than missed |
 | `ms=` on the summary | epoch milliseconds, the journal's own unit, so a sweep line and a rising edge can be read on one timeline |
 | the startup line | `tallyd: tally 0.9.0 (ab12cd3)`, and `+` on the hash when the tree was dirty. A log without it cannot say which build it is about |
