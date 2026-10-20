@@ -27,9 +27,9 @@ and they lived only in prose in [04](04-signals.md).
 `midir`, which speaks CoreMIDI and ALSA behind one API. **Windows** runs
 the agents and `tallyd` in WSL and the device on Windows, through
 [the bridge](13-bridge.md) — the steps are
-[their own section](#windows-with-wsl), after these. ⚠️ That path is
-built and tested without hardware; it has not yet driven a real
-Launchpad.
+[their own section](#windows-with-wsl), after these. That path has
+driven a real Mini MK3, 2026-10-20; the last lines of its checklist are
+still owed ([13](13-bridge.md#the-checklist-when-the-launchpad-is-plugged-in)).
 
 ## 1. Build and install the binaries
 
@@ -170,9 +170,17 @@ bytes over a loopback socket ([13](13-bridge.md)). Steps 1–4 above happen
 **inside WSL**, unchanged. This adds the Windows half and changes how
 `tallyd` is started.
 
-> ⚠️ **Built and tested without hardware, 2026-10-20.** Everything below
-> ran on a Windows 11 desk except the device itself. The checklist that
-> closes the gap is [in 13](13-bridge.md#the-checklist-when-the-launchpad-is-plugged-in).
+**Step 2 included: the hook lines go in `~/.claude/settings.json` inside
+WSL**, where the agents run. Without them the ports, the pads and the
+presses all work and the amber never shows — which is how it went on the
+desk, 2026-10-20, until they were deployed. A Claude session already
+running when they arrive does not pick them up; restart it.
+
+> ⚠️ **Run against a real Launchpad, 2026-10-20**, Windows 11 build 26200:
+> [the checklist in 13](13-bridge.md#the-checklist-when-the-launchpad-is-plugged-in)
+> passed steps 1–6 — the ports, a pad lit from WSL, a press back, the
+> breath, the raise, a clean stop. Steps 7–11, the kills, the unplug and
+> a day beside it, have not been run.
 
 ### What it needs, beyond the above
 
@@ -181,6 +189,7 @@ bytes over a loopback socket ([13](13-bridge.md)). Steps 1–4 above happen
 | **mirrored networking** | `networkingMode=mirrored` under `[wsl2]` in `%USERPROFILE%\.wslconfig`, then `wsl --shutdown`. It is what lets WSL reach a listener on Windows' `127.0.0.1`; the bridge listens on loopback only, and under NAT networking it is unreachable ([13](13-bridge.md#1-does-a-127001-listener-reach-across--both-ways-and-nowhere-else)) |
 | **interop on** | the default. Check that `/etc/wsl.conf` has no `enabled = false` under `[interop]` |
 | **ALSA headers in WSL** | `sudo apt-get install libasound2-dev`. `midir` links ALSA on Linux even though the device never appears there, so `tallyd` does not build without them |
+| **enough USB power** | the Launchpad on a PC port or a powered hub. On a bus-powered hub it can fail to start (*Code 10* in Device Manager), and then no port exists for the bridge to find ([13](13-bridge.md#the-checklist-when-the-launchpad-is-plugged-in)) |
 | **Rust on Windows** | stable, either toolchain. `midir` speaks WinMM with no feature flags; checked on `x86_64-pc-windows-gnu` |
 
 ### 5. Build the bridge, on Windows
@@ -194,9 +203,11 @@ tallybridge --list
 
 `--list` prints every MIDI port and marks the two it would open. **With
 the Launchpad plugged in, those two must be its MIDI interface and not its
-DAW one** — Windows names ports differently from macOS, and this is the
-one thing about the device on Windows that has not been seen yet. If
-nothing is marked, pass the right substring with `--port`.
+DAW one** — Windows names ports differently from macOS. On the desk it
+was run on, with Windows MIDI Services present, the marked pair was
+`MIDIIN2 (LPMiniMK3 MIDI)` / `MIDIOUT2 (LPMiniMK3 MIDI)` and no `--port`
+was needed ([13](13-bridge.md#the-checklist-when-the-launchpad-is-plugged-in)).
+If nothing is marked, pass the right substring with `--port`.
 
 ### 6. Start both halves at logon
 
@@ -288,7 +299,7 @@ yours and are left alone.
 | **grid is dark, `tally ls` has rows** | the device. `tallyd` logs which port it found; unplug and replug — there is no hot-plug notification in either direction ([03](03-surface.md)) |
 | **the logo is dark** | `tallyd` is not running. A live daemon holds the logo **green**; dark red is a reachable surface with an unreachable `anchord` ([05](05-interaction.md#the-logo-is-the-health-light)) |
 | **sixty-four dark pads** | *nothing is running*. It must never mean *I cannot tell* — an unreachable anchord takes the **logo dark red** and holds the last grid ([01](01-scope.md#the-boundary-stated-plainly)) |
-| **pads never go amber** | the hooks. See step 2, and check `PATH` first |
+| **pads never go amber** | the hooks. See step 2, and check `PATH` first. On Windows, the `settings.json` inside WSL — and restart any Claude session started before the hooks were there |
 | **a pad is amber and the agent is working** | a hook that did not fire — the one failure [the level](11-unbuilt.md#the-level) was specified against, and it has never been observed in 544 rising edges |
 | **the Setup menu is dead** | programmer mode. `SIGTERM` to `tallyd` restores Live mode on the way out; a `SIGKILL` does not, and a replug does ([03](03-surface.md)) |
 | **a jump opens nothing** | `TALLY_TERMINAL`. The default is `Alacritty` and it is almost certainly not what you run |

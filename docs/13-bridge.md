@@ -2,14 +2,14 @@
 
 **The Launchpad on a Windows desk, the agents in WSL.**
 
-> ⚠️ **Status, 2026-10-20: built, tested without hardware, and not yet
-> run against a Launchpad.** No Mini MK3 was plugged into the Windows
-> desk while this was written. Four of the five questions that held it in
+> ⚠️ **Status, 2026-10-20: built, and the first six lines of
+> [the checklist](#the-checklist-when-the-launchpad-is-plugged-in) run
+> against a real Mini MK3** — the ports, a pad lit from WSL, a press
+> crossing back, the breath, the raise, a clean stop. The kills, the
+> cable and the day (7–11) are still owed. Four of the five questions that held it in
 > [11](11-unbuilt.md) were answered by running something on that desk;
-> the fifth is answered from the protocol and says so. Everything that
-> needs the device is marked ⬜ and collected in
-> [the checklist](#the-checklist-when-the-launchpad-is-plugged-in), which
-> is twenty minutes with the cable.
+> the fifth is answered from the protocol and says so. Everything still
+> marked ⬜ needs the device and has not been run yet.
 
 USB does not cross the WSL line: the stock WSL2 kernel is built without
 `CONFIG_SND_USB_AUDIO`, so `usbipd attach` hands over a device that never
@@ -186,9 +186,9 @@ with nothing until the end, so no ACK can piggyback.
 tick-paced runs with it off held a pulse for a 59 ms gap, which is Nagle
 waiting for an ACK the receiver had no reason to send. With it on, the
 worst jitter the hop added in any final run was 0.61 ms, so **on this
-evidence it is also sufficient**. The breath itself
-is ⬜ — whether the device's ramp looks the same with the hop in it is a
-thing to look at.
+evidence it is also sufficient**. The breath itself was looked at on the
+device, 2026-10-20: an amber pad across the hop, smooth, no stutter
+([checklist line 4](#the-checklist-when-the-launchpad-is-plugged-in)).
 
 **Two things the measurement found that are not the bridge's**, recorded
 because both move the numbers above and neither is a hop:
@@ -393,13 +393,14 @@ socket first.
 | **the real `Device` against the real session**, end to end: start-up bytes in order, a diff, two presses as two events, the restore on drop, every refusal, a hang-up noticed on the next frame, the copied constants | `tests/bridge.rs` | WSL (and any Unix) |
 | the real `tallyd` against the real bridge across the WSL line, with no device: *absent* logged once, `tallyd` silent | by hand, 2026-10-20 | both |
 | the real `tallyd` against the real session across the line with a fake Launchpad: clean stop and `SIGKILL` | by hand, 2026-10-20 | both |
+| **the real Mini MK3 across the line**: the port pair, a pad lit, a press back, the amber breath, the raise, a clean stop restoring Live mode | [the checklist](#the-checklist-when-the-launchpad-is-plugged-in), lines 1–6, 2026-10-20 | both |
 
 ## The checklist, when the Launchpad is plugged in
 
 Twenty minutes, in order. Each line is one thing to do and one thing to
 see; a ❌ on any of the first three stops the rest.
 
-1. ⬜ **The port names.** `tallybridge --list` on Windows. Two lines should
+1. ✅ **The port names.** `tallybridge --list` on Windows. Two lines should
    carry `<- used`, one `in` and one `out`, and they should be the
    Launchpad's **MIDI** interface, not its DAW one. Windows' class driver
    names a device's second interface `MIDIIN2 (…)` / `MIDIOUT2 (…)`; if
@@ -408,22 +409,56 @@ see; a ❌ on any of the first three stops the rest.
    find the right substring in the list and pass `--port`. If the wrong
    pair is chosen, that is a code change in `pick`, and this line is
    where it is found.
-2. ⬜ **A pad lights from WSL.** Start both halves the way
+   **Run 2026-10-20**, Windows 11 build 26200 with Windows MIDI Services
+   present: both interfaces enumerate as `LPMiniMK3 MIDI` and
+   `MIDIIN2 (LPMiniMK3 MIDI)` / `MIDIOUT2 (LPMiniMK3 MIDI)`, and `pick`
+   marked the numbered pair. No `--port` needed.
+   **Found first: power.** Through a bus-powered hub (`VID_0409&PID_005A`)
+   the composite device failed to start — Device Manager *Code 10*,
+   `STATUS_INSUFFICIENT_RESOURCES` — and no MIDI port existed, so the
+   bridge said *no port pair matches*. `pnputil /restart-device` did not
+   help; a port on the PC did. Plug the Launchpad into the PC or a
+   powered hub.
+2. ✅ **A pad lights from WSL.** Start both halves the way
    [12](12-install.md#6-start-both-halves-at-logon) says — the logon line,
    run by hand the first time. `tallyd` says *Launchpad connected*, the
    bridge names the two ports, and the grid shows what `tally ls` says,
    logo green. Then sign out and in once: both are running again.
-3. ⬜ **A press reaches WSL.** Tap a lit pad: the jump happens. Hold a
+   **Run 2026-10-20**: *Launchpad connected* on the `MIDIIN2`/`MIDIOUT2`
+   pair, logo green, a session spawned at 1:1 lit as running. ⬜ The
+   sign-out-and-in half has not been run.
+3. ✅ **A press reaches WSL.** Tap a lit pad: the jump happens. Hold a
    modifier and watch the preview — that is a chord crossing the hop.
-4. ⬜ **The breath.** Look at a pulsing pad for a minute. It should look as
-   it does on a Mac; a stutter is question 5 coming due, and the fix would
-   be moving the clock to the bridge, the largest change this design has.
-5. ⬜ **The raise.** Put another window in front, press a pad. The
+   **Run 2026-10-20**: pressing 1:1 opened the `tally` Windows Terminal
+   window on that session. ⬜ The modifier preview was not looked at
+   separately.
+4. ✅ **The breath.** Look at a pulsing pad for a minute — an amber one:
+   green is static, and amber is the only thing that moves on a resting
+   grid ([03](03-surface.md)), so ring a bell in a session with nothing after it —
+   `printf '\a'; sleep 120`, because a bare `printf '\a'` is followed by
+   the prompt and the prompt cancels it ([04](04-signals.md)) — and wait
+   two seconds. For a Claude session, finish a turn and leave it. It
+   should look as it does on a Mac; a stutter is question 5 coming due,
+   and the fix would be moving the clock to the bridge, the largest change
+   this design has.
+   **Run 2026-10-20**: amber appeared on a Claude pad across the hop, but
+   only once the Claude hooks were deployed in WSL. The first try stayed
+   green: `~/.claude/settings.json` there had no `tally attention` hooks,
+   so nothing set the label, and sessions started before the deploy did
+   not pick them up until restarted. The breath was then looked at: smooth,
+   no stutter. Question 5's hop numbers hold on the device.
+5. ✅ **The raise.** Put another window in front, press a pad. The
    terminal comes forward most times (question 2 measured three of four).
    A miss is only the window: the pane has switched either way.
-6. ⬜ **Clean stop.** Stop `tallyd` — `SIGTERM`, or Ctrl+C in its terminal.
+   **Run 2026-10-20**: with another window in front, a pad press brought
+   the `tally` terminal forward. Hit rate not counted.
+6. ✅ **Clean stop.** Stop `tallyd` — `SIGTERM`, or Ctrl+C in its terminal.
    The bridge logs *Launchpad in Live mode (AlreadyLive)*. Hold Session:
    **the Setup menu opens.**
+   **Run 2026-10-20**: `SIGTERM` → `tallyd: signal 15, restoring`, and the
+   Setup menu opened. ⬜ The bridge's own line was not read: that bridge
+   had been started with no window and no log file. Start it with its
+   output going somewhere you can read before running 7–10.
 7. ⬜ **`tallyd` killed.** Start it, then `kill -9` it. The bridge logs
    `Restored`. **The Setup menu opens.** This is the row the restore duty
    exists for.
@@ -438,6 +473,12 @@ see; a ❌ on any of the first three stops the rest.
     session is live. Expected ❌: the Setup menu is dead (question 4).
     Start the bridge again: it logs *found the Launchpad out of Live mode
     at start: Restored*, and **the Setup menu opens.**
+    **Half run, by accident, 2026-10-20**: a bridge with a live session
+    was force-killed (`Stop-Process -Force`, the same `TerminateProcess`),
+    and the next bridge's first line was *found the Launchpad out of Live
+    mode at start: Restored*; the grid came back when `tallyd`
+    reconnected. ⬜ The Setup menu was not checked in between, so the
+    expected ❌ is still unobserved.
 11. ⬜ **A day beside it.** Not a formality: the hard amber flash and the
     green working pulse both passed a glance on real hardware and failed a
     day ([10](10-decisions.md)), and this adds a hop to the surface they
