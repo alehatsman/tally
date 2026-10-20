@@ -922,6 +922,13 @@ fn sweep(tmux: &Tmux, sessions: &[tally::anchor::Session], pages: &Pages) -> boo
         return false;
     }
     let seen = tmux.audit(&want);
+    if seen.blind {
+        eprintln!(
+            "tallyd: sweep: ms={} could not look (list-panes failed)",
+            tally::now_ms()
+        );
+        return true;
+    }
     for f in &seen.faults {
         eprintln!(
             "tallyd: sweep: {} claims {}, sits at {}, {}",

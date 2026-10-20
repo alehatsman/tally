@@ -832,6 +832,19 @@ gone — and the sweep steps over it rather than faulting it. Counting
 those would make the two numbers after it a rate over a denominator that
 was never looked at.
 
+**`could not look` is not a zero.** When `list-panes` itself fails, the
+sweep cannot see any pane, and an empty listing would print
+`0 views, 0 drifted, 0 dead` — indistinguishable from a grid on which
+nothing has a view. The audit carries that as `blind` and the summary
+line says so instead of a count:
+
+```text
+tallyd: sweep: ms=1761000000000 could not look (list-panes failed)
+```
+
+It still counts as a sample taken (a sweep was attempted and reported),
+and it must be read as a gap, never as clean.
+
 **Two faults, not one**, and the second was found on 2026-10-20 by the
 case that shows why counting was the right first move. When anchord
 dropped its connections without restarting, seven view panes died while
