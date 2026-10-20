@@ -156,15 +156,17 @@ pub trait Jump {
         cwd: Option<&str>,
     ) -> Result<(), Error>;
 
-    /// Which of these views are not in the window their address names.
+    /// Which of these views are wrong: in the wrong window, or dead
+    /// under a session that is not.
     ///
     /// `want` is every session that holds a pad, with the [`Place`] its
-    /// view belongs in and the address string to report it by — both
-    /// passed rather than derived ([`Place`]).
+    /// view belongs in, the address string to report it by, and whether
+    /// the daemon still sees it running — all passed rather than derived
+    /// ([`Want`]).
     ///
-    /// **Reports; moves nothing.** A session with no view is not drift,
-    /// and is not reported.
-    fn audit(&self, want: &[(String, String, Place)]) -> Vec<Drift>;
+    /// **Reports; moves nothing.** A session with no view is not a
+    /// fault, and is not reported.
+    fn audit(&self, want: &[Want]) -> Vec<Finding>;
 
     /// Move the view for `session`, if it has one, to the window `where_`
     /// names, and re-label it `at`. **Nothing is switched.**
@@ -886,16 +888,66 @@ fn park_index(listing: &str, place: Place) -> u16 {
     index
 }
 
-/// A view that is not in the window its address names
+/// One view the sweep should check, as the daemon sees it
 /// (`docs/06-views.md`).
+///
+/// Everything here is **handed in**. `jump` knows about tmux and nothing
+/// else: it cannot turn a `tl.slot` string into a [`Place`] without the
+/// page table, and it cannot say whether an agent is still running
+/// without anchord. Both are the daemon's to know.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Drift {
+pub struct Want {
+    /// The anchor session whose view it is.
+    pub session: String,
+    /// The address it claims, as the caller gave it.
+    pub at: String,
+    /// The window that address names.
+    pub place: Place,
+    /// Whether the daemon still sees the session running.
+    ///
+    /// **The daemon's opinion, not jump's.** It is what separates *a
+    /// finished session's corpse sitting at its own pad* — which is what
+    /// done looks like — from *a live agent whose view died under it*,
+    /// which costs a wasted press.
+    pub alive: bool,
+}
+
+/// What a sweep found wrong with one view (`docs/06-views.md`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Fault {
+    /// Not in the window its address names. The wedge.
+    Drifted,
+    /// At the right window, but the pane is dead and the session is not.
+    ///
+    /// Found on 2026-10-20: anchord dropped its connections without
+    /// restarting and seven view panes died **at the correct address**,
+    /// so `relocation()` returned `None` for every one and the sweep
+    /// reported a clean grid. Not a wedge — the next press respawns the
+    /// pane — but the press is wasted, and the instrument could not see
+    /// it ([#22](https://github.com/alehatsman/tally/issues/22)).
+    DeadView,
+}
+
+impl fmt::Display for Fault {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Drifted => "drifted",
+            Self::DeadView => "dead view",
+        })
+    }
+}
+
+/// A view the sweep found wrong, and how (`docs/06-views.md`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Finding {
     /// The anchor session whose view it is.
     pub session: String,
     /// The address it claims, as the caller gave it.
     pub claims: String,
     /// Where it actually sits, as tmux names it: `r01:2`.
     pub sits_at: String,
+    /// What is wrong with it.
+    pub fault: Fault,
 }
 
 /// Whether a pane is known to be in the window the address names.
@@ -1556,19 +1608,32 @@ impl Jump for Tmux {
         Ok(())
     }
 
-    fn audit(&self, want: &[(String, String, Place)]) -> Vec<Drift> {
+    fn audit(&self, want: &[Want]) -> Vec<Finding> {
         let listing = self.panes();
         want.iter()
-            .filter_map(|(session, at, place)| {
-                let pane = view_for(&listing, session)?;
+            .filter_map(|w| {
+                let pane = view_for(&listing, &w.session)?;
                 // The same pure function the move path plans with, so the
                 // sweep and the repair can never disagree about what out
                 // of place means.
-                relocation(&listing, pane, *place)?;
-                Some(Drift {
-                    session: session.clone(),
-                    claims: at.clone(),
+                let fault = if relocation(&listing, pane, w.place).is_some() {
+                    Fault::Drifted
+                } else if w.alive && pane.dead {
+                    // Right window, dead pane, live agent. `relocation`
+                    // says `None` here and always will -- it answers
+                    // *where*, and this is *whether* ([`Fault::DeadView`]).
+                    Fault::DeadView
+                } else {
+                    // Where it belongs, or a corpse at its own address
+                    // under a session that is also gone. Neither is a
+                    // fault.
+                    return None;
+                };
+                Some(Finding {
+                    session: w.session.clone(),
+                    claims: w.at.clone(),
                     sits_at: format!("{}:{}", pane.tmux_session, pane.index),
+                    fault,
                 })
             })
             .collect()

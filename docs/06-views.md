@@ -329,9 +329,9 @@ pub trait Jump {
         cwd: Option<&str>,
     ) -> Result<(), Error>;
 
-    /// Which of these views are not in the window their address names?
-    /// Reports; moves nothing.
-    fn audit(&self, want: &[(String, String, Place)]) -> Vec<Drift>;
+    /// Which of these views are wrong -- in the wrong window, or dead
+    /// under a session that is not? Reports; moves nothing.
+    fn audit(&self, want: &[Want]) -> Vec<Finding>;
 
     /// Move a view to the window its label names, and re-label it.
     /// `Ok(())` when there is no view. Nothing is switched.
@@ -817,39 +817,90 @@ next press.
 
 ### The sweep counts and does not touch
 
-Once, after the first time anchord answers — not at process start, where
-there is nothing to audit — every view's address is compared with the window
-it is in, and the difference is **logged**.
+Every view's address is compared with the window it is in, and the
+difference is **logged**. Nothing is moved.
 
 ```text
-tallyd: sweep: 01M57SZ0… claims 1:1:3, sits at r01:2
-tallyd: sweep: 1 of 7 views are not where their address says
+tallyd: sweep: 01M57SZ0... claims 1:1:3, sits at r01:2, drifted
+tallyd: sweep: 01M5A1B2... claims 1:2:1, sits at r02:1, dead view
+tallyd: sweep: ms=1761000000000 7 views, 1 drifted, 1 dead
 ```
 
-**Nothing is moved, on purpose.** The acting version drains drift without a
-press and is the obvious thing to build; it is held for the same reason
-[the level](11-unbuilt.md#the-level) is held: *measuring the architecture as
-specified is worth more than measuring it already patched.*
+**Two faults, not one**, and the second was found on 2026-10-20 by the
+case that shows why counting was the right first move. When anchord
+dropped its connections without restarting, seven view panes died while
+their sessions stayed alive — **each at the window its address names.**
+`relocation()` returns `None` for a pane already at its address, dead or
+alive, so all seven counted as zero drift. The instrument said the grid
+was clean and seven pads cost a wasted press each.
 
-There is no number for how often a view drifts. The swap displaces one on
-purpose; the renumbering was a generator and has been pinned off; nobody
-knows what is left. **A sweep that repairs silently would answer the
-question by erasing it.** A sweep that counts is the first instrument this
-subsystem has ever had, and the decision it feeds is whether the acting
-version is worth its blast radius — **every `tallyd` restart rearranging
-panes on a live grid, at the moment the daemon knows least.** If the number
-reads zero for a week, the acting sweep is not worth building and this is
-the record of why.
+| fault | the predicate | what it costs |
+|---|---|---|
+| `drifted` | `relocation()` wants to move it | the wedge this section is about |
+| `dead view` | it is where it belongs, the pane is dead, **and the session is not** | a press that respawns, not a wedge |
+
+A dead pane under a dead session is neither. That is a corpse at its own
+address, which is what a finished session looks like, and the purge chord
+is what clears it.
+
+**Liveness is the daemon's opinion, not jump's.** `jump` knows about tmux
+and nothing else, so it cannot ask whether an agent is running; the
+daemon hands it a [`Want`] per session carrying `alive`, and `audit`
+reports the ones whose pane has died under it. The same boundary the page
+table lives behind.
+
+**It still counts, on purpose.** The acting version drains drift without a
+press and is the obvious thing to build; it is held for the same reason
+[the level](11-unbuilt.md#the-level) is held: *measuring the architecture
+as specified is worth more than measuring it already patched.* **A sweep
+that repairs silently would answer the question by erasing it.** The
+decision it feeds is whether the acting version is worth its blast radius
+— **every `tallyd` restart rearranging panes on a live grid, at the moment
+the daemon knows least.**
+
+### A week of lines, and what the first instrument could not give
+
+The sweep ran **once ever**, after anchord first answered, and its line
+carried no time and no build. Three things followed from that, and each
+is why a week of its output could not have decided anything:
+
+- **drift that heals lazily between restarts was invisible** — one sample
+  per daemon lifetime, taken at the moment the grid is youngest
+- **a line could not be placed in time.** `sweep: 1 of 7` says nothing
+  about when, so two lines from two restarts cannot be ordered against
+  anything else in the log
+- **old collisions could not be attributed to a build.** 77 `in use`
+  lines over a whole log were refused as a measurement for exactly this
+  reason (`ROADMAP.md`), and nothing in the log said which binary wrote
+  them
+
+So the sweep now runs on three occasions, and says when and from what:
+
+| | |
+|---|---|
+| the first `list` | unchanged — not at process start, where there is nothing to audit |
+| **every reconnect** | anchord coming back is the event that killed seven panes. The sweep that would have seen it runs on that edge |
+| **every 15 minutes** | the slow clock, so lazy healing between restarts is sampled rather than missed |
+| `ms=` on the summary | epoch milliseconds, the journal's own unit, so a sweep line and a rising edge can be read on one timeline |
+| the startup line | `tallyd: tally 0.9.0 (ab12cd3)`, and `+` on the hash when the tree was dirty. A log without it cannot say which build it is about |
+
+Fifteen minutes is picked against the decision, not against the clock: a
+week is ~670 lines, which is enough to see a rate and few enough to read.
+The sweep costs one `list-panes`, which the jump path already pays per
+press.
 
 **It runs in `tallyd`, not in `jump`**, because the comparison needs the
 page table. `jump` is asked a question it can answer without knowing what a
-page is — *here is a list of sessions and the `Place` each one's view should
-be in; which are somewhere else?* — and `audit` answers it with the same
-pure `relocation()` the move path plans with, so the sweep and the repair
-can never disagree about what *out of place* means.
+page is — *here is a list of sessions, the `Place` each one's view should
+be in, and whether each is still running; which are wrong?* — and `audit`
+answers it with the same pure `relocation()` the move path plans with, so
+the sweep and the repair can never disagree about what *out of place*
+means.
 
 Still open on [#22](https://github.com/alehatsman/tally/issues/22): the
-acting sweep, and resolving a squatter to its own address.
+acting sweep. It waits on a week of these lines, and its predicate is now
+known to be **liveness and address**, not address alone — the seven dead
+panes would have been stepped over by the sweep as originally specified.
 
 ## Edge cases
 
