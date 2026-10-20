@@ -68,7 +68,8 @@ of them.
 **"Let me bind arbitrary shell commands to pads."** No. That is a Stream
 Deck, and the configuration surface it needs (per-pad command, args, icon,
 confirmation, output handling) is larger than the rest of this program. A
-slot runs an *agent preset*, and presets live in anchor's callers.
+slot holds a session, and what to run is whatever `tally spawn` was handed
+or the row's newest session already ran.
 
 **"Show the agent's output on the grid."** No. Eight by eight
 monochrome-ish pads is not a display. The grid says *which* session wants
@@ -87,9 +88,10 @@ over, with a test suite.
 
 **"Remote control over the network."** No. The device is on the desk, by
 USB. If you are not at the desk, you are on your phone, and that is
-teleport. (The one exception is [the bridge](13-bridge.md), which splits
-one process across the WSL line, over loopback only, and is not remote
-control.)
+teleport. (The one exception is [the bridge](13-bridge.md), built: it
+carries the same device bytes across the WSL line to a `tallybridge` that
+listens on loopback only, and `tallyd` finds it by `TALLY_BRIDGE` — unset
+is the local port. It is not remote control.)
 
 **"Let it hold the control lease so I can type from the pads."** No. One
 writer per PTY is anchor's invariant, and the writer is the terminal you
