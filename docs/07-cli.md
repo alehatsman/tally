@@ -6,10 +6,12 @@ tally spawn     [--detach] [--count N] <addr> [-- command [args…]]
 tally fork      [--detach] [--count N] <src> <dst> [-- command [args…]]
 tally purge     <addr>
 tally mute      <addr> [--off]
-tally attention <on | off>
+tally attention <blocked | done | on | off>
+tally help      (also `-h`, `--help`)
 ```
 
-An `addr` is `row:col` or `page:row:col`, everywhere.
+An `addr` is `row:col` or `page:row:col`, everywhere. Flags may sit on
+either side of the address; a command goes after `--` and nowhere else.
 
 **Each subcommand exists because nothing else could do it.** The CLI was
 deferred with *"`anchor ls` and `$EDITOR slots.toml` cover most of it; defer
@@ -367,7 +369,7 @@ shell prints the grid with no `@`. A caller that *is* under anchor but whose
 session holds no `tl.slot` gets a line of its own rather than silence:
 
 ```text
-  you are in 01M53KT… , which holds no pad
+  you are in 01M53KT…, which holds no pad
 ```
 
 Naming the id is the point: it is the argument `anchor label <id>
@@ -505,10 +507,17 @@ unneeded — it is an argument that the signal has not lied yet.
 ## `tally attention on|off`
 
 ```text
-tally attention on          set    tl.attention=1 on the calling session
+tally attention blocked     set    tl.attention=blocked   a dialog or a question is up
+tally attention done        set    tl.attention=finished  the turn ended, at its prompt
+tally attention on          set    tl.attention=1         a hook that did not say which
 tally attention off         remove tl.attention  from the calling session
-                            …and either way, record tl.claude=<conversation>
+                            …and when it sets, record tl.claude=<conversation>
 ```
+
+All three setting words raise the same amber; the word is for readers that
+are programs (`wants` in `--json`, [04](04-signals.md#one-bit-two-states--and-the-word-that-split)).
+`on` is kept and is not an alias: it is what every label written before
+[#23](https://github.com/alehatsman/tally/issues/23) carries.
 
 Written for exactly one caller — a Claude Code hook
 ([04](04-signals.md#4-a-hook--it-told-us)) — and it exists because
@@ -542,7 +551,7 @@ rather than wasted work).
 |---|---|
 | exit `0` | written, **or** not under anchor |
 | exit `1` | anchord refused, or the socket is gone — one line on stderr |
-| exit `2` | usage: anything that is not exactly `on` or `off` |
+| exit `2` | usage: anything that is not exactly `blocked`, `done`, `on` or `off`, or a second word |
 | stdout | nothing, ever |
 
 **Not being under anchor is success, and that is the load-bearing cell.**
@@ -574,8 +583,10 @@ the one judgment call here. It is accepted because the hook's real job is
 
 ## Errors
 
-Usage problems exit `2`, everything else exits `1`, and anything that
-reaches anchord reports what anchord said.
+Usage problems exit `2` and print the usage text to stderr, then the
+reason; everything else exits `1`, and anything that reaches anchord reports
+what anchord said. `help`, `-h` and `--help` print the same text to stdout and
+exit `0`.
 
 | | |
 |---|---|
@@ -586,4 +597,10 @@ reaches anchord reports what anchord said.
 | `--count` with any target drawn | refused before anything is created, naming the one in the way |
 | `fork` from a pad nothing has ever held | refused — there is no directory to inherit |
 | anchord unreachable | refused — a surface that cannot see is not a surface that spawns |
+| no subcommand, or one that is not `ls spawn fork purge mute attention help` | refused, exit `2` |
+| a flag that does not exist (`--cwd`, `--long`, `--on`), or `--detach` / `--count` given twice | refused, never ignored |
+| `--count` that is not `1`–`8`, or has no number | refused |
+| `ls` given an address or anything but `--json`; `purge` or `mute` given a second word (`mute` allows `--off`) | refused |
+| a word after the addresses that is not `--` (`spawn 1:1 cargo test`) | refused: *a command goes after `--`* |
+| too few addresses (`fork 1:1`), or `--` before the addresses are in | refused |
 | `--` with nothing after it | refused; an empty argv is a config error, not a spawn of the empty string |
