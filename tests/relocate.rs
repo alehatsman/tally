@@ -548,6 +548,21 @@ fn alive(session: &str, row: u8, col: u8) -> Want {
     }
 }
 
+/// A tmux that cannot be asked is not an empty grid: the audit says it
+/// could not look (`docs/06-views.md`).
+#[test]
+fn an_audit_that_cannot_list_panes_says_it_is_blind() {
+    each_config("audit blind", |s| {
+        press(s, "S1", 1, 1);
+        let _gone = s.sh(&["kill-server"]);
+
+        let found = s.tmux().audit(&[alive("S1", 1, 1)]);
+
+        assert!(found.blind, "no server is not a clean grid: {found:?}");
+        assert_eq!(found.examined, 0);
+    });
+}
+
 /// The sweep reports and moves nothing (`docs/35`, half two).
 #[test]
 fn the_audit_reports_drift_and_changes_nothing() {
