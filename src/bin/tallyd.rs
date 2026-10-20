@@ -895,6 +895,9 @@ fn navigate(
 /// a pad, or no view pane existed to examine (tmux restarted under a
 /// live anchord) -- the caller's [`SWEEP`] clock should not count it as
 /// a sweep, or the next real sample is deferred a full fifteen minutes.
+/// A blind audit returns `true`: nothing was measured, but a line was
+/// printed, and retrying a broken `list-panes` every tick would say the
+/// same thing a thousand times over.
 fn sweep(tmux: &Tmux, sessions: &[tally::anchor::Session], pages: &Pages) -> bool {
     let want: Vec<tally::jump::Want> = sessions
         .iter()
