@@ -228,7 +228,9 @@ empty argument and **had never worked**.
 
 **Now:** `tally attention on|off`, which walks its own process ancestry to a
 pid anchord recorded. The job is the lookup, not the label — and no lookup
-by cwd, because two sessions in one repo is the normal case here.
+by cwd, because two sessions in one repo is the normal case here. (The
+rising word has since split by hook: `blocked` or `done`, with `on` kept —
+[D28](#d28--one-bit-two-states-and-the-word-that-split).)
 
 → [07](07-cli.md#tally-attention-onoff)
 
@@ -275,6 +277,39 @@ began asking, surviving a restart, is exactly what `►` sorts on. No new
 label, no new file, no new state in the daemon.
 
 → [04](04-signals.md#the-instrument), [05](05-interaction.md#the-queue-and-the-two-buttons-that-read-it)
+
+### D28 — One bit, two states, and the word that split
+
+**Built:** both rising hooks wrote `"1"`. Presence raised the amber, and
+that was all anything needed — for a human at the grid, *blocked on a
+dialog* and *turn finished* both mean *go look*.
+
+**Found:** `tally ls --json` gave the grid its first readers that are
+programs ([#23](https://github.com/alehatsman/tally/issues/23)), and the
+two readers want opposite things from one bit. A human wants **recall**
+and a wrong answer costs a glance; a program wants **precision**, to act
+only on *blocked*, and a wrong answer is a wrong action. The bit could not
+tell them apart, because the two hooks had already collapsed into one
+string by the time anything saw them.
+
+**Now:** the bit is untouched and the **value** carries the origin.
+`Notification` writes `blocked`, `Stop` writes `finished`, and a hook that
+did not say writes `1`; `tally ls --json` reports it as `wants`. `state`
+still says `wants you` for all three, because the sentence is for a human
+and a human wants recall. **`on` is kept and is not an alias**: it is the
+third answer, and every label written before the split carries it, so a
+`settings.json` nobody updated keeps raising ambers.
+
+**What it bought:** [#13](https://github.com/alehatsman/tally/issues/13)
+needed a third origin on a bit that carried two meanings in one string. It
+can be a fourth word now.
+
+**The rule it produced:** *fix a conflated signal at the word, not the
+bit* — the amber, `SlotState` and every renderer stayed as they were, and
+the one place that changed is the one that was lying.
+
+→ [04](04-signals.md#one-bit-two-states--and-the-word-that-split),
+[07](07-cli.md#what-this-output-promises)
 
 ---
 
@@ -651,6 +686,34 @@ than kill's red.
 
 → [05](05-interaction.md#stop-does-kill-and-purge)
 
+### D29 — The overview was measured out
+
+**Built:** M11. Holding `Session` turned the grid into one pad per
+absolute row, so row 13 was one gesture and not five `▼` across four rows
+of nothing. The argument was sparsity: seven of sixty-four rows had ever
+held a session, already discontiguous.
+
+**Found:** nine presses over 55 hours. `lit` — the count of non-empty rows,
+logged on every press — was **4** every time and never moved, and all nine
+destinations were rows 1–8, inside the window they started in
+([#41](https://github.com/alehatsman/tally/issues/41)). The map **never
+once crossed an empty middle**, the case its whole design argues from.
+
+**Now:** the overview is gone, with its gesture, its journal line and its
+renderer. `Session` is dark and deliberately given no replacement. `▲▼`
+and hold-`▲` home stay — they are how the space is moved through, and they
+are used. **The address space stays at 64 rows**: with the overview cut,
+nothing was left for the size to pay for, an empty row costs one
+comparison, and shrinking would migrate live `tl.slot` labels to reclaim
+nothing.
+
+**The rule it produced:** *a feature that carries its own instrument can be
+judged on it.* The nine lines it wrote are what closed the question, and no
+further evidence is coming — the instrument left with the feature.
+
+→ [05](05-interaction.md#the-overview-cut),
+[11](11-unbuilt.md#512-slots-for-four-used-rows)
+
 ---
 
 ## Closed proposals
@@ -749,3 +812,20 @@ grid and never assigns an address. **Dissolving the conflict beat resolving
 it.** And `tally here` had no honest answer for "nowhere": a verb whose
 entire output is an address must choose between a silent exit 0 and a
 failure, where a listing simply prints the grid with no `@` on it.
+
+### Cutting the arts
+
+**Proposed:** [#42](https://github.com/alehatsman/tally/issues/42) — `src/art/`
+was about 12% of the crate for a mode behind a button, and three of the nine
+pieces already did both its jobs, *demo* and *all-64-pads pixel test*.
+
+**Kept, and closed on taste.** It was always the one of the three scope
+questions that was taste rather than architecture. The code is pure, has
+its own tests, couples to nothing and is in nobody's way, and *three
+pieces cover both jobs* is not a reason to delete something that works.
+The per-piece findings — Life reseeds, Rain never skips a pad, Pacman's
+rotating ghost — would have survived a deletion only if someone remembered
+to keep the prose.
+
+→ [05](05-interaction.md#the-nine-pieces),
+[11](11-unbuilt.md#the-reel-is-nine-pieces)

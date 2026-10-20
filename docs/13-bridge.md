@@ -159,7 +159,10 @@ The mitigation is the same as there — recover on start, because that is
 the half that is reliable. **A bridge that starts finds the Launchpad,
 reads its mode back, and puts it into Live mode if it is not**, before it
 listens. So the recovery from a `taskkill /F` is starting the bridge again,
-or a replug. ⬜ The checklist runs it.
+or a replug. **Half observed, 2026-10-20**, by accident: a force-killed
+bridge, then the next one's first line was *found the Launchpad out of
+Live mode at start: Restored* ([checklist line 10](#the-checklist-when-the-launchpad-is-plugged-in)).
+⬜ The ❌ half — the Setup menu dead in between — is still unobserved.
 
 What *is* covered: **Ctrl+C and closing the console window** run a handler
 that ends the session, lets the restore run on the normal path, and only
