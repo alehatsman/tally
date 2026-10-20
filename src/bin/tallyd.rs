@@ -43,6 +43,15 @@ const RECONCILE: Duration = Duration::from_secs(2);
 /// which a single press already pays
 /// ([#22](https://github.com/alehatsman/tally/issues/22)).
 const SWEEP: Duration = Duration::from_mins(15);
+/// The shortest gap between two sweeps when a reconnect asks for one.
+///
+/// The reconnect edge sweeps immediately, because that edge is the event
+/// that killed seven view panes. But anchord flapping produces one edge
+/// per [`RECONCILE`], and the damage is done by the first drop: re-flaps
+/// inside this window report the same faults again and would spend a
+/// week of [`SWEEP`]'s line budget in an hour. 30s is [`RECONCILE`] x 15,
+/// which caps a restart loop at two sweeps a minute instead of thirty.
+const SWEEP_FLOOR: Duration = Duration::from_secs(30);
 /// How often the loop wakes. Input is drained at this rate so a press
 /// feels immediate rather than waiting out a reconcile.
 const TICK: Duration = Duration::from_millis(16);
@@ -880,7 +889,11 @@ fn navigate(
 /// Here and not in `jump` because the comparison needs `Slot::place()`
 /// and anchord's opinion of liveness, and `jump` knows about tmux and
 /// nothing else (`src/slot.rs`, `tally::jump::Want`).
-fn sweep(tmux: &Tmux, sessions: &[tally::anchor::Session], pages: &Pages) {
+///
+/// Returns whether a sample was taken. `false` means no session claimed
+/// a pad, nothing was forked and nothing was printed — the caller's
+/// [`SWEEP`] clock should not count it as a sweep.
+fn sweep(tmux: &Tmux, sessions: &[tally::anchor::Session], pages: &Pages) -> bool {
     let want: Vec<tally::jump::Want> = sessions
         .iter()
         // Every session that claims a pad, exited ones included: a corpse
@@ -895,24 +908,32 @@ fn sweep(tmux: &Tmux, sessions: &[tally::anchor::Session], pages: &Pages) {
                 session: s.id.clone(),
                 at: at.to_owned(),
                 place: slot.place(),
-                alive: matches!(
-                    s.lifecycle(),
-                    SessionState::Running | SessionState::Closing
-                ),
+                // Not an allow-list. `lifecycle` maps any state this
+                // build has not heard of to `Lost`, so naming the live
+                // states would let a word anchord learns later put out
+                // the `dead view` light for every session wearing it --
+                // the blindness this fault was added to end. Only an
+                // explicit `exited` makes a corpse unremarkable.
+                alive: s.lifecycle() != SessionState::Exited,
             })
         })
         .collect();
+    // Nothing claims a pad, so no `list-panes` is forked and no sample
+    // is taken. The caller must not spend the [`SWEEP`] slot on it: an
+    // unlabelled list at first contact would otherwise defer the first
+    // real sample a full fifteen minutes.
     if want.is_empty() {
-        return;
+        return false;
     }
-    let found = tmux.audit(&want);
-    for f in &found {
+    let seen = tmux.audit(&want);
+    for f in &seen.faults {
         eprintln!(
             "tallyd: sweep: {} claims {}, sits at {}, {}",
             f.session, f.claims, f.sits_at, f.fault
         );
     }
-    let drifted = found
+    let drifted = seen
+        .faults
         .iter()
         .filter(|f| f.fault == tally::jump::Fault::Drifted)
         .count();
@@ -922,10 +943,11 @@ fn sweep(tmux: &Tmux, sessions: &[tally::anchor::Session], pages: &Pages) {
     eprintln!(
         "tallyd: sweep: ms={} {} views, {} drifted, {} dead",
         tally::now_ms(),
-        want.len(),
+        seen.examined,
         drifted,
-        found.len() - drifted,
+        seen.faults.len() - drifted,
     );
+    true
 }
 
 /// Take the single-instance lock, or report who holds it.
@@ -978,7 +1000,6 @@ fn handle_reply(reply: &[u8], link: &mut Link) {
     }
 }
 
-/// anchord stopped answering. Say so once per outage, not once per tick.
 /// What the anchord branch of the reconcile remembers between calls.
 ///
 /// Two facts, one lifetime: whether the last `list` succeeded, and when
@@ -993,6 +1014,7 @@ struct Contact {
     last_sweep: Option<Duration>,
 }
 
+/// anchord stopped answering. Say so once per outage, not once per tick.
 fn report_unreachable(e: &impl std::fmt::Display, reachable: &mut bool) {
     if *reachable {
         eprintln!("tallyd: {e}");
@@ -1001,8 +1023,8 @@ fn report_unreachable(e: &impl std::fmt::Display, reachable: &mut bool) {
 }
 
 /// Ask anchord for the list and bring up to date everything that moves on
-/// its clock: the watchers, the journal's first listing, the one-shot
-/// drift sweep, and the two expensive answers that are pure functions of
+/// its clock: the watchers, the journal's first listing, the drift
+/// sweep, and the two expensive answers that are pure functions of
 /// the list. Returns the fresh `purgeable` and `viewed` for the caller to
 /// move into its own.
 ///
@@ -1043,12 +1065,17 @@ fn reconcile(
             // [`SWEEP`] clock. The first successful `list` is a
             // reconnect, so first contact is covered by the same line
             // (`docs/06-views.md`).
-            let due = contact
-                .last_sweep
-                .is_none_or(|t| elapsed.saturating_sub(t) >= SWEEP);
-            if reconnected || due {
+            let since = contact.last_sweep.map(|t| elapsed.saturating_sub(t));
+            let due = since.is_none_or(|d| d >= SWEEP);
+            // The edge still sweeps at once, but not twice inside
+            // [`SWEEP_FLOOR`]: a flapping anchord is itself a
+            // reconcile-clock event, and the second edge has nothing
+            // new to say about a grid the first one already read.
+            let edge = reconnected && since.is_none_or(|d| d >= SWEEP_FLOOR);
+            // Stamped only when a sample was actually taken, so a list
+            // that claims no pads does not consume the slot.
+            if (edge || due) && sweep(tmux, sessions, pages) {
                 contact.last_sweep = Some(elapsed);
-                sweep(tmux, sessions, pages);
             }
         }
         Err(e) => {
