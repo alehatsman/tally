@@ -38,7 +38,8 @@ the product is sixty-four lamps that are right.
 
 ## Status
 
-**Shipped and driving a real desk.** Eighteen milestones, in daily use.
+**Shipped and driving a real desk.** Nineteen milestones, M0–M18, in daily
+use.
 The hardware protocol was read out of Novation's manual and verified
 against the device; the grid, the jump, the chords, `tally spawn`, the
 queue, the tempo and the launch column followed, and then the surface ran
@@ -46,9 +47,14 @@ out of buttons. Every build item in [the roadmap](ROADMAP.md) is done.
 
 **The number it was waiting on is in, and the amber is not noise.** The
 gate since M1 was a week of `attention.jsonl`: *of the ambers raised, how
-many did you go to, and how many aged out?* On **2026-10-19**, across 17.3
-hours — **126 ambers, 93 attended (74%), 33 aged out (26%)**, reached at a
-median of 212 s. Three in four sent you somewhere you went.
+many did you go to, and how many aged out?* It was closed on
+**2026-10-19**: roughly three in four sent you somewhere you went.
+
+**The counts live in [the roadmap](ROADMAP.md#f0--measure-the-amber-), with
+the date they were taken on, and not here.** A rate recomputed from a
+growing journal is a number that moves, and a moving number written into
+the front page is one nobody can check later. What belongs here is the
+verdict it bought: build on the amber rather than rebuild it.
 
 It took one day rather than seven because the instrument only started
 working that morning. Reading the 55 hours before it found the journal
@@ -98,6 +104,10 @@ been argued out in advance.**
 ```sh
 cargo install --git https://github.com/alehatsman/tally --tag v0.9.0 tally
 ```
+
+The trailing `tally` names the package: the repository holds two, and
+`tallybridge` is the Windows half ([13](docs/13-bridge.md)). Drop `--tag`
+to build the default branch instead ([12](docs/12-install.md)).
 
 Then **the four hook lines**, which are the step the product lives on —
 without them the grid is a launcher with liveness and the amber never

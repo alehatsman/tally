@@ -34,15 +34,14 @@ still owed ([13](13-bridge.md#the-checklist-when-the-launchpad-is-plugged-in)).
 ## 1. Build and install the binaries
 
 ```sh
-cargo install --git https://github.com/alehatsman/tally tally
+cargo install --git https://github.com/alehatsman/tally --tag v0.9.0 tally
 ```
 
-**There is no tag to pin yet.** `Cargo.toml` says `0.9.0` and no release
-tag has been cut: [the roadmap](../ROADMAP.md#f3--release-engineering-)
-leaves the tag itself for last, and names it `v1.0.0`, not `v0.9.0`. Until
-one exists, `--tag` fails with *tag not found* and the line above builds
-the default branch. Once it does, add `--tag <it>` for a build that does
-not move.
+**`v0.9.0` is the first cut tag**, and it matches `Cargo.toml`. Pinning it
+is what keeps a build from moving under you; drop `--tag` to take the
+default branch instead. [The roadmap](../ROADMAP.md#f3--release-engineering-)
+leaves `v1.0.0` for when F1's live re-run passes, so this is the version
+to install until then.
 
 The trailing `tally` names the package. The repository holds two —
 `tally`, and `tallybridge` for Windows ([13](13-bridge.md)) — and from a
