@@ -531,7 +531,7 @@ home. One detached terminal is enough to do that. Every client is
 attempted; the first error is carried out and returned at the end.
 
 The origin lives in tallyd's memory, keyed by client name. A tallyd restart
-loses it and the first press after jumps instead of returning. The
+loses it, so `◄` is dark until the next jump records one. The
 alternative — a global tmux user option per client — survives a restart and
 is inspectable, and is rejected *for now* on cost: client names are paths
 (`/dev/ttys000`) needing sanitising into option names, and the state leaks
