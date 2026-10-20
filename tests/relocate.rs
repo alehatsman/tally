@@ -27,7 +27,7 @@
 mod harness;
 
 use harness::each_config;
-use tally::jump::{Jump, Place};
+use tally::jump::{Fault, Jump, Place, Want};
 
 /// `Place` for a row and column, which is all these tests ever build.
 const fn at(row: u8, col: u8) -> Place {
@@ -538,6 +538,16 @@ fn a_parked_view_comes_home_when_its_own_pad_is_pressed() {
     });
 }
 
+/// A session that is where it belongs, as the sweep's negative case.
+fn alive(session: &str, row: u8, col: u8) -> Want {
+    Want {
+        session: session.to_owned(),
+        at: addr(row, col),
+        place: at(row, col),
+        alive: true,
+    }
+}
+
 /// The sweep reports and moves nothing (`docs/35`, half two).
 #[test]
 fn the_audit_reports_drift_and_changes_nothing() {
@@ -549,23 +559,115 @@ fn the_audit_reports_drift_and_changes_nothing() {
 
         let before = s.panes();
         let want = vec![
-            ("S1".to_owned(), addr(1, 1), at(1, 1)),
-            ("S2".to_owned(), addr(1, 5), at(1, 5)),
-            // A session with no view at all is not drift.
-            ("ghost".to_owned(), addr(1, 8), at(1, 8)),
+            alive("S1", 1, 1),
+            alive("S2", 1, 5),
+            // A session with no view at all is not a fault.
+            alive("ghost", 1, 8),
         ];
-        let drift = s.tmux().audit(&want);
+        let found = s.tmux().audit(&want);
 
-        assert_eq!(drift.len(), 1, "only S2 is out of place: {drift:?}");
-        assert_eq!(drift[0].session, "S2");
-        assert_eq!(drift[0].claims, addr(1, 5));
-        assert_eq!(drift[0].sits_at, "r01:7");
+        assert_eq!(found.len(), 1, "only S2 is out of place: {found:?}");
+        assert_eq!(found[0].session, "S2");
+        assert_eq!(found[0].claims, addr(1, 5));
+        assert_eq!(found[0].sits_at, "r01:7");
+        assert_eq!(found[0].fault, Fault::Drifted);
         assert_eq!(
             before,
             s.panes(),
             "the audit moved something — {}",
             s.dump()
         );
+    });
+}
+
+/// The second fault, and the one the first instrument was blind to
+/// ([#22](https://github.com/alehatsman/tally/issues/22)).
+///
+/// A pane that dies **at the address it claims** is what anchord dropping
+/// its connections did to seven views on 2026-10-20. `relocation()`
+/// answers *where*, returns `None` for a pane already in place, and so
+/// counted every one of them as zero drift. The predicate is liveness
+/// **and** address.
+#[test]
+fn a_dead_pane_under_a_live_session_is_a_fault_where_it_stands() {
+    each_config("dead view at its own address", |s| {
+        press(s, "S1", 1, 1);
+
+        // Kill the command, not the pane. What is left is a corpse at
+        // r01:1 — exactly where S1's address says it should be.
+        let pane = s.view("S1").id;
+        let _respawned = s.sh(&["respawn-pane", "-k", "-t", &pane, "true"]);
+        s.wait_until_dead(&pane);
+
+        let before = s.panes();
+        let found = s.tmux().audit(&[alive("S1", 1, 1)]);
+
+        assert_eq!(found.len(), 1, "the dead view is a fault: {found:?}");
+        assert_eq!(found[0].fault, Fault::DeadView);
+        assert_eq!(found[0].sits_at, "r01:1", "it never moved — {}", s.dump());
+        assert_eq!(
+            before,
+            s.panes(),
+            "the audit moved something — {}",
+            s.dump()
+        );
+    });
+}
+
+/// The same corpse, under a session anchord says has exited: **not** a
+/// fault.
+///
+/// That is what a finished session looks like, and the purge chord is
+/// what clears it. Counting it would drown the signal the sweep exists
+/// for in the ordinary end of every session.
+#[test]
+fn a_dead_pane_under_a_dead_session_is_not_a_fault() {
+    each_config("corpse at its own address", |s| {
+        press(s, "S1", 1, 1);
+        let pane = s.view("S1").id;
+        let _respawned = s.sh(&["respawn-pane", "-k", "-t", &pane, "true"]);
+        s.wait_until_dead(&pane);
+
+        let want = vec![Want {
+            session: "S1".to_owned(),
+            at: addr(1, 1),
+            place: at(1, 1),
+            alive: false,
+        }];
+        assert!(
+            s.tmux().audit(&want).is_empty(),
+            "a corpse at its own pad under a dead session is done, not drift — {}",
+            s.dump()
+        );
+    });
+}
+
+/// A corpse that drifted is still drift, dead session or not: it wedges
+/// the index it sits on exactly as a live view does.
+#[test]
+fn a_drifted_corpse_is_drift_whatever_the_session_is_doing() {
+    each_config("drifted corpse", |s| {
+        press(s, "S1", 1, 1);
+        let pane = s.view("S1").id;
+        let _respawned = s.sh(&["respawn-pane", "-k", "-t", &pane, "true"]);
+        s.wait_until_dead(&pane);
+        let _drifted = s.sh(&["move-window", "-s", &pane, "-t", "r01:7"]);
+
+        let want = vec![Want {
+            session: "S1".to_owned(),
+            at: addr(1, 1),
+            place: at(1, 1),
+            alive: false,
+        }];
+        let found = s.tmux().audit(&want);
+
+        assert_eq!(
+            found.len(),
+            1,
+            "it is somewhere it does not belong: {found:?}"
+        );
+        assert_eq!(found[0].fault, Fault::Drifted);
+        assert_eq!(found[0].sits_at, "r01:7");
     });
 }
 

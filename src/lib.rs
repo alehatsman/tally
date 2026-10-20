@@ -28,6 +28,17 @@ pub mod surface;
 pub mod tempo;
 pub mod watch;
 
+/// The commit this binary was built from: `ab12cd3`, `ab12cd3+` when the
+/// tree was dirty, or `unknown` when git could not be asked.
+///
+/// Stamped by `build.rs`. It exists so a line in `tallyd`'s log can be
+/// attributed to a build — the thing that made 77 collision lines
+/// unusable as evidence (`docs/06-views.md`, `ROADMAP.md`).
+pub const BUILD: &str = env!("TALLY_BUILD");
+
+/// The version this was built as, from `Cargo.toml`.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 /// An environment variable, treating empty as unset.
 ///
 /// `VAR=` is not `VAR=/some/path`, and `var_os` reports both as `Some`.

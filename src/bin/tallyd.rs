@@ -21,6 +21,7 @@ use tally::jump::{Jump, Tmux};
 use tally::lock::Lock;
 use tally::model::{self, View};
 use tally::queue;
+use tally::signal::SessionState;
 use tally::slot::{self, Pages, Slot};
 use tally::surface::{Button, Frame};
 use tally::tempo;
@@ -32,6 +33,16 @@ static SIGNALLED: AtomicI32 = AtomicI32::new(0);
 /// How often the loop asks anchord for the session list. teleport's
 /// cadence for the same job; presses are not on this clock.
 const RECONCILE: Duration = Duration::from_secs(2);
+
+/// How often the drift sweep re-runs when nothing else prompts it.
+///
+/// Picked against the decision it feeds, not against the clock: a week is
+/// ~670 lines, enough to read a rate off and few enough to read. Drift is
+/// caused by renumbering, hand-moved tabs and swaps — none of which
+/// happens on a sub-minute scale — and the sweep costs one `list-panes`,
+/// which a single press already pays
+/// ([#22](https://github.com/alehatsman/tally/issues/22)).
+const SWEEP: Duration = Duration::from_mins(15);
 /// How often the loop wakes. Input is drained at this rate so a press
 /// feels immediate rather than waiting out a reconcile.
 const TICK: Duration = Duration::from_millis(16);
@@ -856,43 +867,64 @@ fn navigate(
     }
 }
 
-/// Count the views that are not in the window their address names, and
-/// say so. **Nothing is moved** (`docs/06-views.md`).
+/// Count the views that are wrong — in the wrong window, or dead under a
+/// live session — and say so. **Nothing is moved**
+/// (`docs/06-views.md`).
 ///
-/// Once, after anchord first answers rather than at process start: with
-/// no session list there is nothing to audit, and a sweep over nothing
-/// would report a reassuring zero.
+/// Not at process start: with no session list there is nothing to audit,
+/// and a sweep over nothing would report a reassuring zero. After that it
+/// runs on every reconnect and on the [`SWEEP`] clock, because one sample
+/// per daemon lifetime cannot see drift that heals lazily between
+/// restarts ([#22](https://github.com/alehatsman/tally/issues/22)).
 ///
-/// Here and not in `jump` because the comparison needs `Slot::place()`,
-/// and that needs the page table — `jump` knows about tmux and nothing
-/// else (`src/slot.rs`).
+/// Here and not in `jump` because the comparison needs `Slot::place()`
+/// and anchord's opinion of liveness, and `jump` knows about tmux and
+/// nothing else (`src/slot.rs`, `tally::jump::Want`).
 fn sweep(tmux: &Tmux, sessions: &[tally::anchor::Session], pages: &Pages) {
-    let want: Vec<(String, String, tally::jump::Place)> = sessions
+    let want: Vec<tally::jump::Want> = sessions
         .iter()
         // Every session that claims a pad, exited ones included: a corpse
         // sitting at the wrong index wedges that pad exactly as a live
         // view does, which is the case `docs/35`'s first half fixes. It
-        // is drift, and it counts.
+        // is drift, and it counts. `alive` is what keeps a corpse at its
+        // *own* address from being counted twice over.
         .filter_map(|s| {
             let at = s.slot_label()?;
             let slot = slot::parse(at, pages)?;
-            Some((s.id.clone(), at.to_owned(), slot.place()))
+            Some(tally::jump::Want {
+                session: s.id.clone(),
+                at: at.to_owned(),
+                place: slot.place(),
+                alive: matches!(
+                    s.lifecycle(),
+                    SessionState::Running | SessionState::Closing
+                ),
+            })
         })
         .collect();
     if want.is_empty() {
         return;
     }
-    let drifted = tmux.audit(&want);
-    for d in &drifted {
+    let found = tmux.audit(&want);
+    for f in &found {
         eprintln!(
-            "tallyd: sweep: {} claims {}, sits at {}",
-            d.session, d.claims, d.sits_at
+            "tallyd: sweep: {} claims {}, sits at {}, {}",
+            f.session, f.claims, f.sits_at, f.fault
         );
     }
+    let drifted = found
+        .iter()
+        .filter(|f| f.fault == tally::jump::Fault::Drifted)
+        .count();
+    // `ms=` in the journal's own unit, so a sweep line and a rising edge
+    // can be read on one timeline. A summary line that cannot be placed
+    // in time cannot be compared with anything (`docs/06-views.md`).
     eprintln!(
-        "tallyd: sweep: {} of {} views are not where their address says",
-        drifted.len(),
-        want.len()
+        "tallyd: sweep: ms={} {} views, {} drifted, {} dead",
+        tally::now_ms(),
+        want.len(),
+        drifted,
+        found.len() - drifted,
     );
 }
 
@@ -947,6 +979,20 @@ fn handle_reply(reply: &[u8], link: &mut Link) {
 }
 
 /// anchord stopped answering. Say so once per outage, not once per tick.
+/// What the anchord branch of the reconcile remembers between calls.
+///
+/// Two facts, one lifetime: whether the last `list` succeeded, and when
+/// the drift sweep last ran. They travel together because the reconnect
+/// *edge* — the transition in the first — is one of the two occasions
+/// the second runs on (`docs/08-daemon.md`).
+#[derive(Debug, Default)]
+struct Contact {
+    /// Did the last `list` succeed?
+    reachable: bool,
+    /// When the drift sweep last ran, or `None` before the first one.
+    last_sweep: Option<Duration>,
+}
+
 fn report_unreachable(e: &impl std::fmt::Display, reachable: &mut bool) {
     if *reachable {
         eprintln!("tallyd: {e}");
@@ -971,33 +1017,44 @@ fn reconcile(
     tmux: &Tmux,
     journal: &mut Journal,
     sessions: &mut Vec<tally::anchor::Session>,
-    reachable: &mut bool,
-    swept: &mut bool,
+    contact: &mut Contact,
+    elapsed: Duration,
 ) -> (std::collections::BTreeMap<Slot, Vec<String>>, Vec<String>) {
     match anchor.list() {
         Ok(list) => {
-            if !*reachable {
+            // Read before it is set: this is the reconnect edge, and it
+            // is one of the two occasions the sweep runs on.
+            let reconnected = !contact.reachable;
+            if reconnected {
                 eprintln!("tallyd: anchord reachable, {} sessions", list.len());
             }
             watchers.reconcile(&list, pages, tally::now_ms());
             watchers.retain_known(&list);
             *sessions = list;
-            *reachable = true;
+            contact.reachable = true;
             // The journal has been holding its replayed map since
             // `open`, because until this line an empty `sessions`
             // meant "nobody asked anchord yet" rather than
             // "nothing is asking" (`tally::journal::Journal`).
             journal.saw_listing();
-            // Once, and only once there is something to audit.
-            if !*swept {
-                *swept = true;
+            // On the reconnect edge — anchord dropping its connections
+            // is what killed seven view panes on 2026-10-20 and the old
+            // once-ever sweep could not see it — and otherwise on the
+            // [`SWEEP`] clock. The first successful `list` is a
+            // reconnect, so first contact is covered by the same line
+            // (`docs/06-views.md`).
+            let due = contact
+                .last_sweep
+                .is_none_or(|t| elapsed.saturating_sub(t) >= SWEEP);
+            if reconnected || due {
+                contact.last_sweep = Some(elapsed);
                 sweep(tmux, sessions, pages);
             }
         }
         Err(e) => {
             // Deliberately keep the previous `sessions`: the grid
             // freezes rather than lying about what is running.
-            report_unreachable(&e, reachable);
+            report_unreachable(&e, &mut contact.reachable);
         }
     }
     // Both of these are pure functions of state that only moves
@@ -1046,6 +1103,11 @@ fn waiting_now(
 }
 
 fn main() -> ExitCode {
+    // Before the lock, so even a refused start says which binary was
+    // refused: a log that cannot name its build cannot attribute
+    // anything in it to a change (`tally::BUILD`, `docs/08-daemon.md`).
+    eprintln!("tallyd: tally {} ({})", tally::VERSION, tally::BUILD);
+
     install_handlers();
 
     let Some(_lock) = acquire_lock() else {
@@ -1068,7 +1130,8 @@ fn main() -> ExitCode {
     let journal_path = journal::default_path();
     let mut journal = Journal::open(&journal_path, &pages);
     let mut sessions = Vec::new();
-    let mut reachable = false;
+    // Whether anchord answered last time, and when the sweep last ran.
+    let mut contact = Contact::default();
     let mut offset = 0u8;
     // The timed gestures and the pad a held `Move` is carrying.
     let mut grip = Grip::default();
@@ -1089,8 +1152,6 @@ fn main() -> ExitCode {
         // Said plainly, not fatal ([`Tmux::server_running`]).
         eprintln!("tallyd: tally's tmux server is not up yet; a jump will start one");
     }
-    // The drift sweep runs after anchord first answers, not here.
-    let mut swept = false;
     // What was on the grid last tick, so a press knows what it hit.
     let mut grid: std::collections::BTreeMap<Slot, model::Resolved> =
         std::collections::BTreeMap::new();
@@ -1230,8 +1291,8 @@ fn main() -> ExitCode {
                 &tmux,
                 &mut journal,
                 &mut sessions,
-                &mut reachable,
-                &mut swept,
+                &mut contact,
+                elapsed,
             );
         }
 
@@ -1276,7 +1337,7 @@ fn main() -> ExitCode {
         // was ~62 wasted boards a second for the length of the piece
         // (review w2 F3).
         let frame = if let Some(r) = reel.as_ref() {
-            art_surface(r, reachable, waiting.queued)
+            art_surface(r, contact.reachable, waiting.queued)
         } else {
             // Which `>` would act, from the same resolution the
             // press uses.
@@ -1294,7 +1355,7 @@ fn main() -> ExitCode {
                 pages: &pages,
                 offset,
                 launchable: &launchable,
-                anchord_reachable: reachable,
+                anchord_reachable: contact.reachable,
                 now,
                 can_go_back: tmux.can_go_back(),
                 queued: waiting.queued,

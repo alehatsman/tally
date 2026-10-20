@@ -191,7 +191,7 @@ re-proposed as new.
 
 | | status |
 |---|---|
-| **the acting sweep** | Held on its own number. The counting sweep ships; the one that repairs waits for a week of `sweep:` lines, because **a sweep that repaired silently would answer the question by erasing it**. Blast radius if built: every `tallyd` restart rearranging panes on a live grid, at the moment the daemon knows least ([#22](https://github.com/alehatsman/tally/issues/22)) |
+| **the acting sweep** | Held on its own number. The counting sweep ships; the one that repairs waits for a week of `sweep:` lines, because **a sweep that repaired silently would answer the question by erasing it**. Blast radius if built: every `tallyd` restart rearranging panes on a live grid, at the moment the daemon knows least. Its predicate is now known to be **liveness and address**, not address alone — seven panes that died in place would have been stepped over by the version this row originally described ([#22](https://github.com/alehatsman/tally/issues/22), [D30](10-decisions.md#d30--the-sweep-answered-where-and-the-panes-had-died-in-place)) |
 | **global brightness / LED sleep** | Documented, unspent, orthogonal. The wrong axis to lean on, because the colour language is built on *bright means where you are*. A separate and smaller idea if ever specced ([03](03-surface.md#other-messages-worth-knowing)) |
 | **a second device** | Only with a second device in the room |
 
