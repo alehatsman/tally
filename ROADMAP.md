@@ -306,9 +306,19 @@ and it is true as of this file: #40 cut, #41 closed in both halves, #42
 kept, #23 shipped. What is open is
 [#22](https://github.com/alehatsman/tally/issues/22) — the acting sweep,
 held on its own week of `sweep:` lines — and that is a *measurement* that
-has not finished, not a decision nobody has made. The other open issue,
-[#69](https://github.com/alehatsman/tally/issues/69), is a defect: a moved
-session keeps the self-address its SessionStart note gave it.
+has not finished, not a decision nobody has made. **It is the only one
+open.**
+
+[#69](https://github.com/alehatsman/tally/issues/69) — a moved session
+keeping the self-address its SessionStart note gave it — **closed
+2026-10-20, and not by a change here.** The note is written by
+`~/dotfiles`, so the fix was a wording one: the address is stated *as of
+that message* rather than as identity, and the note points at
+`tally ls --json` -> `.you`, which re-derives it on every call. Nothing in
+`src/` ever held that text, and no `--json` contract moved. The
+escalation, if a stale address ever causes a real misplacement, is a
+`UserPromptSubmit` re-announce — worth building against evidence and not
+before.
 
 ### Sequencing
 
