@@ -164,8 +164,9 @@ failure is slow, so the check can be.**
 > running something, one from the protocol — and two of them moved the
 > design: the bridge listens rather than `tallyd`, and `Device` stays one
 > type instead of becoming the trait [01](01-scope.md#how-to-reject-a-feature)
-> forbids. The answers, what they changed, and the checklist still owed
-> on real hardware are in [13](13-bridge.md).
+> forbids. The answers, what they changed, and the hardware checklist —
+> steps 1–6 passed on a real Launchpad the same night, 7–11 still owed —
+> are in [13](13-bridge.md).
 
 ---
 
