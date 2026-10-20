@@ -166,7 +166,8 @@ pub trait Jump {
     ///
     /// **Reports; moves nothing.** A session with no view is not a
     /// fault, is not reported, and is not counted in
-    /// [`Audit::examined`].
+    /// [`Audit::examined`]. If tmux cannot be asked at all, the audit
+    /// says so ([`Audit::blind`]) rather than reporting an empty grid.
     fn audit(&self, want: &[Want]) -> Audit;
 
     /// Move the view for `session`, if it has one, to the window `where_`
@@ -964,6 +965,11 @@ pub struct Audit {
     pub examined: usize,
     /// The ones that were wrong.
     pub faults: Vec<Finding>,
+    /// `list-panes` failed, so nothing was looked at. `examined: 0` and
+    /// `blind: true` are different statements: the first is "nothing has
+    /// a view", the second is "could not look", and only the first is a
+    /// measurement.
+    pub blind: bool,
 }
 
 /// Whether a pane is known to be in the window the address names.
@@ -1625,8 +1631,11 @@ impl Jump for Tmux {
     }
 
     fn audit(&self, want: &[Want]) -> Audit {
-        let listing = self.panes();
         let mut seen = Audit::default();
+        let Ok(listing) = self.stdout(&list_panes_args()) else {
+            seen.blind = true;
+            return seen;
+        };
         for w in want {
             // No view pane: nothing to look at, so it is neither a fault
             // nor something the faults are a rate over.
