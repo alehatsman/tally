@@ -148,7 +148,7 @@ and owed the second half of its checklist.
 | [10-decisions.md](docs/10-decisions.md) | **the record** — what was built, what use found, what replaced it |
 | [11-unbuilt.md](docs/11-unbuilt.md) | the level (a veto over a stale amber), and the graveyard |
 | [12-install.md](docs/12-install.md) | what a stranger does, in order — including the hook lines the amber does not exist without |
-| [13-bridge.md](docs/13-bridge.md) | the Launchpad on Windows, the agents in WSL: five questions answered on the desk, the wire, and the hardware checklist, six of eleven passed |
+| [13-bridge.md](docs/13-bridge.md) | the Launchpad on Windows, the agents in WSL: five questions (four answered on the desk, one from the protocol), the wire, and the hardware checklist, six of eleven passed |
 
 [ROADMAP.md](ROADMAP.md) is the order it arrived in, and the finish line is
 the only part of this repo that is a plan rather than a record.
