@@ -140,6 +140,13 @@ and otherwise every **15 minutes**. The reconnect edge is not decoration
 panes on 2026-10-20, and a sweep that only ever ran once could not have
 seen it. It costs one `list-panes`, which a single press already pays.
 
+**The edge has a floor of 30s.** A reconnect is a reconcile-clock event,
+so an anchord stuck in a restart loop produces one every two seconds;
+without a floor the week's line budget the 15-minute figure was picked
+against would be spent in an hour. The first drop still sweeps at once,
+which is where the grid damage is — a re-flap inside the window reports
+the same faults to a log that already has them.
+
 **The first line names the build.** `tallyd: tally 0.9.0 (ab12cd3)`, with
 `+` appended to the hash when the tree was dirty, from `build.rs` at
 compile time. A log that cannot say which binary wrote it cannot
