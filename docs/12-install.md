@@ -34,8 +34,15 @@ still owed ([13](13-bridge.md#the-checklist-when-the-launchpad-is-plugged-in)).
 ## 1. Build and install the binaries
 
 ```sh
-cargo install --git https://github.com/alehatsman/tally --tag v0.9.0 tally
+cargo install --git https://github.com/alehatsman/tally tally
 ```
+
+**There is no tag to pin yet.** `Cargo.toml` says `0.9.0` and no release
+tag has been cut: [the roadmap](../ROADMAP.md#f3--release-engineering-)
+leaves the tag itself for last, and names it `v1.0.0`, not `v0.9.0`. Until
+one exists, `--tag` fails with *tag not found* and the line above builds
+the default branch. Once it does, add `--tag <it>` for a build that does
+not move.
 
 The trailing `tally` names the package. The repository holds two —
 `tally`, and `tallybridge` for Windows ([13](13-bridge.md)) — and from a
@@ -54,8 +61,9 @@ tally --help          # it is installed
 tally ls              # the grid as text; works with no device plugged in
 ```
 
-`tally ls` printing an empty grid is success. **`tally: cannot reach
-anchord`** is the one real failure here, and it means step 0 is not done.
+`tally ls` printing an empty grid is success. **`tally: anchord
+unreachable: …`** is the one real failure here, and it means the anchor
+prerequisite above is not running.
 
 ## 2. The hook lines
 
@@ -300,7 +308,7 @@ yours and are left alone.
 | **the logo is dark** | `tallyd` is not running. A live daemon holds the logo **green**; dark red is a reachable surface with an unreachable `anchord` ([05](05-interaction.md#the-logo-is-the-health-light)) |
 | **sixty-four dark pads** | *nothing is running*. It must never mean *I cannot tell* — an unreachable anchord takes the **logo dark red** and holds the last grid ([01](01-scope.md#the-boundary-stated-plainly)) |
 | **pads never go amber** | the hooks. See step 2, and check `PATH` first. On Windows, the `settings.json` inside WSL — and restart any Claude session started before the hooks were there |
-| **a pad is amber and the agent is working** | a hook that did not fire — the one failure [the level](11-unbuilt.md#the-level) was specified against, and it has never been observed in 544 rising edges |
+| **a pad is amber and the agent is working** | a hook that did not fire — the one failure [the level](11-unbuilt.md#the-level) was specified against, and it has never been observed in 670 rising edges |
 | **the Setup menu is dead** | programmer mode. `SIGTERM` to `tallyd` restores Live mode on the way out; a `SIGKILL` does not, and a replug does ([03](03-surface.md)) |
 | **a jump opens nothing** | `TALLY_TERMINAL`. The default is `Alacritty` and it is almost certainly not what you run |
 | **Windows: grid dark, bridge says nothing** | `tallyd` is not reaching it. `TALLY_BRIDGE` unset, or mirrored networking off — from WSL, `nc -z 127.0.0.1 7373` should succeed ([13](13-bridge.md)) |
