@@ -10,6 +10,15 @@ examples all came back exactly as written. The two things that turned out
 wrong were both *ours* — an arithmetic slip in the byte budget, and an
 assumption about port exclusivity that does not hold on macOS.
 
+Everything below is `src/surface/` (pure: addressing, palette, the bytes)
+and `src/device.rs` (the one I/O type, `Device`). `Device` has two ways of
+moving the same bytes: a local `midir` port, or — when `TALLY_BRIDGE` names
+an address — a socket to `tallybridge`, which holds the port on the far
+side of the WSL line ([13](13-bridge.md)). Nothing above `Device` can tell
+which. The bridge changes no byte in this document, only who opens the port: the
+substring match below runs on the bridge's side of the line, and the
+Live-mode restore becomes the bridge's own duty when `tallyd` is gone.
+
 ## Two ports, and which one we want
 
 | interface | for |
@@ -352,6 +361,14 @@ if it is ever specced.
   Launchpad comes back in Live mode** — so a host that kept its connection
   has to notice it is no longer in programmer mode and re-enter it, or the
   grid stays dark forever with nothing in the model having changed.
+
+  Over the bridge a hang-up *is* knowable: the socket closes, and
+  `Device::render` fails on the next tick rather than after the silence
+  window ([D17](10-decisions.md#d17--a-failed-write-is-not-how-you-learn-the-device-went-away)).
+  A cable pulled mid-session behind a live bridge is not yet established
+  — [13](13-bridge.md#the-checklist-when-the-launchpad-is-plugged-in) item 8
+  is still owed — and until it is, the seven-second probe silence above is
+  the backstop.
 - **Latency is not a problem.** A host→device→host round trip measures
   **~1.9 ms**. The ~10 ms budget hold-then-tap chording needs has a 5×
   margin.
