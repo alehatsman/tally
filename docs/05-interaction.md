@@ -143,8 +143,12 @@ to MIDI clock ([03](03-surface.md#midi-clock-drives-the-breathing)), so the
 host owns the beat.
 
 **Tempo is the age of the oldest thing waiting.** Not the count, not the
-newest, not the average — the same quantity `►` sorts by, so the button and
-the breathing cannot disagree.
+newest, not the average — the same ordering `►` sorts by, so the button and
+the breathing agree about *which* wait is the oldest. They differ on one
+point, on purpose: `►` skips the slot you are already looking at, and the
+tempo does not, because a request you are sitting in front of and have not
+answered has still been waiting, and the grid is read by the room
+(`queue::oldest`). Muted slots are excluded by both.
 
 ```text
 oldest wait   0s ────────────── 900s ──────────▶
@@ -271,7 +275,7 @@ an inert button that lights up like a live one is an invitation to press it.
 
 | position | resting | tap | held |
 |---|---|---|---|
-| grid pad, nothing there | off | spawn its spec, if `slots.toml` names one | — |
+| grid pad, nothing there | off | **nothing** (#40) — it spawned its spec until the spec system was cut | — |
 | grid pad, bound | green / amber / red / dark red | **jump** ([06](06-views.md)) | — |
 | `Top(1)` ▲ | 1 dark grey if there is a row above | scroll up one | past 500 ms: **home**, back to row 1 |
 | `Top(2)` ▼ | 1 dark grey if there is a row below | scroll down one | — |
@@ -282,13 +286,13 @@ an inert button that lights up like a live one is an invitation to press it.
 | `Top(7)` Keys | off | nothing | nothing |
 | `Top(8)` User | off | nothing | nothing |
 | `Action(1..7)` `>` | 1 dark grey if the row can inherit | **launch** into that row | — |
-| `Action(8)` `CC19` | 5 red in Stop, 37 turquoise in Move | double-tap **swaps the verb** | the modifier |
+| `Action(8)` `CC19` | 5 red in Stop, 37 turquoise in Move | double-tap **swaps the verb** | the modifier; 3 white while down |
 | `CC99` logo | 21 green up, 7 dark red if anchord is unreachable | — | — |
 
 **Dark does nothing, lit does exactly one thing, and there is no state to
 remember.** That is the rule the whole top row runs on, and the one
 exception proves it: `Drums` is always lit, because it
-always have something to show.
+always has something to show.
 
 **Brightness answers "where am I" before hue answers anything.** One bright
 thing, some dim things, and the dim ones say *there is something there*. Hue
@@ -335,8 +339,8 @@ running agent, that matters more than the keystroke saving.
 
 | gesture | does |
 |---|---|
-| tap unbound slot | spawn its spec |
-| tap bound slot | jump |
+| tap a bound slot | jump |
+| tap a dark pad | nothing — spawning is `tally spawn` and `>` |
 | tap `▲` `▼` | scroll the grid one row |
 | tap `◄` | **back** — return to where you were standing |
 | tap `►` | **next** — jump to the longest-waiting amber |
@@ -378,8 +382,12 @@ fat finger kills an agent.
 Releasing the *slot* first, then the modifier, is the normal case and means
 nothing extra. Pressing a second slot while still holding the modifier fires
 the gesture again on that slot — the modifier is a mode for as long as it is
-down, not a one-shot. **Two modifiers down fires nothing**, and the preview
-disappearing says so.
+down, not a one-shot. There is **one** modifier on the surface (`CC19`, in
+whichever verb it carries), so there is no second to fumble: `Chords` holds
+an `Option<Action>`, not a set. The rest of the surface under a hold: `▲▼`,
+`◄` and `►` still work, because moving the window is how you reach a pad that
+is off it; a `>` tap is **swallowed**, because you are mid-kill, not
+mid-launch.
 
 **No key repeat, and on the grid no timing of any kind.** One tap, one
 action, resolved at press-down.
@@ -523,7 +531,7 @@ home. One detached terminal is enough to do that. Every client is
 attempted; the first error is carried out and returned at the end.
 
 The origin lives in tallyd's memory, keyed by client name. A tallyd restart
-loses it and the first press after jumps instead of returning. The
+loses it, so `◄` is dark until the next jump records one. The
 alternative — a global tmux user option per client — survives a restart and
 is inspectable, and is rejected *for now* on cost: client names are paths
 (`/dev/ttys000`) needing sanitising into option names, and the state leaks
@@ -644,7 +652,7 @@ Seven scene-launch buttons, each beside a grid row, each a **tap**:
 
 | | |
 |---|---|
-| **where** | the leftmost free column of that row |
+| **where** | the leftmost column of that row with nothing drawn on it — a failed pad is drawn, so `>` steps over it rather than bury it |
 | **directory** | inherited from the newest session in that row, whatever state it is in |
 | **command** | that session's `command` and `login_shell` |
 | **arguments** | **dropped** |
@@ -758,6 +766,10 @@ tap a session      it starts flashing — it is in your hand
 tap a dim pad      it lands there
 release early      nothing happened
 ```
+
+A session that ends while it is in your hand cannot be dropped: the hand
+empties and no pad offers a landing, because a failed or lost row is
+history, and history does not move.
 
 Two taps inside one hold. No new grammar: `chord.rs` already emits one
 `Chord` per tap and the pairing lives above it. The escape hatch survives
@@ -969,7 +981,7 @@ frame 759 — and the first person to press the button never saw it, because
 nobody holds a button they have just discovered for eighteen seconds.
 Seconds are the unit the complaint was made in.
 
-**Where it lives.** `src/art/` — **2,157 lines, about 12% of the crate**,
+**Where it lives.** `src/art/` — **2,227 lines, about 12% of the crate**,
 which is an open question about whether nine pieces is the right number
 ([11](11-unbuilt.md#the-reel-is-nine-pieces)). Pure: a `Piece` and a frame
 counter in, a `Frame` out. It does not know what a session is, that anchord exists, or
@@ -978,7 +990,7 @@ plus `rng`, `colour` and `sprite` for what they share. Nothing in
 `src/render.rs` changes — the colour language has one owner and the art is
 not it.
 
-The art ramp is **not eyeballed, and not verified either**: the twelve
+The art ramp is **not eyeballed, and not verified either**: the eleven
 entries in `surface::palette` each carry *confirmed against a real device*;
 the fifteen bright hues the art uses are read off the manual's table and
 nothing more. For a colour that means something that would be unacceptable;
