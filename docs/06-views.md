@@ -74,12 +74,10 @@ whole fix: **`switch-client` cannot reach a client it cannot list.**
 tmux -L tally
 ├── tally                      the home session, one shell, where the window lands
 ├── r07                        row 7 of the grid
-│   └── window r07
-│       ├── %4  @tally_slot=work:7:1  @tally_session=01K…A3
-│       └── %9  @tally_slot=work:7:4  @tally_session=01K…Z8
+│   ├── window 1  %4  @tally_slot=work:7:1  @tally_session=01K…A3
+│   └── window 4  %9  @tally_slot=work:7:4  @tally_session=01K…Z8
 └── r12
-    └── window r12
-        └── %11 @tally_slot=ops:4:2   @tally_session=01K…Q1
+    └── window 2  %11 @tally_slot=ops:4:2   @tally_session=01K…Q1
 ```
 
 **A column is a window and not a split**, and the reason is about reading
@@ -108,7 +106,7 @@ agent moves on; an address is true for as long as the pad is.
 | socket | `tally` | `tmux -L tally`, overridable with `TALLY_TMUX_SOCKET` |
 | home session | `tally` | the one session that is not a row |
 | row session | `r01` … `r64` | the **absolute** row, zero-padded so `list-sessions` sorts |
-| row window | `r07` | one window per row session, `automatic-rename off` |
+| column window | `c3 · work:7:3 · Z8YN` | one window per column, `automatic-rename off`; named by `tag` with the same string as the pane title (a window is born with its row's name, `r07`, until it is tagged) |
 | pane identity | `@tally_session` = anchor id | pane-scoped |
 | pane address | `@tally_slot` = `page:row:col` | what the border draws and what a human reads |
 | pane title | `c3 · work:7:3 · Z8YN` | `select-pane -T`: the column, the address, a tail of the session id |
@@ -137,10 +135,11 @@ nothing else is there.
 
 It is a stray shell, and the rule against those holds **for views**. This one
 is asked for: it is what the terminal window shows when no agent is in front
-of you, and what `◄` lands on when there is no origin.
+of you. `◄` does not go there — with no origin it is dark and does nothing
+([05](05-interaction.md#back-and-where-you-were)).
 
 ```sh
-alacritty --title tally -e tmux -L tally attach -t tally
+open -na Alacritty --args --title tally -e tmux -L tally attach -t tally
 ```
 
 **One window, and tally opens it when a jump has nowhere to land.** `jump()`
@@ -330,23 +329,36 @@ pub trait Jump {
         cwd: Option<&str>,
     ) -> Result<(), Error>;
 
-    /// Put each client back where it was before it jumped to `session`.
+    /// Which of these views are not in the window their address names?
+    /// Reports; moves nothing.
+    fn audit(&self, want: &[(String, String, Place)]) -> Vec<Drift>;
+
+    /// Move a view to the window its label names, and re-label it.
+    /// `Ok(())` when there is no view. Nothing is switched.
+    fn relocate(&self, session: &str, at: &str, where_: Place) -> Result<(), Error>;
+
+    /// Put each client back where it was standing before it jumped.
     /// `Ok(false)` when there was nowhere to go — not an error.
-    fn back(&self, session: &str) -> Result<bool, Error>;
+    fn back(&self) -> Result<bool, Error>;
+
+    /// Forget every origin whose pane has closed. Runs on the reconcile tick.
+    fn prune_origins(&self);
+
+    /// Is there anywhere for `back` to go? One predicate for `◄`'s light
+    /// and its press.
+    fn can_go_back(&self) -> bool;
 
     /// Close the view pane for `session`, if there is one.
     fn close(&self, session: &str) -> Result<(), Error>;
 
-    /// Move a view to the window its label names.
-    fn relocate(&self, session: &str, at: &str) -> Result<(), Error>;
-
-    /// Which of these views are not in the window their address names?
-    fn audit(&self, expected: &[(String, Place)]) -> Result<Vec<Drifted>, Error>;
+    /// The sessions currently in front of an attached client — what the
+    /// queue excludes.
+    fn viewing(&self) -> Vec<String>;
 }
 ```
 
-`back` is in the trait rather than beside it because the origin table is
-per-client tmux state, and the trait is the seam that owns tmux state.
+`back` takes no session: the origin table is per-client tmux state, keyed by
+client, and the trait is the seam that owns tmux state.
 `tally::act` never opens a terminal and `tally::jump` never opens a socket.
 
 ## A view pane outlives its command
@@ -413,7 +425,7 @@ argument to `claude --resume`. So the line carries both, conversation first.
 Four hops, each something tally already does:
 
 ```text
-hook (inside the agent)   tally attention on|off  — env var in hand
+hook (inside the agent)   tally attention blocked|done|off  — env var in hand
   └─ owning_session()     which anchor session is this
       └─ anchor label     tl.claude=<uuid>        — one write, caller-owned
           └─ Tmux::tag    @tally_claude           — pane option, on jump
@@ -852,10 +864,10 @@ acting sweep, and resolving a squatter to its own address.
 | a corpse claiming the pad from another window | left alone; a fresh view is made at the pad |
 | a corpse behind the sibling of a split | still reclaimed; the sibling is not what is asked about |
 | spawn refused | nothing tagged, nothing created, shell alive |
-| two clients, one on the view, one not | the on-view client returns, the other jumps; both in one press |
-| origin pane closed before you return | nothing moves; a log line says why |
-| origin recorded, tallyd restarted | no origin; the press jumps |
-| jump A → jump B → press B | returns to the non-view origin, not to A |
+| two clients, one on the view, one not | the client already on the view records no origin and stays; the other is switched and can go back; every client is attempted in one press |
+| origin pane closed before you return | `◄` goes dark at the next reconcile tick; a press inside that tick reports the failed switch |
+| origin recorded, tallyd restarted | no origin; `◄` is dark and the press does nothing |
+| jump A → jump B → press `◄` | returns to where the trip began, not to A |
 | no tmux server at all | the grid is truthful; the jump starts a server |
 | purge a pad with dead panes behind it | every purged session's view pane is closed |
 | tally's server not running | a jump starts it |
