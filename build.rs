@@ -23,14 +23,41 @@ fn main() {
     // and the `+` moves with the tree -- a git-only list would let an
     // edited worktree keep a hash that says clean, which is the one
     // direction a build id must never be wrong in.
-    for p in ["src", "Cargo.toml"] {
+    //
+    // The tree half is the files that are linked into the binaries: this
+    // crate, the lockfile (`cargo update` changes the binary and dirties
+    // the tree without touching `src`), and `bridge/`, a path dependency
+    // (`Cargo.toml`, `tallybridge`) whose source compiles into `tallyd`.
+    // NOT watched, so a clean-looking id can sit on an edited tree there:
+    // `tests/`, `docs/`, `examples/` and the rest of the tree. None of
+    // them reach the binary, so the id names the right code; only the `+`
+    // lags until the next rebuild for some other reason.
+    for p in ["src", "Cargo.toml", "Cargo.lock", "bridge"] {
         println!("cargo:rerun-if-changed={p}");
     }
     // `--git-path`, not `.git/...`: in a linked worktree `.git` is a
     // file and those paths do not exist. A `rerun-if-changed` target
     // that is missing is not inert -- cargo calls the script dirty and
     // re-runs it on every build, forking two `git` processes each time.
-    for f in ["HEAD", "index", "packed-refs"] {
+    //
+    // The loose ref `HEAD` points at is the fourth path: `git reset
+    // --soft` and `git branch -f <current>` rewrite only
+    // `refs/heads/<branch>`, leaving `HEAD`, the index and `packed-refs`
+    // as they were. Detached HEAD has no ref (`HEAD` itself comes back),
+    // and `HEAD` is already watched. A branch that exists only in
+    // `packed-refs` has no loose file to name; the first `reset` on it
+    // creates one, and that one move goes unseen -- the one gap left.
+    let mut watched = vec![
+        "HEAD".to_owned(),
+        "index".to_owned(),
+        "packed-refs".to_owned(),
+    ];
+    if let Some(r) = git(&["rev-parse", "--symbolic-full-name", "HEAD"]) {
+        if r != "HEAD" {
+            watched.push(r);
+        }
+    }
+    for f in &watched {
         // `packed-refs` is absent in a repo that has never packed; a
         // path git names but that is not there yet is skipped for the
         // same reason.
