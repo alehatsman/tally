@@ -6,7 +6,8 @@ has to be named.
 
 ## The shape the suite ended up in
 
-404 unit tests in `#[cfg(test)]` modules beside the code, none of them
+424 unit tests (404 in the library, 20 in the two binaries) in
+`#[cfg(test)]` modules beside the code, none of them
 needing a device or a daemon (a few in `anchor.rs` and `act.rs` stand up
 a Unix socket of their own, a socketpair or a scratch listener playing
 anchord) — plus 21 in
@@ -245,11 +246,12 @@ sessions have already lost time to it.
 ### The jump subsystem's own gate, and what is still owed on it
 
 M18's exit criteria were run against the live grid on 2026-10-18, and
-**four of them did not run and two failed.** The restructure deleted the
+**four of them did not run and two failed** — the three ⬜ below, and the
+live-pane case, which was not tried on purpose and happened anyway. The restructure deleted the
 checklist along with the document that held it, which is its own small
 lesson: a gate nobody can read is a gate nobody runs. It is restored here
 because it is the last open item in
-[F1](../ROADMAP.md#f1--close-the-jump-subsystem-).
+[F1](../ROADMAP.md#f1--close-the-jump-subsystem).
 
 Run on the **live grid**, not a scratch socket — the distinction is the
 whole point, and three of these had only ever seen one:
