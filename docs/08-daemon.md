@@ -11,7 +11,8 @@ CoreMIDI multiplexes, two processes can drive the device simultaneously, and
 neither is told ([03](03-surface.md#the-port-is-not-exclusive-and-we-assumed-it-was)).
 
 So `tallyd` takes a **single-instance lock** itself: an exclusive `flock` on
-`$XDG_RUNTIME_DIR/tally.lock`, held for the process lifetime, acquired
+`$XDG_RUNTIME_DIR/tally.lock` (the temp dir where that is unset, which is
+macOS), held for the process lifetime, acquired
 *before* the port is opened. A second instance finds it held, says so, and
 exits — rather than silently fighting the first one for 81 LEDs every two
 seconds.
@@ -34,8 +35,8 @@ readable from somewhere else:
 | to jump to a slot | runs the same tmux commands tallyd would |
 
 So `tally` is a second binary over the same two sources of truth, and tallyd
-notices config changes on its reconcile tick. **No IPC between our own two
-binaries.**
+notices config changes on its reconcile tick. **No IPC between `tally` and
+`tallyd`.**
 
 > **The bridge is a socket between two of our binaries, and not an
 > exception to this.** On a Windows desk `tallyd` talks to `tallybridge`
@@ -84,8 +85,10 @@ One loop, 16 ms, doing four things in order — but only two of them on
 every wake:
 
 ```text
-1. device?    poll midir ports; (re)connect, enter programmer mode, repaint
-                                                           (every wake)
+1. device?    drain its input; a missing one is looked for, and a present one
+              pinged, on the reconcile clock; on (re)connect enter
+              programmer mode and repaint            (input every wake,
+                                                      the rest every 2 s)
 2. anchord?   list all sessions; on error light the logo red and leave the
               model alone. With it: which rows anchord would forget, and
               which panes a tmux client is looking at -- everything
@@ -234,10 +237,10 @@ store at the top of every 16 ms tick and breaks out of it, the shutdown
 sequence runs on the normal path with the port it already owns, and the
 re-raise — `SIG_DFL` then `raise()` — is the last statement.
 
-The same reasoning puts a **panic hook** on the list. A panic unwinds, so an
-RAII guard owning the port restores Live mode on the way out for free;
-`std::panic::set_hook` covers a panic on a thread that is not holding it.
-Neither helps with `panic = "abort"`, which is a reason not to set it.
+A panic is the same story. It unwinds, so `Device`'s `Drop` — which owns the
+port — restores Live mode on the way out for free. **There is no panic
+hook**, so a panic on a thread that is not holding the port is not covered,
+and nothing covers `panic = "abort"`, which is a reason not to set it.
 
 **It still cannot be made perfect.** `SIGKILL`, a double panic and a power
 cut all leave the device in programmer mode. The mitigation is that
