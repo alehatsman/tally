@@ -6,14 +6,19 @@ has to be named.
 
 ## The shape the suite ended up in
 
-386 unit tests in `#[cfg(test)]` modules beside the code, none of them
-needing a device, a daemon or a socket — plus 17 in `tests/relocate.rs`,
+404 unit tests in `#[cfg(test)]` modules beside the code, none of them
+needing a device or a daemon (a few in `anchor.rs` and `act.rs` stand up
+a Unix socket of their own, a socketpair or a scratch listener playing
+anchord) — plus 21 in
+`tests/relocate.rs`,
 which drive **real tmux** on a scratch socket, and 8 in `tests/bridge.rs`,
 which put `Device` on a real loopback socket against the bridge's real
 session with a fake Launchpad behind it ([13](13-bridge.md)). The bridge's
-own codec and session tests live in `bridge/` and run on Windows too. The unit half is not
-discipline;
-it is a consequence of where the boundaries were drawn, and it is the
+own 20 — codec, session, port choice — live in `bridge/` and run on
+Windows too, where `tally` itself does not build. Counted 2026-10-20.
+The bridge has also run against a real Launchpad, which no test here
+does ([13](13-bridge.md#the-checklist-when-the-launchpad-is-plugged-in)).
+The unit half is not discipline; it is a consequence of where the boundaries were drawn, and it is the
 property to protect:
 
 > **Every module that decides something is pure.** `chord` takes presses and

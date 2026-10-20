@@ -154,7 +154,9 @@ declared in `~/dotfiles` and applied with provision, never hand-edited.
 **Raising the window is the other half, and it has its own override.**
 After the switch, `raise()` runs `open -a $TALLY_TERMINAL` so the terminal
 comes out from behind a browser; `TALLY_RAISE_CMD` replaces that command
-whole, and the test harness sets it to `true`. It has to be a separate
+whole, and the test harness sets it to `true`. On a Windows desk both
+overrides are set, to `wt.exe` and `bridge/raise.ps1`
+([12](12-install.md#6-start-both-halves-at-logon)). It has to be a separate
 switch: **unsetting `TALLY_TERMINAL` does not turn the raise off**, because
 `terminal_app()` falls back to `"Alacritty"` when it is unset. The harness
 assumed otherwise for as long as that fallback existed, and every jump in

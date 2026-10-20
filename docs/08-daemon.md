@@ -66,7 +66,10 @@ reconcile already has.
 
 A launchd user agent, declared in `~/dotfiles` and applied with provision.
 Not a `service install` subcommand: that exists in anchor because anchor is
-shipped to strangers.
+shipped to strangers. On a Windows desk it is **not** a systemd unit — a
+`wsl.exe` started at logon, beside the bridge, because Windows programs
+launched from a unit never reach the desktop
+([12](12-install.md#6-start-both-halves-at-logon)).
 
 `tallyd` must tolerate being started before anything else exists — no
 device, no anchord, no tmux server. A missing Launchpad is not a startup
