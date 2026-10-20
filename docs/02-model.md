@@ -16,18 +16,17 @@ that was there this morning.
 
 ```text
 slot  = (page, row, col)              the address of a pad, forever
-spec  = cwd + argv + labels           what claiming an empty slot runs
 bind  = slot -> session id            what is in it right now, or nothing
 ```
 
-Press a **dark** slot → spawn its spec, if one is declared. Press a **lit**
-slot → jump. A session exiting cleanly unbinds the slot; the pad goes dark,
-and pressing it runs the same thing again.
+Press a **lit** slot → jump. Press a **dark** one → nothing; spawning onto
+it is `tally spawn` from a shell, or `>` from the row
+([There used to be three tables](#there-used-to-be-three-tables)). A
+session exiting cleanly unbinds the slot and the pad goes dark.
 
-**Dark is the only affordance, and it is deliberately ambiguous.** A slot
-with a spec and nothing in it looks exactly like one with no spec at all.
-Which pads spawn what is your layout, held in muscle memory. The grid shows
-what is alive or wrong; it does not show what is possible
+**Dark is the only affordance, and it says nothing about what could run
+there.** Which pads you spawn onto is your layout, held in muscle memory.
+The grid shows what is alive or wrong; it does not show what is possible
 ([05](05-interaction.md#why-the-colour-language-is-one-sentence)).
 
 ## The address, pinned
@@ -195,7 +194,9 @@ anchord call anywhere on that path. The scope bullet it answered is
 reworded in [01](01-scope.md).
 
 A `[[spec]]` or `[[slot]]` table left in an old file is now an unknown
-key, so it is **refused loudly** rather than ignored.
+key, so the file is **refused loudly** rather than ignored: `tally spawn`
+stops, and `tallyd` logs the error and runs on the default pages `1`–`8`
+(`config`'s module header gives both reasons).
 
 ### Size is not ours
 
@@ -221,36 +222,34 @@ press the pad again.)
 ## Lifecycle of a slot
 
 ```text
-    no spec, no session          spec, nothing running
-    ┌───────────────┐            ┌───────────────┐
-    │    unbound    │            │  ready (off)  │
-    │  off — no-op  │            │ press: spawn  │
-    └───────────────┘            └───────┬───────┘
-                                         │
-                      ┌──────────────────┘
-                      ▼
-    ┌─────────────────────────────────────────────┐        anchord
-    │ running                                     │        restarted
-    │  green static · amber pulsing               │────────────┐
-    │  press: jump                                │            │
-    └────────┬───────────────────────┬────────────┘            ▼
-             │ exit 0                │ exit ≠ 0          ┌─────────────┐
-             ▼                       ▼                   │    lost     │
-      back to ready (off)     ┌─────────────┐            │  dark red   │
-      press spawns again      │ failed, red │            └──────┬──────┘
-                              └──────┬──────┘                   │ purge
-                                     │ purge                    ▼
-                                     └───────────────────▶ ready (off)
+    ┌───────────────┐   tally spawn / `>`
+    │  empty (off)  │───────────────────┐
+    │ press: nothing│                   │
+    └───────────────┘                   ▼
+          ▲            ┌─────────────────────────────────────────────┐   anchord
+          │            │ running                                     │   restarted
+          │            │  green static · amber pulsing               │──────────┐
+          │            │  press: jump                                │          │
+          │            └────────┬───────────────────────┬────────────┘          ▼
+          │                     │ exit 0                │ exit ≠ 0       ┌─────────────┐
+          │◀────────────────────┘                       ▼                │    lost     │
+          │                                      ┌─────────────┐         │  dark red   │
+          │◀─────────── purge, or spawn ─────────│ failed, red │         └──────┬──────┘
+          │                                      └─────────────┘                │
+          │◀──────── purge (or spawn, if anchord restarted) ───────────────────┘
 ```
 
-**Two different things are off, and that is the design.** `unbound` and
-`ready` are indistinguishable because the alternative — a colour for "could
-run something here" — is a light that tells you what you already know,
+There is one kind of off. A pad with nothing drawn on it is empty, whether
+it never held a session or its session exited cleanly; a colour for "could
+run something here" would be a light that tells you what you already know,
 competing with the lights that do not.
 
 `lost` hangs off `running`, not off `exited`, and that is the whole reason it
-is a separate state: the process may well still be alive and orphaned. Only
-a purge gets a slot out of it.
+is a separate state: the process may well still be alive and orphaned. A
+purge gets a slot out of it. So does `tally spawn` when anchord was
+restarted, which is the one `lost` that cannot mean the process survives
+(`SlotState::frees_the_pad`, [04](04-signals.md#the-state-a-pad-renders)).
+`>` never claims a drawn pad, red or dark red.
 
 Note what is **not** here: no restart policy, no supervision, no "keep this
 slot full". That is systemd, and anchor's scope doc already refused it. A
@@ -260,10 +259,10 @@ slot that goes dark stays dark until a human presses it.
 
 A clean exit leaves its anchor row in place, still carrying `tl.slot`. The
 pad goes dark anyway — `model::resolve` drops a clean exit before it can
-shadow the pad — so pressing it spawns a *second* session claiming the same
-address, and newest-wins renders the new one.
+shadow the pad — so spawning onto it makes a *second* session claiming the
+same address, and newest-wins renders the new one.
 
-Over a week of pressing one pad that is a pile of exited rows on one slot.
+Over a week of respawning onto one pad that is a pile of exited rows on one slot.
 This is anchor's model working as designed, not a leak: rows live until
 somebody asks for them to be gone, because an exited session is still worth
 `anchor logs`. `tally purge` and the Stop chord on a dark pad are how you
