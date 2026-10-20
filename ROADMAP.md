@@ -218,7 +218,9 @@ which was the only option available: the honest fix needs a third meaning
 on `tl.attention`, and what that bit means is
 [#23](https://github.com/alehatsman/tally/issues/23).
 
-**What remains:** re-run M18's gate on the live grid. Four ⬜ and two ❌,
+**What remains:** re-run M18's gate on the live grid. Four of its six
+checks never ran and two failed — three ⬜, plus one ❌ that was never
+deliberately tried,
 and the ❌ were caused by the renumbering, which is now pinned and has
 never been re-tested against them. **The checklist is back in
 [09](docs/09-testing.md#the-jump-subsystems-own-gate-and-what-is-still-owed-on-it)**
@@ -297,7 +299,7 @@ One gate left, and it is the one that needs hands rather than time:
 | | |
 |---|---|
 | **F0's number** | ✅ **126 ambers, 93 attended, 33 aged out** (2026-10-19) |
-| **F1's live re-run** | four ⬜ and two ❌ on a real device ([09](docs/09-testing.md#the-jump-subsystems-own-gate-and-what-is-still-owed-on-it)). Twenty minutes, and only the owner's desk has the hardware |
+| **F1's live re-run** | four unrun and two ❌ on a real device ([09](docs/09-testing.md#the-jump-subsystems-own-gate-and-what-is-still-owed-on-it)). Twenty minutes, and only the owner's desk has the hardware |
 
 **The tracker holds no undecided design**, which is the fourth statement,
 and it is true as of this file: #40 cut, #41 closed in both halves, #42
