@@ -1,7 +1,8 @@
 # 11 — Specified, not built
 
-One spec is held on a measurement, and the rest of this file is the list
-of things that will not be built and why. Everything in `01`–`09` is
+Nothing here is waiting on a measurement any more: the one spec that was
+is closed, and the rest of this file is the list of things that will not
+be built and why. Everything in `01`–`09` is
 shipped and running; nothing here is. The bridge left this file when it
 was built ([13](13-bridge.md)), and keeps a short section here saying so.
 
@@ -14,22 +15,25 @@ for most of them the honest answer is *nothing we expect to happen.*
 
 **A veto over a stale amber, never a source of one.**
 
-> ⚠️ **Verdict, 2026-10-18: held on F0, and expect to close.** Three facts
+> ✅ **Closed by F0, 2026-10-19. Not built, and not going to be** — see
+> [the roadmap](../ROADMAP.md#f4--close-scope-). F0 reported no stuck
+> ambers, so this closed rather than shipped; what follows is the record
+> of why it was not needed. It was held on 2026-10-18 on three facts that
 > moved against it after it was written. The stuck pad it guards against
-> has **never been observed** — 544 rising edges over 55 hours of journal,
-> no report of one. It **cannot see the case that actually bit**: a session
+> has **never been observed** — 670 rising edges (544 over 55 hours of
+> journal, then 126 in F0's own window), no report of one. It **cannot see the case that actually bit**: a session
 > on the startup trust dialog is absent from `claude agents --json`
 > entirely ([#13](https://github.com/alehatsman/tally/issues/13),
 > [07](07-cli.md#a-detached-spawn-can-land-on-the-agents-own-first-question)).
 > And it is the only proposal left that widens
 > [08](08-daemon.md#one-process-no-socket)'s one-socket rule, which it
-> admits below. **If F0 reports no stuck ambers, this closes rather than
-> ships**, and the paragraphs below become the record of why it was not
-> needed.
+> admits below.
 
-Held on one thing: [the week of `attention.jsonl`](09-testing.md#the-honest-gap-today).
-A veto changes what gets recorded, and measuring the architecture the hooks
-actually specified is worth more than measuring it already patched.
+It was held on [the week of `attention.jsonl`](09-testing.md#the-honest-gap-today):
+a veto changes what gets recorded, and measuring the architecture the hooks
+actually specified was worth more than measuring it already patched.
+The measurement came back with the amber real and attended (126 raised,
+93 gone to) and no stuck pad in it, which was the condition for closing.
 
 ### Why it is worth building at all
 
@@ -193,7 +197,7 @@ re-proposed as new.
 
 ## Open scope questions
 
-**One question left open, and two answered.** They are larger than the
+**All three are answered.** They are larger than the
 graveyard above because each removes something that *works*, and that is
 a decision about what this product is rather than a cleanup.
 
