@@ -165,8 +165,9 @@ pub trait Jump {
     /// ([`Want`]).
     ///
     /// **Reports; moves nothing.** A session with no view is not a
-    /// fault, and is not reported.
-    fn audit(&self, want: &[Want]) -> Vec<Finding>;
+    /// fault, is not reported, and is not counted in
+    /// [`Audit::examined`].
+    fn audit(&self, want: &[Want]) -> Audit;
 
     /// Move the view for `session`, if it has one, to the window `where_`
     /// names, and re-label it `at`. **Nothing is switched.**
@@ -950,6 +951,21 @@ pub struct Finding {
     pub fault: Fault,
 }
 
+/// What one sweep saw: the views it examined, and which were wrong.
+///
+/// **`examined` is not `want.len()`.** A session can claim a pad and have
+/// no view pane at all -- it was never pressed, or its pane is gone --
+/// and [`Tmux::audit`] skips it rather than faulting it. The faults are a
+/// rate only over the views actually looked at, so the denominator has to
+/// come back from the audit rather than from what the caller asked about.
+#[derive(Debug, Default)]
+pub struct Audit {
+    /// How many of `want` had a view pane to check.
+    pub examined: usize,
+    /// The ones that were wrong.
+    pub faults: Vec<Finding>,
+}
+
 /// Whether a pane is known to be in the window the address names.
 ///
 /// **An address is a claim, and a claim that is not true is the bug**
@@ -1608,35 +1624,40 @@ impl Jump for Tmux {
         Ok(())
     }
 
-    fn audit(&self, want: &[Want]) -> Vec<Finding> {
+    fn audit(&self, want: &[Want]) -> Audit {
         let listing = self.panes();
-        want.iter()
-            .filter_map(|w| {
-                let pane = view_for(&listing, &w.session)?;
-                // The same pure function the move path plans with, so the
-                // sweep and the repair can never disagree about what out
-                // of place means.
-                let fault = if relocation(&listing, pane, w.place).is_some() {
-                    Fault::Drifted
-                } else if w.alive && pane.dead {
-                    // Right window, dead pane, live agent. `relocation`
-                    // says `None` here and always will -- it answers
-                    // *where*, and this is *whether* ([`Fault::DeadView`]).
-                    Fault::DeadView
-                } else {
-                    // Where it belongs, or a corpse at its own address
-                    // under a session that is also gone. Neither is a
-                    // fault.
-                    return None;
-                };
-                Some(Finding {
-                    session: w.session.clone(),
-                    claims: w.at.clone(),
-                    sits_at: format!("{}:{}", pane.tmux_session, pane.index),
-                    fault,
-                })
-            })
-            .collect()
+        let mut seen = Audit::default();
+        for w in want {
+            // No view pane: nothing to look at, so it is neither a fault
+            // nor something the faults are a rate over.
+            let Some(pane) = view_for(&listing, &w.session) else {
+                continue;
+            };
+            seen.examined += 1;
+            // The same pure function the move path plans with, so the
+            // sweep and the repair can never disagree about what out
+            // of place means.
+            let fault = if relocation(&listing, pane, w.place).is_some() {
+                Fault::Drifted
+            } else if w.alive && pane.dead {
+                // Right window, dead pane, live agent. `relocation`
+                // says `None` here and always will -- it answers
+                // *where*, and this is *whether* ([`Fault::DeadView`]).
+                Fault::DeadView
+            } else {
+                // Where it belongs, or a corpse at its own address
+                // under a session that is also gone. Neither is a
+                // fault.
+                continue;
+            };
+            seen.faults.push(Finding {
+                session: w.session.clone(),
+                claims: w.at.clone(),
+                sits_at: format!("{}:{}", pane.tmux_session, pane.index),
+                fault,
+            });
+        }
+        seen
     }
 
     fn relocate(&self, session: &str, at: &str, where_: Place) -> Result<(), Error> {

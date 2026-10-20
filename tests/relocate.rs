@@ -566,11 +566,14 @@ fn the_audit_reports_drift_and_changes_nothing() {
         ];
         let found = s.tmux().audit(&want);
 
-        assert_eq!(found.len(), 1, "only S2 is out of place: {found:?}");
-        assert_eq!(found[0].session, "S2");
-        assert_eq!(found[0].claims, addr(1, 5));
-        assert_eq!(found[0].sits_at, "r01:7");
-        assert_eq!(found[0].fault, Fault::Drifted);
+        // Three sessions asked about, two views to look at. The faults
+        // are a rate over what was examined, and `ghost` was not.
+        assert_eq!(found.examined, 2, "the ghost has no view: {found:?}");
+        assert_eq!(found.faults.len(), 1, "only S2 is out of place: {found:?}");
+        assert_eq!(found.faults[0].session, "S2");
+        assert_eq!(found.faults[0].claims, addr(1, 5));
+        assert_eq!(found.faults[0].sits_at, "r01:7");
+        assert_eq!(found.faults[0].fault, Fault::Drifted);
         assert_eq!(
             before,
             s.panes(),
@@ -602,9 +605,14 @@ fn a_dead_pane_under_a_live_session_is_a_fault_where_it_stands() {
         let before = s.panes();
         let found = s.tmux().audit(&[alive("S1", 1, 1)]);
 
-        assert_eq!(found.len(), 1, "the dead view is a fault: {found:?}");
-        assert_eq!(found[0].fault, Fault::DeadView);
-        assert_eq!(found[0].sits_at, "r01:1", "it never moved — {}", s.dump());
+        assert_eq!(found.faults.len(), 1, "the dead view is a fault: {found:?}");
+        assert_eq!(found.faults[0].fault, Fault::DeadView);
+        assert_eq!(
+            found.faults[0].sits_at,
+            "r01:1",
+            "it never moved — {}",
+            s.dump()
+        );
         assert_eq!(
             before,
             s.panes(),
@@ -635,7 +643,7 @@ fn a_dead_pane_under_a_dead_session_is_not_a_fault() {
             alive: false,
         }];
         assert!(
-            s.tmux().audit(&want).is_empty(),
+            s.tmux().audit(&want).faults.is_empty(),
             "a corpse at its own pad under a dead session is done, not drift — {}",
             s.dump()
         );
@@ -662,12 +670,12 @@ fn a_drifted_corpse_is_drift_whatever_the_session_is_doing() {
         let found = s.tmux().audit(&want);
 
         assert_eq!(
-            found.len(),
+            found.faults.len(),
             1,
             "it is somewhere it does not belong: {found:?}"
         );
-        assert_eq!(found[0].fault, Fault::Drifted);
-        assert_eq!(found[0].sits_at, "r01:7");
+        assert_eq!(found.faults[0].fault, Fault::Drifted);
+        assert_eq!(found.faults[0].sits_at, "r01:7");
     });
 }
 

@@ -12,18 +12,34 @@
 //! is not there to ask the answer is `unknown`, which is honest and not a
 //! failure.
 
+use std::path::Path;
 use std::process::Command;
 
 /// `cargo:` directives, and nothing else.
 fn main() {
-    // A commit changes `HEAD` (or what it points at, via `packed-refs`);
-    // staging changes `index`. A tree dirtied without staging is **not**
-    // caught -- cargo has no way to watch the whole worktree, and the
-    // `+` below can therefore be stale in one direction only: it can say
-    // clean when the files have since been edited. Touch a source file
-    // and the normal rebuild fixes it.
+    // Emitting *any* `rerun-if-changed` replaces cargo's default scan of
+    // the package, so this list is the whole of what re-runs the script.
+    // Both halves of the answer need watching: the hash moves with git,
+    // and the `+` moves with the tree -- a git-only list would let an
+    // edited worktree keep a hash that says clean, which is the one
+    // direction a build id must never be wrong in.
+    for p in ["src", "Cargo.toml"] {
+        println!("cargo:rerun-if-changed={p}");
+    }
+    // `--git-path`, not `.git/...`: in a linked worktree `.git` is a
+    // file and those paths do not exist. A `rerun-if-changed` target
+    // that is missing is not inert -- cargo calls the script dirty and
+    // re-runs it on every build, forking two `git` processes each time.
     for f in ["HEAD", "index", "packed-refs"] {
-        println!("cargo:rerun-if-changed=.git/{f}");
+        // `packed-refs` is absent in a repo that has never packed; a
+        // path git names but that is not there yet is skipped for the
+        // same reason.
+        let Some(path) = git(&["rev-parse", "--git-path", f]) else {
+            continue;
+        };
+        if Path::new(&path).exists() {
+            println!("cargo:rerun-if-changed={path}");
+        }
     }
     println!("cargo:rustc-env=TALLY_BUILD={}", build_id());
 }
