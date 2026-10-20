@@ -120,16 +120,19 @@ a Launchpad Mini MK3. Not on crates.io: one USB device, one OS, a tag is
 the right size.
 
 **On Windows**, the agents and `tallyd` run in WSL and a small bridge on
-Windows owns the device ([13](docs/13-bridge.md)). Built and tested
-without hardware; it has not yet driven a real Launchpad.
+Windows owns the device ([13](docs/13-bridge.md)). **It has driven a real
+Launchpad**, 2026-10-20: pads lit from WSL, presses back, the amber
+breathing, the raise, a clean stop. The kill and unplug lines of its
+checklist are still owed. The hook lines go in WSL's `settings.json`,
+where the agents are.
 
 ## The documents
 
 Everything in `01`–`09` is **shipped and running**, and states current
 truth only — no amendments to apply in your head. `10` is why it says
 that, `11` is what is specified and deliberately not built, `12` is how
-to get it running, and `13` is the bridge — built, and owed one session
-with the device.
+to get it running, and `13` is the bridge — built, run on the device,
+and owed the second half of its checklist.
 
 | | |
 |---|---|
@@ -145,7 +148,7 @@ with the device.
 | [10-decisions.md](docs/10-decisions.md) | **the record** — what was built, what use found, what replaced it |
 | [11-unbuilt.md](docs/11-unbuilt.md) | the level (a veto over a stale amber), and the graveyard |
 | [12-install.md](docs/12-install.md) | what a stranger does, in order — including the hook lines the amber does not exist without |
-| [13-bridge.md](docs/13-bridge.md) | the Launchpad on Windows, the agents in WSL: five questions answered on the desk, the wire, and the checklist still owed on hardware |
+| [13-bridge.md](docs/13-bridge.md) | the Launchpad on Windows, the agents in WSL: five questions answered on the desk, the wire, and the hardware checklist, six of eleven passed |
 
 [ROADMAP.md](ROADMAP.md) is the order it arrived in, and the finish line is
 the only part of this repo that is a plan rather than a record.

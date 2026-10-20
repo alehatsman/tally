@@ -465,8 +465,12 @@ never the daemon. `Device` stays **one type** with two ways of moving
 bytes, which is all the second implementation ever was; `poll` did not
 change and nothing above `Link` can tell. The raise presses Alt first and
 lands three times in four. `tallyd` on that desk runs under a `wsl.exe`
-started at logon. **The cost**, named: the device itself has not been
-plugged in, so everything that needs it is still a checklist.
+started at logon. **The cost**, named: it was finished before the device
+was plugged in, so the device is a checklist. **Run 2026-10-20**: steps
+1–6 passed on a real Mini MK3, and what they found was the desk rather
+than the design — a bus-powered hub (*Code 10*, no port at all) and
+Claude hooks never deployed in WSL (no amber). The kills, the unplug and
+a day beside it are still owed.
 
 → [13](13-bridge.md)
 
