@@ -1421,8 +1421,9 @@ impl Tmux {
     ///
     /// A jump that lands on a server nobody is looking at succeeds
     /// invisibly, which is the one failure the grid cannot show you — so
-    /// zero clients means open the window (`docs/06-views.md`).
-    fn ensure_terminal(&self) {
+    /// zero clients means open the window (`docs/06-views.md`), on `pane`
+    /// ([`terminal_command`]).
+    fn ensure_terminal(&self, pane: &str) {
         if !self.client_panes().is_empty() {
             return;
         }
@@ -1430,7 +1431,7 @@ impl Tmux {
             let _home = self.run(&new_home_session_args());
             self.hold_indexes();
         }
-        open_terminal(&self.socket);
+        open_terminal(&self.socket, pane);
     }
 
     /// Remember where each client is standing, if a trip is not already
@@ -1568,14 +1569,26 @@ fn raise() {
 /// One string, overridable as `TALLY_TERMINAL_CMD`, for the same reason
 /// [`terminal_app`] is: it is machine-specific and the rest is not. See
 /// [`split_override`] for what an override may be.
-fn terminal_command(socket: &str, app: &str, override_cmd: Option<&str>) -> (String, Vec<String>) {
+///
+/// **Attached to `pane`, not to [`HOME_SESSION`].** The launcher returns
+/// before its client exists — `wt.exe` to `wsl.exe` takes a second or
+/// more — so the switch after it finds nobody to move, and a window
+/// attached to the home session sat on a shell until the next press
+/// (`docs/06-views.md`). `attach -t %N` selects the pane's session,
+/// window and pane, measured.
+fn terminal_command(
+    socket: &str,
+    pane: &str,
+    app: &str,
+    override_cmd: Option<&str>,
+) -> (String, Vec<String>) {
     let attach = [
         "tmux".to_owned(),
         "-L".to_owned(),
         socket.to_owned(),
         "attach".to_owned(),
         "-t".to_owned(),
-        HOME_SESSION.to_owned(),
+        pane.to_owned(),
     ];
     let Some(cmd) = override_cmd.map(str::trim).filter(|c| !c.is_empty()) else {
         let mut args = vec![
@@ -1596,10 +1609,10 @@ fn terminal_command(socket: &str, app: &str, override_cmd: Option<&str>) -> (Str
 
 /// Open the window that looks at tally's server. Best-effort, like
 /// [`raise`]: the view exists whether or not anything shows it.
-fn open_terminal(socket: &str) {
+fn open_terminal(socket: &str, pane: &str) {
     let app = terminal_app();
     let over = std::env::var("TALLY_TERMINAL_CMD").ok();
-    let (bin, args) = terminal_command(socket, &app, over.as_deref());
+    let (bin, args) = terminal_command(socket, pane, &app, over.as_deref());
     let _opened = Command::new(bin).args(args).output();
 }
 
@@ -1613,9 +1626,10 @@ impl Jump for Tmux {
         cwd: Option<&str>,
     ) -> Result<(), Error> {
         let pane = self.view_pane(session, claude, where_, at, cwd)?;
-        // Before the clients are listed, not after: the window it opens
-        // is a client by the time the switch runs.
-        self.ensure_terminal();
+        // Before the clients are listed, not after: a window that is
+        // already a client gets switched too. One that is not yet — the
+        // launcher returned first — is attached to `pane` anyway.
+        self.ensure_terminal(&pane);
         let clients = self.client_panes();
         self.record_origins(&clients, &pane);
 
@@ -2507,7 +2521,7 @@ mod tests {
     /// thing this is separating.
     #[test]
     fn the_terminal_is_opened_against_tallys_socket() {
-        let (bin, args) = terminal_command("tally", "Alacritty", None);
+        let (bin, args) = terminal_command("tally", "%42", "Alacritty", None);
         assert_eq!(bin, "open");
         assert!(
             args.contains(&"-na".to_owned()),
@@ -2515,30 +2529,27 @@ mod tests {
         );
         let l = args.iter().position(|a| a == "-L").expect("-L");
         assert_eq!(args.get(l + 1).map(String::as_str), Some("tally"));
-        assert!(args.ends_with(&["-t".to_owned(), HOME_SESSION.to_owned()]));
+        assert!(
+            args.ends_with(&["-t".to_owned(), "%42".to_owned()]),
+            "the window opens on the destination, not the home shell"
+        );
     }
 
     /// The override replaces how the window is opened, never what it
     /// attaches to.
     #[test]
     fn the_terminal_override_still_attaches_to_tallys_server() {
-        let (bin, args) = terminal_command("other", "Alacritty", Some("wezterm start --"));
+        let (bin, args) = terminal_command("other", "%42", "Alacritty", Some("wezterm start --"));
         assert_eq!(bin, "wezterm");
         assert_eq!(
             args,
-            [
-                "start",
-                "--",
-                "tmux",
-                "-L",
-                "other",
-                "attach",
-                "-t",
-                HOME_SESSION
-            ]
+            ["start", "--", "tmux", "-L", "other", "attach", "-t", "%42"]
         );
         // An override that is only whitespace is not an override.
-        assert_eq!(terminal_command("tally", "Alacritty", Some("  ")).0, "open");
+        assert_eq!(
+            terminal_command("tally", "%42", "Alacritty", Some("  ")).0,
+            "open"
+        );
     }
 
     /// With no override this really does take the screen, which is the
