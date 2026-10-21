@@ -6,17 +6,17 @@ has to be named.
 
 ## The shape the suite ended up in
 
-424 unit tests (404 in the library, 20 in the two binaries) in
+425 unit tests (404 in the library, 21 in the two binaries) in
 `#[cfg(test)]` modules beside the code, none of them
 needing a device or a daemon (a few in `anchor.rs` and `act.rs` stand up
 a Unix socket of their own, a socketpair or a scratch listener playing
-anchord) — plus 21 in
+anchord) — plus 25 in
 `tests/relocate.rs`,
 which drive **real tmux** on a scratch socket, and 8 in `tests/bridge.rs`,
 which put `Device` on a real loopback socket against the bridge's real
 session with a fake Launchpad behind it ([13](13-bridge.md)). The bridge's
 own 20 — codec, session, port choice — live in `bridge/` and run on
-Windows too, where `tally` itself does not build. Counted 2026-10-20.
+Windows too, where `tally` itself does not build. Counted 2026-10-21.
 The bridge has also run against a real Launchpad, which no test here
 does ([13](13-bridge.md#the-checklist-when-the-launchpad-is-plugged-in)).
 The unit half is not discipline; it is a consequence of where the boundaries were drawn, and it is the

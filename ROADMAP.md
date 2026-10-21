@@ -139,7 +139,7 @@ signal that no longer exists.
 |---|---|---|---|
 | **grouping** ([#8](https://github.com/alehatsman/tally/issues/8)) | *"if `queued` is almost always 1, the 61% was one unusual hour"* | `queued==1` on **35%** of `next` presses (22/62); depth 2+ is 65%, and 7-deep happened 13 times | **Closed.** The measurement that justified the queue holds at 24× the sample. The flat grid is final |
 | **is `►` reached for** | — | **62 of 78** nav presses, 79% | the queue *is* the navigation. M8 vindicated |
-| **the overview** | *"if `lit` sits at seven, the answer is a smaller address space"* | `lit` was **4**, all nine times, and never moved. All nine destinations were rows 1–8 | the map has **never once crossed an empty middle**, its motivating case. It earns its keep as *one gesture instead of seven scrolls* and nothing more — and the follow-up is the address space ([11](docs/11-unbuilt.md#512-slots-for-four-used-rows)) |
+| **the overview** | *"if `lit` sits at seven, the answer is a smaller address space"* | `lit` was **4**, all nine times, and never moved. All nine destinations were rows 1–8 | the map had **never once crossed an empty middle**, its motivating case. Read on 2026-10-18 as *earns its keep as one gesture instead of seven scrolls and nothing more*; **[#41](https://github.com/alehatsman/tally/issues/41) then cut it** on that same reading ([D29](docs/10-decisions.md#d29--the-overview-was-measured-out)) |
 | **the amber's shape**, now n=540 | — | p50 **117 s**, p90 **983 s**, max **18.7 h**; 10% answered under 10 s | the tempo's 900 s knee lands on p90. That number was guessed well ([05](docs/05-interaction.md#the-tempo-says-how-long)) |
 
 Still owed, and still cheap because they are already recorded: whether `>`
