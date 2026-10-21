@@ -44,8 +44,8 @@ const DEFAULT_TERMINAL: &str = "Alacritty";
 /// the window shows when no agent is in front of you.
 ///
 /// **Not what a cold window attaches to.** That is the destination pane
-/// ([`terminal_command`]): attaching here and switching after loses a
-/// race with the launcher, and the window sat on this shell.
+/// (`docs/06-views.md`): attaching here and switching after loses a race
+/// with the launcher, and the window sat on this shell.
 ///
 /// Not a row, because a row session may not exist yet and `attach` to an
 /// empty server exits with `no sessions`. It is one window running your
