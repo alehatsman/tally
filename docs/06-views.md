@@ -155,7 +155,21 @@ The launcher returns before its client exists — `wt.exe` hands off to
 `wsl.exe`, which takes a second or more to start — so the `list-clients`
 after it finds nobody, nothing is switched, and the window lands on the home
 shell until a second press. The attach target is the only part of the window
-that cannot lose that race. Overridable as one string,
+that cannot lose that race.
+
+**It can lose a different one, and that is accepted.** The pane id is
+resolved before the launcher starts. A pane closed during that second —
+the tab killed by hand, the view reclaimed — makes `attach -t %42` exit with
+`can't find pane` (exit 1, measured on tmux 3.4), and the window closes as
+it opens. Nothing is wedged: the server still has no clients, so the next
+press opens a fresh window. A fallback to the home session was measured and
+rejected: tmux's `attach -t tally ; switch-client -t %42` does land
+correctly either way, but the `;` does not survive the launchers. `wsl.exe --`
+hands its argv to the login shell, and `wt.exe` takes `;` as its own
+separator. Keeping the command a plain argv is worth one flash and one extra
+press in a rare race.
+
+Overridable as one string,
 `TALLY_TERMINAL_CMD` — the one genuinely machine-specific line in the file.
 Alacritty's own config is a managed file: anything this needs from it is
 declared in `~/dotfiles` and applied with provision, never hand-edited.
