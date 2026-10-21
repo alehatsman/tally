@@ -1,8 +1,6 @@
-# tally
+# tally [![ci](https://github.com/alehatsman/tally/actions/workflows/ci.yml/badge.svg)](https://github.com/alehatsman/tally/actions/workflows/ci.yml)
 
 ![A Launchpad Mini MK3 on a dark desk, its 8x8 grid lit mostly green with four amber pads, beside the words "tally - your agents, at a glance"](docs/hero.png)
-
-[![ci](https://github.com/alehatsman/tally/actions/workflows/ci.yml/badge.svg)](https://github.com/alehatsman/tally/actions/workflows/ci.yml)
 
 A Novation Launchpad Mini [MK3] as the front panel for agent sessions.
 
