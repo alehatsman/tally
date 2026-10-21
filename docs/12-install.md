@@ -239,7 +239,9 @@ exec "$HOME/.cargo/bin/tallyd"
 
 **The two command strings are split on spaces and are not a shell**, as
 everywhere in tally, so no path in them may contain a space.
-`TALLY_TERMINAL_CMD` has `tmux -L tally attach -t tally` appended, and
+`TALLY_TERMINAL_CMD` has `tmux -L tally attach -t <pane id>` appended — the
+pane the press is jumping to, e.g. `%42`
+([06](06-views.md#the-home-session-and-the-terminal-window)) — and
 opens a Windows Terminal window titled `tally` running it in WSL; the
 title is what `raise.ps1` looks for. `raise.ps1` presses Alt before
 `AppActivate`, because `AppActivate` alone is refused by Windows'
