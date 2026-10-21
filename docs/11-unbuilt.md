@@ -248,7 +248,7 @@ direction that cannot be undone.
 
 ### The reel is nine pieces
 
-`src/art/` is **2,157 lines, about 12% of the crate**, for a mode behind a
+`src/art/` is **2,227 lines, about 12% of the crate**, for a mode behind a
 button that did nothing. Its two jobs are *demo* and *all-64-pads pixel
 test*, and three pieces already do both — Plasma exercises every pad every
 frame, Claude is the photograph, Uprising is the joke.
