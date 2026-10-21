@@ -128,10 +128,10 @@ now.
 
 ### The home session and the terminal window
 
-The Alacritty window attaches to `tally`, not to a row: a row session might
-not exist yet, and `attach` to an empty server fails (`no sessions`, exit 1).
 The home session is one window running your login shell, created only if
-nothing else is there.
+nothing else is there: a row session might not exist yet, and `attach` to an
+empty server fails (`no sessions`, exit 1), so a hand-typed
+`tmux -L tally attach -t tally` always has somewhere to land.
 
 It is a stray shell, and the rule against those holds **for views**. This one
 is asked for: it is what the terminal window shows when no agent is in front
@@ -139,13 +139,23 @@ of you. `◄` does not go there — with no origin it is dark and does nothing
 ([05](05-interaction.md#back-and-where-you-were)).
 
 ```sh
-open -na Alacritty --args --title tally -e tmux -L tally attach -t tally
+open -na Alacritty --args --title tally -e tmux -L tally attach -t %42
 ```
 
 **One window, and tally opens it when a jump has nowhere to land.** `jump()`
 lists clients on its own socket; zero clients means the view was created
 correctly and nobody can see it. Rather than succeed invisibly, it launches
-the window, and the next jump finds a client. Overridable as one string,
+the window **attached to the destination pane** — `attach -t <pane id>`
+selects that pane's session, window and pane, measured on tmux 3.4 with the
+pane in a window that was not current. The window opens on the agent, not
+on a shell.
+
+It must not attach to the home session and rely on the switch that follows.
+The launcher returns before its client exists — `wt.exe` hands off to
+`wsl.exe`, which takes a second or more to start — so the `list-clients`
+after it finds nobody, nothing is switched, and the window lands on the home
+shell until a second press. The attach target is the only part of the window
+that cannot lose that race. Overridable as one string,
 `TALLY_TERMINAL_CMD` — the one genuinely machine-specific line in the file.
 Alacritty's own config is a managed file: anything this needs from it is
 declared in `~/dotfiles` and applied with provision, never hand-edited.
